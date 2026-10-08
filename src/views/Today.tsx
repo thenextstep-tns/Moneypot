@@ -58,11 +58,7 @@ export function Today() {
       : null;
 
     const handleConfirm = () => {
-      if (funds?.isShort) {
-        setAct({ o, mode: 'confirm' });
-        return;
-      }
-      write(o, 'confirmed');
+      setAct({ o, mode: 'confirm' });
     };
 
     return (
@@ -204,7 +200,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const t = today();
   const [amount, setAmount] = useState(o.amount);
   const [currency, setCurrency] = useState(o.currency);
-  const [accountId, setAccountId] = useState(o.accountId ?? '');
+  const [accountId, setAccountId] = useState(o.accountId || accounts[0]?.id || '');
   const [categoryId, setCategoryId] = useState(o.categoryId);
   const [subcategory, setSubcategory] = useState(o.subcategory);
   const [note, setNote] = useState(o.note ?? '');
@@ -215,9 +211,17 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const selFunds = o.kind !== 'income' && accountId
     ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances)
     : null;
+  const valid = +amount > 0 && !!accountId;
 
   return (
-    <Modal title={mode === 'later' ? `Move "${o.name}" to…` : `Confirm "${o.name}"`} onClose={onClose}>
+    <Modal title={mode === 'later' ? `Move "${o.name}" to…` : `Confirm payment: "${o.name}"`} onClose={onClose}>
+      {mode === 'confirm' && (
+        <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          {o.kind === 'income'
+            ? 'Please confirm the final sum and the account the money goes into:'
+            : 'Please confirm the final sum and the account the money is taken out of:'}
+        </p>
+      )}
       {o.planNote && <div className="preview">📝 {o.planNote}</div>}
       {mode === 'later' && (
         <div className="chips">
@@ -227,7 +231,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       )}
       <Field label={mode === 'later' ? 'New date' : 'When'}><input type="date" value={date} onChange={e => setDate(e.target.value)} /></Field>
       <div className="row">
-        <Field label="How much"><input type="number" inputMode="decimal" value={amount} onChange={e => setAmount(+e.target.value)} /></Field>
+        <Field label={mode === 'confirm' ? 'Final sum' : 'How much'}><input type="number" inputMode="decimal" value={amount} onChange={e => setAmount(+e.target.value)} /></Field>
         <Field label="Currency"><CurrencySelect value={currency} onChange={setCurrency} /></Field>
       </div>
 
@@ -238,6 +242,11 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           onChange={id => setAccountId(id)}
           balances={balances}
         />
+        {!accountId && (
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
+            Please select an account
+          </p>
+        )}
       </Field>
 
       <Field label="Pot">
@@ -282,8 +291,20 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       <Field label="Comment (optional)">
         <textarea rows={2} value={note} placeholder={mode === 'later' ? 'Why later? e.g. waiting for the invoice' : 'What exactly was it? e.g. bought a new kettle too'} onChange={e => setNote(e.target.value)} />
       </Field>
-      <button className="btn primary wide" onClick={() => onSave(mode === 'later' ? 'postponed' : 'confirmed', patch)}>
-        {mode === 'later' ? '⏰ Move it' : selFunds?.isShort ? '✓ Confirm anyway (Overdraft)' : '✓ Confirm'}
+      <button
+        className="btn primary wide"
+        disabled={!valid}
+        onClick={() => onSave(mode === 'later' ? 'postponed' : 'confirmed', patch)}
+      >
+        {mode === 'later'
+          ? '⏰ Move it'
+          : selFunds?.isShort
+          ? '✓ Approve & Pay anyway (Overdraft)'
+          : o.kind === 'income'
+          ? '✓ Approve & Record Income'
+          : o.kind === 'saving'
+          ? '✓ Approve & Put Aside'
+          : '✓ Approve & Record Payment'}
       </button>
     </Modal>
   );

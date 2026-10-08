@@ -81,6 +81,18 @@ main { flex: 1; min-width: 0; }
 .tag.warn-badge { background: #FDE8E8; color: #9B1C1C; }
 
 /* pots */
+.consecutive-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  color: #166534;
+  border-radius: var(--r);
+  padding: 8px 14px;
+  font-size: 13px;
+  margin: 14px 0 -8px;
+}
 .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 24px 0 8px; }
 .summary > div { background: var(--card); border-radius: var(--r); padding: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 2px; }
 .summary span { color: var(--mute); font-size: 13px; font-weight: 600; }

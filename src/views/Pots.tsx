@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisMonth } from '../schedule';
 import { convert } from '../fx';
-import { calcAllAccountBalances, calcTotalLiquidBalance, findAccountShortfalls } from '../balances';
+import { calcAllAccountBalances, calcMonthStartingBalances, findAccountShortfalls } from '../balances';
 import type { Category, Occurrence } from '../types';
 import { Bar, Empty, HelpButton } from '../ui';
 import { CategoryModal } from './CategoryModal';
@@ -25,18 +25,21 @@ export function Pots() {
 
   const occ = useMemo(() => occurrences(plans, payments, ...monthRange(ym)).filter(o => o.status !== 'cancelled'), [plans, payments, ym]);
 
-  const balances = useMemo(
-    () => calcAllAccountBalances(accounts, payments, transfers, plans, stashes),
-    [accounts, payments, transfers, plans, stashes]
+  const curYm = thisMonth();
+  const isCurrentMonth = ym === curYm;
+  const isFutureMonth = ym > curYm;
+  const isPastMonth = ym < curYm;
+
+  const monthProjection = useMemo(
+    () => calcMonthStartingBalances(accounts, payments, transfers, plans, stashes, ym, cur),
+    [accounts, payments, transfers, plans, stashes, ym, cur]
   );
-  const totalLiquid = useMemo(
-    () => calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, cur),
-    [accounts, payments, transfers, plans, stashes, cur]
-  );
+  const displayStartBalance = monthProjection.totalLiquid;
+  const monthBalances = monthProjection.accountBalances;
 
   const shortfalls = useMemo(
-    () => findAccountShortfalls(accounts, occ, balances),
-    [accounts, occ, balances]
+    () => findAccountShortfalls(accounts, occ, monthBalances),
+    [accounts, occ, monthBalances]
   );
 
   const income = occ.filter(o => o.kind === 'income');
@@ -51,8 +54,10 @@ export function Pots() {
   const outPending = sum(outgoing.filter(o => o.status === 'pending'), cur);
 
   const flowNet = inPlan - outPlan;
-  // Month-end outlook: current funds in accounts + pending income - pending expenses
-  const projectedMonthEnd = totalLiquid + inPending - outPending;
+  // Month-end outlook: starting funds + pending/done net cash flow
+  const projectedMonthEnd = isPastMonth
+    ? displayStartBalance + inDone - outDone
+    : displayStartBalance + inPending - outPending;
   const isShortfall = projectedMonthEnd < 0;
   const isCoveredByBalance = !isShortfall && flowNet < 0;
 
@@ -81,35 +86,60 @@ export function Pots() {
         </div>
       </header>
 
+      {isFutureMonth && (
+        <div className="consecutive-badge">
+          <span>📅 <b>Consecutive projection:</b> Starting balance factors in pending plans up through {monthLabel(shiftMonth(ym, -1))}</span>
+        </div>
+      )}
 
       <div className="summary">
         <div>
-          <span>In accounts now</span>
-          <b>{money(totalLiquid, cur)}</b>
-          <small>{accounts.length} account{accounts.length === 1 ? '' : 's'} connected</small>
+          <span>{isCurrentMonth ? 'In accounts now' : isFutureMonth ? 'Projected starting balance' : 'Starting balance'}</span>
+          <b>{money(displayStartBalance, cur)}</b>
+          <small>
+            {isCurrentMonth
+              ? `${accounts.length} account${accounts.length === 1 ? '' : 's'} connected`
+              : isFutureMonth
+              ? `Adjusted for ${monthLabel(shiftMonth(ym, -1))} plans`
+              : `Balance at start of ${monthLabel(ym)}`}
+          </small>
         </div>
         <div>
           <span>Coming in</span>
           <b className="in">{money(inPlan, cur)}</b>
-          <small>{money(inDone, cur)} received{inPending > 0 ? ` · ${money(inPending, cur)} pending` : ''}</small>
+          <small>
+            {isCurrentMonth
+              ? `${money(inDone, cur)} received${inPending > 0 ? ` · ${money(inPending, cur)} pending` : ''}`
+              : isFutureMonth
+              ? `${inDone > 0 ? `${money(inDone, cur)} prepaid · ` : ''}${money(inPending, cur)} planned`
+              : `${money(inDone, cur)} received${inPending > 0 ? ` · ${money(inPending, cur)} unpaid` : ''}`}
+          </small>
         </div>
         <div>
           <span>Going out</span>
           <b>{money(outPlan, cur)}</b>
-          <small>{money(outDone, cur)} done{outPending > 0 ? ` · ${money(outPending, cur)} left` : ''}</small>
+          <small>
+            {isCurrentMonth
+              ? `${money(outDone, cur)} done${outPending > 0 ? ` · ${money(outPending, cur)} left` : ''}`
+              : isFutureMonth
+              ? `${outDone > 0 ? `${money(outDone, cur)} prepaid · ` : ''}${money(outPending, cur)} planned`
+              : `${money(outDone, cur)} paid${outPending > 0 ? ` · ${money(outPending, cur)} unpaid` : ''}`}
+          </small>
         </div>
         <div className={isShortfall ? 'badbox' : 'good'}>
           <span>
             {isShortfall
-              ? 'Short by'
+              ? isFutureMonth ? 'Projected shortfall' : 'Short by'
               : isCoveredByBalance
               ? 'Covered by balance'
-              : 'Left over at end'}
+              : isFutureMonth ? 'Projected month-end' : 'Left over at end'}
           </span>
           <b>{money(isShortfall ? Math.abs(projectedMonthEnd) : projectedMonthEnd, cur)}</b>
           <small>
             {isShortfall
-              ? "Accounts + pending income won't cover plans"
+              ? isFutureMonth
+                ? "Starting balance + planned income won't cover plans"
+                : "Accounts + pending income won't cover plans"
               : isCoveredByBalance
               ? `Plans exceed income by ${money(Math.abs(flowNet), cur)}, fully covered`
               : `+${money(flowNet, cur)} net surplus this month`}
@@ -131,7 +161,7 @@ export function Pots() {
                   Low balance alert: {s.accountName}
                 </div>
                 <div className="sub" style={{ color: '#B45309', fontSize: 13 }}>
-                  Available: <b>{money(s.currentBalance, s.accountCurrency)}</b> · Scheduled to pay this month: <b>{money(s.scheduledOutgoing, s.accountCurrency)}</b> (short by {money(s.shortBy, s.accountCurrency)})
+                  {isFutureMonth ? 'Projected available entering month: ' : 'Available: '}<b>{money(s.currentBalance, s.accountCurrency)}</b> · Scheduled to pay this month: <b>{money(s.scheduledOutgoing, s.accountCurrency)}</b> (short by {money(s.shortBy, s.accountCurrency)})
                 </div>
               </div>
               <button
