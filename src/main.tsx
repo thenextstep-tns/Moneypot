@@ -11,7 +11,7 @@ import { Accounts, Stashes } from './views/Money';
 import { LogBook } from './views/LogBook';
 import { OnboardingModal } from './views/OnboardingModal';
 import { AcceptInviteModal } from './views/SharingModal';
-import { CurrencySelect } from './ui';
+import { CurrencySelect, Modal } from './ui';
 import './styles.css';
 
 const TABS = [
@@ -19,7 +19,7 @@ const TABS = [
   ['cashflow', '📈', 'Cashflow', Cashflow],
   ['pots', '🫙', 'Pots', Pots],
   ['plan', '🗓️', 'Plan', Plans],
-  ['logbook', '📜', 'Log Book', LogBook],
+  ['logbook', '📜', 'Logbook', LogBook],
   ['stashes', '🐷', 'Stashes', Stashes],
   ['accounts', '💳', 'Accounts', Accounts],
 ] as const;
@@ -28,6 +28,7 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
   const [tab, setTab] = useState<string>('today');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [inviteCodeParam, setInviteCodeParam] = useState('');
   const [inviteIdParam, setInviteIdParam] = useState('');
   const { settings, setSettings } = useData();
@@ -55,6 +56,34 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
 
   return (
     <div className="shell">
+      {/* Mobile top bar */}
+      <header className="mobile-top-bar">
+        <div className="mobile-top-brand" onClick={() => setTab('today')}>
+          <img src="./logo.png" alt="Moneypot" className="mobile-brand-logo" />
+          <span className="mobile-brand-title">Moneypot</span>
+        </div>
+        <div className="mobile-top-actions">
+          <button
+            type="button"
+            className="mobile-join-btn"
+            onClick={() => setShowAcceptInvite(true)}
+            title="Join shared pot or stash"
+          >
+            <span>👥</span>
+            <span>Join</span>
+          </button>
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setShowMobileMenu(true)}
+            title="Menu & settings"
+            aria-label="Menu"
+          >
+            ☰
+          </button>
+        </div>
+      </header>
+
       <nav className="nav">
         <div className="logo">
           <img src="./logo.png" alt="Moneypot" className="brand-logo" />
@@ -62,11 +91,12 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
         </div>
         {TABS.map(([id, icon, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
-            <span>{icon}</span>{label}
+            <span className="nav-icon">{icon}</span>
+            <span className="nav-label">{label}</span>
           </button>
         ))}
 
-        <div style={{ margin: '8px 0', borderTop: '1px solid var(--line)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="nav-extra" style={{ margin: '8px 0', borderTop: '1px solid var(--line)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
           <button
             type="button"
             className="guide-nav-btn"
@@ -93,6 +123,7 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
           <button className="btn ghost" onClick={onExit}>{demo ? 'Exit demo' : 'Sign out'}</button>
         </div>
       </nav>
+
       <main><View /></main>
 
       {showOnboarding && <OnboardingModal onClose={() => setShowOnboarding(false)} />}
@@ -106,6 +137,66 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
             setInviteCodeParam('');
           }}
         />
+      )}
+
+      {showMobileMenu && (
+        <Modal title="Menu & Settings" onClose={() => setShowMobileMenu(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#F8FAFC', borderRadius: 12, border: '1px solid #E2E8F0' }}>
+              <img src="./logo.png" alt="Moneypot" style={{ width: 34, height: 34, objectFit: 'contain' }} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Moneypot</div>
+                <div style={{ fontSize: 12, color: 'var(--mute)' }}>
+                  {demo ? '🎮 Demo mode' : user?.displayName || user?.email || 'Logged in'}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn"
+              style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', fontSize: 14, fontWeight: 600 }}
+              onClick={() => { setShowMobileMenu(false); setShowAcceptInvite(true); }}
+            >
+              <span style={{ fontSize: 18 }}>👥</span>
+              <span>Join shared pot or stash</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', fontSize: 14, fontWeight: 600 }}
+              onClick={() => { setShowMobileMenu(false); setShowOnboarding(true); }}
+            >
+              <span style={{ fontSize: 18 }}>💡</span>
+              <span>How Moneypot Works</span>
+            </button>
+
+            <div style={{ padding: '12px 14px', background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Main currency</span>
+              <CurrencySelect value={settings.currency} onChange={c => setSettings({ currency: c })} />
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {demo && (
+                <button
+                  type="button"
+                  className="btn ghost wide"
+                  onClick={() => { setShowMobileMenu(false); resetDemo(); }}
+                >
+                  Reset demo data
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn ghost wide danger"
+                onClick={() => { setShowMobileMenu(false); onExit(); }}
+              >
+                {demo ? 'Exit demo' : 'Sign out'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

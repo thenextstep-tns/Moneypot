@@ -7,7 +7,7 @@ import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, Hel
 import { EmojiPicker } from '../emojis';
 import { calcAccountBalance, calcProjectedAccountBalance } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
-import { SharingModal } from './SharingModal';
+import { AcceptInviteModal, SharingModal } from './SharingModal';
 
 export { calcAccountBalance };
 
@@ -17,6 +17,7 @@ const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cas
 export function Stashes() {
   const { stashes, plans, payments } = useData();
   const [edit, setEdit] = useState<Stash | 'new' | null>(null);
+  const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const saved = (s: Stash) => s.startAmount + payments
     .filter(p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id)
@@ -32,7 +33,19 @@ export function Stashes() {
           </h1>
           <p className="muted">Money you're putting aside for something.</p>
         </div>
-        <button className="btn primary" onClick={() => setEdit('new')}>+ New stash</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setShowAcceptInvite(true)}
+            title="Join a shared stash using an invite code"
+          >
+            <span>👥</span>
+            <span>Join shared stash</span>
+          </button>
+          <button className="btn primary" onClick={() => setEdit('new')}>+ New stash</button>
+        </div>
       </header>
       {stashes.length === 0 && <Empty emoji="🐷" title="No stashes yet" text="A safety cushion of 3 months of expenses is a great first goal." />}
       <div className="grid">
@@ -55,6 +68,7 @@ export function Stashes() {
         })}
       </div>
       {edit && <StashForm stash={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
+      {showAcceptInvite && <AcceptInviteModal onClose={() => setShowAcceptInvite(false)} />}
       {helpOpen && <ScreenHelpModal screenKey="stashes" onClose={() => setHelpOpen(false)} />}
     </div>
   );

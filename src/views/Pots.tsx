@@ -8,7 +8,7 @@ import { Bar, Empty, HelpButton } from '../ui';
 import { CategoryModal } from './CategoryModal';
 import { TransferModal } from './Money';
 import { ScreenHelpModal } from './ScreenHelpModal';
-import { SharingModal } from './SharingModal';
+import { AcceptInviteModal, SharingModal } from './SharingModal';
 
 const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + convert(o.amount, o.currency, targetCur), 0);
 
@@ -19,6 +19,7 @@ export function Pots() {
   const [open, setOpen] = useState<string | null>(null);
   const [editingCat, setEditingCat] = useState<Category | 'new' | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [sharingItem, setSharingItem] = useState<Category | null>(null);
   const cur = settings.currency;
@@ -80,8 +81,18 @@ export function Pots() {
           </h1>
           <button className="icon" onClick={() => setYm(shiftMonth(ym, 1))}>›</button>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {ym !== thisMonth() && <button className="btn ghost" onClick={() => setYm(thisMonth())}>Back to now</button>}
+          <button
+            type="button"
+            className="btn"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setShowAcceptInvite(true)}
+            title="Join a shared pot using an invite code"
+          >
+            <span>👥</span>
+            <span>Join shared pot</span>
+          </button>
           <button className="btn primary" onClick={() => setEditingCat('new')}>+ New pot</button>
         </div>
       </header>
@@ -247,6 +258,10 @@ export function Pots() {
 
       {sharingItem && (
         <SharingModal type="pot" item={sharingItem} onClose={() => setSharingItem(null)} />
+      )}
+
+      {showAcceptInvite && (
+        <AcceptInviteModal onClose={() => setShowAcceptInvite(false)} />
       )}
     </div>
 
