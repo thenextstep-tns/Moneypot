@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { Account, Payment } from './types';
+import type { Account, Payment, Stash } from './types';
 import { dayLabel, money, today } from './schedule';
 import { uid, useData } from './store';
 import { calcAccountBalance } from './balances';
@@ -269,23 +269,46 @@ export function AccountForm({
  */
 export function AccountCardsSelect({
   accounts,
+  stashes,
   value,
   onChange,
   balances,
   targetDate,
   projectedBalances,
+  allowStashes = true,
 }: {
   accounts: Account[];
+  stashes?: Stash[];
   value?: string;
   onChange: (id: string) => void;
   balances?: Map<string, number>;
   targetDate?: string;
   projectedBalances?: Map<string, { current: number; projected: number }> | Map<string, number>;
+  allowStashes?: boolean;
 }) {
   const [showAdd, setShowAdd] = useState(false);
 
-  // An account must always be selected. Fallback to first available account.
-  const activeId = value && accounts.some(a => a.id === value) ? value : accounts[0]?.id;
+  // Available instant access stashes (personal stashes where isInstantAccess !== false)
+  const instantStashes = useMemo(() => {
+    if (!allowStashes || !stashes) return [];
+    return stashes.filter(s => s.isInstantAccess !== false && (!s.sharedWith || s.sharedWith.length === 0));
+  }, [allowStashes, stashes]);
+
+  // Selected stash (might also be a shared stash if passed directly as value)
+  const selectedStash = useMemo(() => {
+    if (!value || !stashes) return undefined;
+    return stashes.find(s => `stash_${s.id}` === value || s.id === value);
+  }, [value, stashes]);
+
+  const displayedStashes = useMemo(() => {
+    if (!selectedStash) return instantStashes;
+    if (instantStashes.some(s => s.id === selectedStash.id)) return instantStashes;
+    return [selectedStash, ...instantStashes];
+  }, [instantStashes, selectedStash]);
+
+  const isValueValid = (value && accounts.some(a => a.id === value)) ||
+    (value && stashes && stashes.some(s => `stash_${s.id}` === value || s.id === value));
+  const activeId = isValueValid ? value : accounts[0]?.id;
   const isFuture = !!targetDate && targetDate > today();
 
   return (
@@ -304,7 +327,6 @@ export function AccountCardsSelect({
               projBal = entry.projected;
             }
           }
-          const hasProjection = isFuture && projBal !== undefined;
           const icon = ACC_ICONS[a.type] ?? '💳';
 
           return (
@@ -356,6 +378,73 @@ export function AccountCardsSelect({
           </div>
         </button>
       </div>
+
+      {displayedStashes.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⚡ Instant Access Stashes</span>
+            <span style={{ fontSize: 10, fontWeight: 500, background: '#F1F5F9', padding: '1px 6px', borderRadius: 4 }}>
+              Can pay directly from these
+            </span>
+          </div>
+          <div className="account-cards-select">
+            {displayedStashes.map(s => {
+              const stashKey = `stash_${s.id}`;
+              const isSel = activeId === stashKey || activeId === s.id;
+              const bal = balances?.get(stashKey) ?? balances?.get(s.id);
+
+              let projBal: number | undefined;
+              if (projectedBalances) {
+                const entry = projectedBalances.get(stashKey) ?? projectedBalances.get(s.id);
+                if (typeof entry === 'number') {
+                  projBal = entry;
+                } else if (entry && typeof entry === 'object' && 'projected' in entry) {
+                  projBal = entry.projected;
+                }
+              }
+
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`account-select-card ${isSel ? 'selected' : ''}`}
+                  style={{ ['--acc-c' as string]: '#2FA36B' }}
+                  onClick={() => onChange(stashKey)}
+                >
+                  <div className="acc-card-icon">{s.emoji || '🐷'}</div>
+                  <div className="acc-card-info">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="acc-card-name">{s.name}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, background: '#ECFDF5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>
+                        {s.sharedWith?.length ? 'Shared Stash' : 'Stash'}
+                      </span>
+                    </div>
+                    <div className="acc-card-sub" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span>
+                        {s.currency}
+                        {bal !== undefined ? ` · Current: ${money(bal, s.currency)}` : ''}
+                      </span>
+                      {isFuture && targetDate && projBal !== undefined && (
+                        <span
+                          style={{
+                            color: projBal < 0 ? '#DC2626' : '#2563EB',
+                            fontWeight: 600,
+                            fontSize: 11,
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          🗓 Proj ({dayLabel(targetDate)}): {money(projBal, s.currency)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isSel && <span className="acc-card-check">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {showAdd && (
         <AccountForm

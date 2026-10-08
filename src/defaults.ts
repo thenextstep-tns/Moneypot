@@ -43,8 +43,8 @@ export const DEMO = {
     { id: 'savings', name: 'Savings account', type: 'savings', institution: 'Raiffeisen', currency: 'EUR', startBalance: 500, color: '#2FA36B' },
   ] as Account[],
   stashes: [
-    { id: 'cushion', name: 'Safety cushion', emoji: '🛟', target: 3000, currency: 'EUR', accountId: 'savings', startAmount: 500 },
-    { id: 'holiday', name: 'Summer holiday', emoji: '🏖️', target: 1200, currency: 'EUR', accountId: 'savings', startAmount: 0 },
+    { id: 'cushion', name: 'Safety cushion', emoji: '🛟', target: 3000, currency: 'EUR', accountId: 'savings', startAmount: 500, isInstantAccess: true },
+    { id: 'holiday', name: 'Summer holiday', emoji: '🏖️', target: 1200, currency: 'EUR', accountId: 'savings', startAmount: 0, isInstantAccess: true },
   ] as Stash[],
   transfers: [
     {

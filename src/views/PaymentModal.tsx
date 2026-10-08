@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
 import { dayLabel, money, today } from '../schedule';
-import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, checkAccountFunds } from '../balances';
+import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance, checkAccountFunds } from '../balances';
 import type { Payment, Plan, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Field, Modal } from '../ui';
 import { EmojiPicker } from '../emojis';
@@ -56,7 +56,7 @@ export function OneOffPaymentModal({
   };
 
   const funds = accountId
-    ? checkAccountFunds(accountId, Number(amount) || 0, currency, accounts, balances)
+    ? checkAccountFunds(accountId, Number(amount) || 0, currency, accounts, balances, stashes)
     : null;
 
   const isFuture = date > today();
@@ -66,14 +66,47 @@ export function OneOffPaymentModal({
     return calcAllProjectedAccountBalances(accounts, date, payments, transfers, plans, stashes);
   }, [accounts, date, payments, transfers, plans, stashes, isFuture]);
 
-  const selAcc = accounts.find(a => a.id === accountId);
-  const selBals = selAcc
-    ? calcProjectedAccountBalance(selAcc, date, payments, transfers, plans, stashes)
-    : null;
+  const selParty = useMemo(() => {
+    if (!accountId) return null;
+    if (accountId.startsWith('stash_')) {
+      const sId = accountId.replace('stash_', '');
+      const st = stashes.find(s => s.id === sId);
+      if (!st) return null;
+      return {
+        name: `${st.emoji} ${st.name} (Stash)`,
+        currency: st.currency,
+        isStash: true,
+        stash: st,
+      };
+    }
+    const acc = accounts.find(a => a.id === accountId);
+    if (!acc) return null;
+    return {
+      name: acc.name,
+      currency: acc.currency,
+      isStash: false,
+      acc,
+    };
+  }, [accountId, accounts, stashes]);
+
+  const selBals = useMemo(() => {
+    if (!selParty) return null;
+    if (selParty.isStash && selParty.stash) {
+      return calcProjectedStashBalance(selParty.stash, date, payments, transfers, plans);
+    }
+    if (selParty.acc) {
+      return calcProjectedAccountBalance(selParty.acc, date, payments, transfers, plans, stashes);
+    }
+    return null;
+  }, [selParty, date, payments, transfers, plans, stashes]);
 
   const handleSave = (addQuickTemplate: boolean) => {
     if (!valid) return;
     const numAmount = Number(amount);
+    const targetStashId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : undefined;
+    const targetStash = targetStashId ? stashes.find(s => s.id === targetStashId) : undefined;
+    const isSharedStash = Boolean(targetStash?.sharedWith && targetStash.sharedWith.length > 0);
+    const isShared = isSharedStash || Boolean(selCat?.sharedWith && selCat.sharedWith.length > 0);
 
     if (isFuture) {
       // 1. Record as a planned one-off payment so it does NOT affect balances immediately,
@@ -85,6 +118,8 @@ export function OneOffPaymentModal({
         categoryId,
         subcategory: subcategory || undefined,
         accountId: accountId || undefined,
+        stashId: targetStashId,
+        isShared,
         amount: numAmount,
         currency,
         freq: 'once',
@@ -106,6 +141,8 @@ export function OneOffPaymentModal({
         amount: numAmount,
         currency,
         accountId: accountId || undefined,
+        stashId: targetStashId,
+        isShared,
         name: name.trim(),
         kind: 'expense',
         categoryId,
@@ -291,9 +328,32 @@ export function OneOffPaymentModal({
         </Field>
       )}
 
+      {/* If current pot is linked to a shared stash, show quick helper */}
+      {(() => {
+        const sharedStashForCat = stashes.find(s => s.categoryId === categoryId && s.sharedWith && s.sharedWith.length > 0);
+        if (!sharedStashForCat) return null;
+        const isUsingStash = accountId === `stash_${sharedStashForCat.id}`;
+        return (
+          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '8px 12px', margin: '-4px 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>
+              👥 Linked shared stash: <b>{sharedStashForCat.emoji} {sharedStashForCat.name}</b>
+            </span>
+            <button
+              type="button"
+              className={`btn ${isUsingStash ? 'ok' : 'ghost'}`}
+              style={{ fontSize: 11, padding: '3px 8px' }}
+              onClick={() => setAccountId(`stash_${sharedStashForCat.id}`)}
+            >
+              {isUsingStash ? '✓ Paid from Shared Stash' : 'Pay from Shared Stash'}
+            </button>
+          </div>
+        );
+      })()}
+
       <Field label="Paid from">
         <AccountCardsSelect
           accounts={accounts}
+          stashes={stashes}
           value={accountId}
           onChange={id => setAccountId(id)}
           balances={balances}
@@ -301,7 +361,7 @@ export function OneOffPaymentModal({
           projectedBalances={projectedBalances}
         />
 
-        {selAcc && isFuture && selBals && (
+        {selParty && isFuture && selBals && (
           <div
             style={{
               background: '#F8FAFC',
@@ -313,13 +373,13 @@ export function OneOffPaymentModal({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ color: 'var(--mute)' }}>Current balance ({selAcc.name}):</span>
-              <b>{money(selBals.current, selAcc.currency)}</b>
+              <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
+              <b>{money(selBals.current, selParty.currency)}</b>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: Number(amount) > 0 ? 4 : 0 }}>
               <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
               <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
-                {money(selBals.projected, selAcc.currency)}
+                {money(selBals.projected, selParty.currency)}
               </b>
             </div>
             {Number(amount) > 0 && (
@@ -341,7 +401,7 @@ export function OneOffPaymentModal({
                         : '#166534',
                   }}
                 >
-                  {money(selBals.projected - Number(amount), selAcc.currency)}
+                  {money(selBals.projected - Number(amount), selParty.currency)}
                 </b>
               </div>
             )}
@@ -355,15 +415,15 @@ export function OneOffPaymentModal({
         </div>
       )}
 
-      {isFuture && selAcc && Number(amount) > 0 && selBals && selBals.projected < Number(amount) && (
+      {isFuture && selParty && Number(amount) > 0 && selBals && selBals.projected < Number(amount) && (
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13 }}>
-          ⚠️ <b>Low projected balance:</b> On {dayLabel(date)}, {selAcc.name} is projected to have {money(selBals.projected, selAcc.currency)}, which is {money(Number(amount) - selBals.projected, selAcc.currency)} short.
+          ⚠️ <b>Low projected balance:</b> On {dayLabel(date)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(Number(amount) - selBals.projected, selParty.currency)} short.
         </div>
       )}
 
-      {isFuture && selAcc && Number(amount) > 0 && selBals && selBals.current < Number(amount) && selBals.projected >= Number(amount) && (
+      {isFuture && selParty && Number(amount) > 0 && selBals && selBals.current < Number(amount) && selBals.projected >= Number(amount) && (
         <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13 }}>
-          ℹ️ Current balance is {money(selBals.current, selAcc.currency)}, but projected to reach {money(selBals.projected, selAcc.currency)} by {dayLabel(date)} (sufficient funds expected).
+          ℹ️ Current balance is {money(selBals.current, selParty.currency)}, but projected to reach {money(selBals.projected, selParty.currency)} by {dayLabel(date)} (sufficient funds expected).
         </div>
       )}
 
@@ -408,7 +468,7 @@ export function TemplateModal({
   template?: QuickTemplate;
   onClose: () => void;
 }) {
-  const { categories, accounts, settings, save, remove } = useData();
+  const { categories, accounts, stashes, settings, save, remove } = useData();
   const expenseCats = categories.filter(c => c.kind === 'expense');
 
   const [name, setName] = useState(template?.name ?? '');
@@ -556,6 +616,7 @@ export function TemplateModal({
       <Field label="Paid from (default account)">
         <AccountCardsSelect
           accounts={accounts}
+          stashes={stashes}
           value={accountId}
           onChange={id => setAccountId(id)}
         />

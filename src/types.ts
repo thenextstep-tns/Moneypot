@@ -65,6 +65,7 @@ export interface Stash extends Owned {
   ownerEmail?: string;          // email of the creator
   categoryId?: string;          // default pot for this stash (e.g. 'savings')
   subcategory?: string;         // default subcategory (e.g. stash name)
+  isInstantAccess?: boolean;    // true = allows paying directly from this stash (default true for personal stashes)
 }
 
 /** Invitation to share a pot or stash with an email and one-off masked access code */

@@ -115,8 +115,14 @@ export function calculateCashflowRange(
   // Helper: compute delta for an account from a transfer
   const getTransferDelta = (tr: Transfer, a: Account): number => {
     let d = 0;
-    if (tr.fromAccountId === a.id) d -= tr.fromAmount;
-    if (tr.toAccountId === a.id) d += tr.toAmount;
+    if (tr.fromAccountId === a.id) {
+      const amt = tr.fromCurrency && tr.fromCurrency !== a.currency ? convert(tr.fromAmount, tr.fromCurrency, a.currency) : tr.fromAmount;
+      d -= amt;
+    }
+    if (tr.toAccountId === a.id) {
+      const amt = tr.toCurrency && tr.toCurrency !== a.currency ? convert(tr.toAmount, tr.toCurrency, a.currency) : tr.toAmount;
+      d += amt;
+    }
     return d;
   };
 

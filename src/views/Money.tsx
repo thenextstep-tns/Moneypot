@@ -5,23 +5,22 @@ import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
-import { calcAccountBalance, calcProjectedAccountBalance } from '../balances';
+import { calcAccountBalance, calcProjectedAccountBalance, calcStashBalance, calcProjectedStashBalance } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
 
-export { calcAccountBalance };
+export { calcAccountBalance, calcStashBalance };
 
 const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cash: '💵', wallet: '👛', savings: '🐷' };
 
 /** Savings goals */
 export function Stashes() {
-  const { user, stashes, plans, payments } = useData();
+  const { user, stashes, plans, payments, transfers } = useData();
   const [edit, setEdit] = useState<Stash | 'new' | null>(null);
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
+  const [transferStash, setTransferStash] = useState<Stash | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const saved = (s: Stash) => s.startAmount + payments
-    .filter(p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id)
-    .reduce((a, p) => a + p.amount, 0);
+  const saved = (s: Stash) => calcStashBalance(s, payments, transfers, plans);
 
   const getStashContributors = (s: Stash) => {
     const pays = payments.filter(
@@ -80,11 +79,15 @@ export function Stashes() {
         {stashes.map(s => {
           const v = saved(s);
           const contribs = getStashContributors(s);
+          const isInstant = s.isInstantAccess !== false && (!s.sharedWith || s.sharedWith.length === 0);
           return (
             <button key={s.id} className="card click" onClick={() => setEdit(s)}>
               <div className="big">{s.emoji}</div>
               <div className="title">
                 {s.name}
+                {isInstant && (
+                  <span className="tag" style={{ background: '#ECFDF5', color: '#065F46', fontSize: 11 }}>⚡ Instant Access</span>
+                )}
                 {s.sharedWith && s.sharedWith.length > 0 && (
                   <span className="tag shared-tag">👥 Shared ({s.sharedWith.length})</span>
                 )}
@@ -101,22 +104,45 @@ export function Stashes() {
                   ))}
                 </div>
               )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'flex-end', borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+                <span
+                  className="btn ok"
+                  style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTransferStash(s);
+                  }}
+                  title="Withdraw to account or deposit into this stash"
+                >
+                  <span>⇄</span>
+                  <span>Move money / Withdraw</span>
+                </span>
+              </div>
             </button>
           );
         })}
       </div>
       {edit && <StashForm stash={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
       {showAcceptInvite && <AcceptInviteModal onClose={() => setShowAcceptInvite(false)} />}
+      {transferStash && <TransferModal initialFromId={`stash_${transferStash.id}`} onClose={() => setTransferStash(null)} />}
       {helpOpen && <ScreenHelpModal screenKey="stashes" onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
 
 function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
-  const { user, accounts, categories, settings, payments, plans, save, remove } = useData();
+  const { user, accounts, categories, settings, payments, plans, transfers, save, remove } = useData();
   const savingCats = categories.filter(c => c.kind === 'saving');
+  const expenseCats = categories.filter(c => c.kind === 'expense');
   const defaultCatId = savingCats[0]?.id || 'savings';
   const [showSharing, setShowSharing] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+
+  const isSharedStash = Boolean(stash?.sharedWith && stash.sharedWith.length > 0);
+  const initialInstant = stash
+    ? (stash.isInstantAccess !== false && !isSharedStash)
+    : true;
+
   const [s, setS] = useState<Stash>(stash ?? {
     id: uid(),
     name: '',
@@ -125,9 +151,11 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
     currency: settings.currency,
     startAmount: 0,
     accountId: accounts.find(a => a.type === 'savings')?.id,
-    categoryId: defaultCatId,
-    subcategory: '',
+    categoryId: undefined,
+    subcategory: undefined,
+    isInstantAccess: true,
   });
+  const [isInstant, setIsInstant] = useState(initialInstant);
   const [monthly, setMonthly] = useState(0);
   const set = (p: Partial<Stash>) => setS(x => ({ ...x, ...p }));
 
@@ -158,17 +186,23 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   }, [stash, payments, plans, user]);
 
   const submit = () => {
-    const finalCatId = s.categoryId || defaultCatId;
-    const finalSubcat = s.subcategory || s.name.trim();
-    const finalStash = { ...s, categoryId: finalCatId, subcategory: finalSubcat };
+    const finalIsInstant = !isSharedStash && isInstant;
+    const finalCatId = finalIsInstant ? undefined : (s.categoryId || defaultCatId);
+    const finalSubcat = finalIsInstant ? undefined : (s.subcategory || s.name.trim());
+    const finalStash: Stash = {
+      ...s,
+      isInstantAccess: finalIsInstant,
+      categoryId: finalCatId,
+      subcategory: finalSubcat,
+    };
     save('stashes', finalStash);
     if (monthly > 0) {
       save('plans', {
         id: uid(),
         name: s.name,
         kind: 'saving',
-        categoryId: finalCatId,
-        subcategory: finalSubcat,
+        categoryId: finalCatId || defaultCatId,
+        subcategory: finalSubcat || s.name.trim(),
         stashId: s.id,
         amount: monthly,
         currency: s.currency,
@@ -191,27 +225,73 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
         <Field label="Currency"><CurrencySelect value={s.currency} onChange={v => set({ currency: v })} /></Field>
       </div>
       <Field label="Already have"><input type="number" value={s.startAmount || ''} onChange={e => set({ startAmount: +e.target.value })} /></Field>
+
+      {/* Instant access parameter */}
+      <div style={{ margin: '6px 0 14px' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: isSharedStash ? 'not-allowed' : 'pointer', background: '#F8FAFC', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--line)' }}>
+          <input
+            type="checkbox"
+            checked={isSharedStash ? false : isInstant}
+            disabled={isSharedStash}
+            onChange={e => {
+              const val = e.target.checked;
+              setIsInstant(val);
+              if (val) {
+                set({ categoryId: undefined, subcategory: undefined });
+              } else if (!s.categoryId) {
+                set({ categoryId: defaultCatId });
+              }
+            }}
+            style={{ marginTop: 2 }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⚡ Instant Access Stash</span>
+              {isInstant && !isSharedStash && <span style={{ fontSize: 10, background: '#ECFDF5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>Default</span>}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
+              {isSharedStash
+                ? 'Shared stashes cannot be general instant access stashes; they must be tied to a specific pot.'
+                : 'Allows paying directly from this stash like an account. Does not require an associated pot.'}
+            </div>
+          </div>
+        </label>
+      </div>
+
       {!stash && <Field label="Put aside every month (optional)" hint="We'll remind you each month"><input type="number" value={monthly || ''} onChange={e => setMonthly(+e.target.value)} /></Field>}
       <Field label="Where is it kept?">
         <AccountCardsSelect
           accounts={accounts}
           value={s.accountId}
           onChange={id => set({ accountId: id })}
+          allowStashes={false}
         />
       </Field>
-      <Field label="Associated Pot" hint="Default category for payments into this stash">
-        <select
-          value={s.categoryId || defaultCatId}
-          onChange={e => set({ categoryId: e.target.value })}
-        >
-          {savingCats.map(c => (
-            <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
-          ))}
-          {savingCats.length === 0 && <option value="savings">🌱 Savings & Stashes</option>}
-        </select>
-      </Field>
+
+      {/* Only show Associated Pot if NOT an Instant Access Stash (or if shared) */}
+      {(!isInstant || isSharedStash) && (
+        <Field label="Associated Pot" hint="Category for expenses or payments tied to this stash">
+          <select
+            value={s.categoryId || defaultCatId}
+            onChange={e => set({ categoryId: e.target.value })}
+          >
+            <optgroup label="🌱 Savings Pots">
+              {savingCats.map(c => (
+                <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+              ))}
+            </optgroup>
+            <optgroup label="💸 Expense Pots">
+              {expenseCats.map(c => (
+                <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+              ))}
+            </optgroup>
+            {savingCats.length === 0 && <option value="savings">🌱 Savings & Stashes</option>}
+          </select>
+        </Field>
+      )}
+
       <div className="note" style={{ margin: '8px 0 14px' }}>
-        💡 Stashes track money strictly by summing what has been put away (starting amount + confirmed payments). The linked account is just a reference of where it is physically held.
+        💡 Stashes act as dedicated money buckets. Transferring money between accounts and stashes adjusts your available account balances.
       </div>
       {stash && contribs.length > 0 && (
         <div style={{ background: '#F8FAFC', border: '1px solid var(--line)', borderRadius: 12, padding: 12, margin: '0 0 14px' }}>
@@ -230,16 +310,28 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       {stash && (
         <button
           type="button"
+          className="btn ok wide"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}
+          onClick={() => setTransferring(true)}
+        >
+          <span>⇄</span>
+          <span>Move / Withdraw money from this stash</span>
+        </button>
+      )}
+      {stash && (
+        <button
+          type="button"
           className="btn dashed wide"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}
           onClick={() => setShowSharing(true)}
         >
           <span>👥</span>
           <span>Share stash with others {s.sharedWith?.length ? `(${s.sharedWith.length})` : ''}</span>
         </button>
       )}
-      {stash && <button className="btn ghost wide danger" onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
+      {stash && <button className="btn ghost wide danger" style={{ marginTop: 8 }} onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
       {showSharing && <SharingModal type="stash" item={s} onClose={() => setShowSharing(false)} />}
+      {transferring && <TransferModal initialFromId={`stash_${stash!.id}`} onClose={() => setTransferring(false)} />}
     </Modal>
   );
 }
@@ -364,40 +456,78 @@ export function Accounts() {
   );
 }
 
-/** Modal to move money between accounts with differing currencies & exchange rates */
-export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onClose: () => void }) {
+/** Modal to move money between accounts and stashes with differing currencies & exchange rates */
+export function TransferModal({
+  transfer,
+  initialFromId,
+  initialToId,
+  onClose,
+}: {
+  transfer?: Transfer;
+  initialFromId?: string;
+  initialToId?: string;
+  onClose: () => void;
+}) {
   const { accounts, save, remove, payments, plans, stashes, transfers } = useData();
-  const [fromId, setFromId] = useState(transfer?.fromAccountId ?? accounts[0]?.id ?? '');
-  const [toId, setToId] = useState(transfer?.toAccountId ?? accounts.find(a => a.id !== fromId)?.id ?? accounts[1]?.id ?? '');
+
+  const allParties = useMemo(() => {
+    const list: { id: string; name: string; currency: string; type: 'account' | 'stash'; icon: string }[] = [];
+    for (const a of accounts) {
+      list.push({ id: a.id, name: a.name, currency: a.currency, type: 'account', icon: ICONS[a.type] || '💳' });
+    }
+    for (const s of stashes) {
+      list.push({ id: `stash_${s.id}`, name: `${s.name} (Stash)`, currency: s.currency, type: 'stash', icon: s.emoji || '🐷' });
+    }
+    return list;
+  }, [accounts, stashes]);
+
+  const defaultFrom = initialFromId || transfer?.fromAccountId || accounts[0]?.id || '';
+  const defaultTo = initialToId || transfer?.toAccountId || (defaultFrom.startsWith('stash_') ? accounts[0]?.id : (accounts.find(a => a.id !== defaultFrom)?.id || (stashes[0] ? `stash_${stashes[0].id}` : '')));
+
+  const [fromId, setFromId] = useState(defaultFrom);
+  const [toId, setToId] = useState(defaultTo);
   const [fromAmount, setFromAmount] = useState<number>(transfer?.fromAmount ?? 0);
   const [toAmount, setToAmount] = useState<number>(transfer?.toAmount ?? 0);
   const [date, setDate] = useState(transfer?.date ?? today());
   const [note, setNote] = useState(transfer?.note ?? '');
 
-  const fromAcc = accounts.find(a => a.id === fromId);
-  const toAcc = accounts.find(a => a.id === toId);
+  const fromParty = allParties.find(p => p.id === fromId);
+  const toParty = allParties.find(p => p.id === toId);
+
+  // Helper to fetch live & projected balances for an account or stash
+  const getPartyBals = (partyId: string) => {
+    if (partyId.startsWith('stash_')) {
+      const sId = partyId.replace('stash_', '');
+      const stash = stashes.find(s => s.id === sId);
+      if (!stash) return null;
+      return calcProjectedStashBalance(stash, date, payments, transfers, plans);
+    }
+    const acc = accounts.find(a => a.id === partyId);
+    if (!acc) return null;
+    return calcProjectedAccountBalance(acc, date, payments, transfers, plans, stashes);
+  };
 
   // Auto-suggest toAmount on fromAmount change if currencies differ and not manually altered
   const [userEditedTo, setUserEditedTo] = useState(!!transfer);
 
   useEffect(() => {
-    if (!userEditedTo && fromAcc && toAcc && fromAmount > 0) {
-      const converted = convert(fromAmount, fromAcc.currency, toAcc.currency);
+    if (!userEditedTo && fromParty && toParty && fromAmount > 0) {
+      const converted = convert(fromAmount, fromParty.currency, toParty.currency);
       setToAmount(Math.round(converted * 100) / 100);
     }
-  }, [fromAmount, fromAcc?.currency, toAcc?.currency, userEditedTo]);
+  }, [fromAmount, fromParty?.currency, toParty?.currency, userEditedTo]);
 
   const submit = () => {
-    if (!fromAcc || !toAcc || fromAmount <= 0 || toAmount <= 0 || fromId === toId) return;
+    if (!fromParty || !toParty || fromAmount <= 0 || toAmount <= 0 || fromId === toId) return;
     const t: Transfer = {
       id: transfer?.id ?? uid(),
       date,
       fromAccountId: fromId,
       toAccountId: toId,
       fromAmount: +fromAmount,
-      fromCurrency: fromAcc.currency,
+      fromCurrency: fromParty.currency,
       toAmount: +toAmount,
-      toCurrency: toAcc.currency,
+      toCurrency: toParty.currency,
       note: note.trim() || undefined,
       status: transfer?.status ?? 'confirmed',
       createdAt: transfer?.createdAt ?? Date.now(),
@@ -407,82 +537,112 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
   };
 
   const isFuture = date > today();
-  const fromBals = fromAcc ? calcProjectedAccountBalance(fromAcc, date, payments, transfers, plans, stashes) : null;
-  const toBals = toAcc ? calcProjectedAccountBalance(toAcc, date, payments, transfers, plans, stashes) : null;
+  const fromBals = fromParty ? getPartyBals(fromParty.id) : null;
+  const toBals = toParty ? getPartyBals(toParty.id) : null;
 
   const effectiveFromBal = isFuture ? (fromBals?.projected ?? 0) : (fromBals?.current ?? 0);
-  const isShort = !!fromAcc && fromAmount > 0 && fromAmount > effectiveFromBal;
+  const isShort = !!fromParty && fromAmount > 0 && fromAmount > effectiveFromBal;
 
   return (
-    <Modal title={transfer ? 'Edit transfer' : 'Move money between accounts'} onClose={onClose}>
+    <Modal title={transfer ? 'Edit transfer' : 'Move money'} onClose={onClose}>
       <Field label="When (Date)">
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
       </Field>
 
-      <Field label="From account">
+      <Field label="From (Source)">
         <select value={fromId} onChange={e => { setFromId(e.target.value); setUserEditedTo(false); }}>
-          {accounts.map(a => {
-            const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
-            return (
-              <option key={a.id} value={a.id} disabled={a.id === toId}>
-                {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
-              </option>
-            );
-          })}
+          <optgroup label="💳 Accounts">
+            {accounts.map(a => {
+              const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
+              return (
+                <option key={a.id} value={a.id} disabled={a.id === toId}>
+                  {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
+                </option>
+              );
+            })}
+          </optgroup>
+          {stashes.length > 0 && (
+            <optgroup label="🐷 Stashes">
+              {stashes.map(s => {
+                const key = `stash_${s.id}`;
+                const b = calcProjectedStashBalance(s, date, payments, transfers, plans);
+                return (
+                  <option key={key} value={key} disabled={key === toId}>
+                    {s.emoji} {s.name} ({s.currency}) · Current: {money(b.current, s.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, s.currency)}` : ''}
+                  </option>
+                );
+              })}
+            </optgroup>
+          )}
         </select>
       </Field>
 
-      <Field label="To account">
+      <Field label="To (Destination)">
         <select value={toId} onChange={e => { setToId(e.target.value); setUserEditedTo(false); }}>
-          {accounts.map(a => {
-            const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
-            return (
-              <option key={a.id} value={a.id} disabled={a.id === fromId}>
-                {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
-              </option>
-            );
-          })}
+          <optgroup label="💳 Accounts">
+            {accounts.map(a => {
+              const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
+              return (
+                <option key={a.id} value={a.id} disabled={a.id === fromId}>
+                  {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
+                </option>
+              );
+            })}
+          </optgroup>
+          {stashes.length > 0 && (
+            <optgroup label="🐷 Stashes">
+              {stashes.map(s => {
+                const key = `stash_${s.id}`;
+                const b = calcProjectedStashBalance(s, date, payments, transfers, plans);
+                return (
+                  <option key={key} value={key} disabled={key === fromId}>
+                    {s.emoji} {s.name} ({s.currency}) · Current: {money(b.current, s.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, s.currency)}` : ''}
+                  </option>
+                );
+              })}
+            </optgroup>
+          )}
         </select>
       </Field>
 
       {/* Projection summary card */}
-      {fromAcc && toAcc && fromBals && toBals && (
+      {fromParty && toParty && fromBals && toBals && (
         <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 14px', margin: '4px 0 14px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mute)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
-            <span>{isFuture ? `🗓 Projected balances on ${dayLabel(date)}` : '💳 Live account balances'}</span>
+            <span>{isFuture ? `🗓 Projected balances on ${dayLabel(date)}` : '💳 Live balances'}</span>
             {isFuture && <span style={{ color: 'var(--brand)', textTransform: 'none', fontWeight: 600 }}>Includes scheduled transactions</span>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>From: {fromAcc.name}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>From: {fromParty.icon} {fromParty.name}</div>
               <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
-                Current: <b>{money(fromBals.current, fromAcc.currency)}</b>
+                Current: <b>{money(fromBals.current, fromParty.currency)}</b>
               </div>
               {isFuture && (
                 <div style={{ fontSize: 11, color: fromBals.projected < 0 ? '#DC2626' : '#2563EB', marginTop: 2, fontWeight: 600 }}>
-                  Projected: <b>{money(fromBals.projected, fromAcc.currency)}</b>
+                  Projected: <b>{money(fromBals.projected, fromParty.currency)}</b>
                 </div>
               )}
               {fromAmount > 0 && (
                 <div style={{ fontSize: 11, color: effectiveFromBal - fromAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
-                  After move: <b>{money(effectiveFromBal - fromAmount, fromAcc.currency)}</b>
+                  After move: <b>{money(effectiveFromBal - fromAmount, fromParty.currency)}</b>
                 </div>
               )}
             </div>
 
             <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>To: {toAcc.name}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>To: {toParty.icon} {toParty.name}</div>
               <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
-                Current: <b>{money(toBals.current, toAcc.currency)}</b>
+                Current: <b>{money(toBals.current, toParty.currency)}</b>
               </div>
               {isFuture && (
                 <div style={{ fontSize: 11, color: '#2563EB', marginTop: 2, fontWeight: 600 }}>
-                  Projected: <b>{money(toBals.projected, toAcc.currency)}</b>
+                  Projected: <b>{money(toBals.projected, toParty.currency)}</b>
                 </div>
               )}
               {toAmount > 0 && (
                 <div style={{ fontSize: 11, color: '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
-                  After move: <b>{money((isFuture ? toBals.projected : toBals.current) + toAmount, toAcc.currency)}</b>
+                  After move: <b>{money((isFuture ? toBals.projected : toBals.current) + toAmount, toParty.currency)}</b>
                 </div>
               )}
             </div>
@@ -491,7 +651,7 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
       )}
 
       <div className="row even">
-        <Field label={`Amount taken out (${fromAcc?.currency ?? ''})`}>
+        <Field label={`Amount taken out (${fromParty?.currency ?? ''})`}>
           <input
             type="number"
             inputMode="decimal"
@@ -500,7 +660,7 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
             onChange={e => setFromAmount(+e.target.value)}
           />
         </Field>
-        <Field label={`Amount put in (${toAcc?.currency ?? ''})`} hint="Editable for exact rate/fees">
+        <Field label={`Amount put in (${toParty?.currency ?? ''})`} hint="Editable for exact rate/fees">
           <input
             type="number"
             inputMode="decimal"
@@ -515,37 +675,37 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>⚠️</span>
           <span>
-            <strong>Insufficient {isFuture ? 'projected ' : ''}funds in {fromAcc?.name}:</strong> {isFuture ? `Projected balance on ${dayLabel(date)}` : 'Available balance'} is {money(effectiveFromBal, fromAcc?.currency)}, which is {money(fromAmount - effectiveFromBal, fromAcc?.currency)} short.
+            <strong>Insufficient {isFuture ? 'projected ' : ''}funds in {fromParty?.name}:</strong> {isFuture ? `Projected balance on ${dayLabel(date)}` : 'Available balance'} is {money(effectiveFromBal, fromParty?.currency)}, which is {money(fromAmount - effectiveFromBal, fromParty?.currency)} short.
           </span>
         </div>
       )}
 
-      {isFuture && fromAcc && fromAmount > 0 && fromAmount > (fromBals?.current ?? 0) && fromAmount <= (fromBals?.projected ?? 0) && (
+      {isFuture && fromParty && fromAmount > 0 && fromAmount > (fromBals?.current ?? 0) && fromAmount <= (fromBals?.projected ?? 0) && (
         <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>ℹ️</span>
           <span>
-            Current balance is {money(fromBals?.current ?? 0, fromAcc.currency)}, but projected to reach {money(fromBals?.projected ?? 0, fromAcc.currency)} by {dayLabel(date)} from scheduled incoming money.
+            Current balance is {money(fromBals?.current ?? 0, fromParty.currency)}, but projected to reach {money(fromBals?.projected ?? 0, fromParty.currency)} by {dayLabel(date)} from scheduled incoming money.
           </span>
         </div>
       )}
 
-      {fromAcc && toAcc && fromAcc.currency !== toAcc.currency && fromAmount > 0 && toAmount > 0 && (
+      {fromParty && toParty && fromParty.currency !== toParty.currency && fromAmount > 0 && toAmount > 0 && (
         <div className="preview" style={{ fontSize: 13 }}>
-          💱 Effective rate: 1 {fromAcc.currency} = {(toAmount / fromAmount).toFixed(4)} {toAcc.currency}
+          💱 Effective rate: 1 {fromParty.currency} = {(toAmount / fromAmount).toFixed(4)} {toParty.currency}
         </div>
       )}
 
       <Field label="Note (optional)">
         <input
           value={note}
-          placeholder="e.g. Card top-up, currency conversion, withdrawal…"
+          placeholder="e.g. Card top-up, withdrawal, savings deposit…"
           onChange={e => setNote(e.target.value)}
         />
       </Field>
 
       <button
         className="btn primary wide"
-        disabled={!fromAcc || !toAcc || fromId === toId || fromAmount <= 0 || toAmount <= 0 || isShort}
+        disabled={!fromParty || !toParty || fromId === toId || fromAmount <= 0 || toAmount <= 0 || isShort}
         onClick={submit}
       >
         {transfer ? 'Save changes' : '✓ Move money'}

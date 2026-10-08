@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
-import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, checkAccountFunds } from '../balances';
+import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance, checkAccountFunds } from '../balances';
 import type { Occurrence, Payment, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
 import { OneOffPaymentModal, TemplateModal } from './PaymentModal';
@@ -61,6 +61,12 @@ export function Today() {
       setAct({ o, mode: 'confirm' });
     };
 
+    const accountLabel = o.accountId?.startsWith('stash_')
+      ? (stashes.find(s => s.id === o.accountId?.replace('stash_', ''))?.name
+          ? `${stashes.find(s => s.id === o.accountId?.replace('stash_', ''))?.emoji} ${stashes.find(s => s.id === o.accountId?.replace('stash_', ''))?.name} (Stash)`
+          : 'Stash')
+      : (acc(o.accountId)?.name ?? 'No account');
+
     return (
       <div className="item" style={{ ['--c' as string]: c?.color }}>
         <div className="emoji">{c?.emoji ?? '•'}</div>
@@ -77,7 +83,7 @@ export function Today() {
               </span>
             )}
           </div>
-          <div className="sub">{dayLabel(o.date)} · {c?.name ?? 'Pot'}{o.subcategory ? ` › ${o.subcategory}` : ''} · {acc(o.accountId)?.name ?? 'No account'}</div>
+          <div className="sub">{dayLabel(o.date)} · {c?.name ?? 'Pot'}{o.subcategory ? ` › ${o.subcategory}` : ''} · {accountLabel}</div>
           {(o.planNote || o.note) && <div className="note">📝 {[o.planNote, o.note].filter(Boolean).join(' — ')}</div>}
         </div>
         <div className={`amt ${inc ? 'in' : ''}`}>{inc ? '+' : ''}{money(o.amount, o.currency)}</div>
@@ -206,7 +212,16 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const [subcategory, setSubcategory] = useState(o.subcategory);
   const [note, setNote] = useState(o.note ?? '');
   const [date, setDate] = useState(mode === 'later' ? addDays(t, 1) : (o.date > t ? t : o.date));
-  const patch: Partial<Payment> = { amount: +amount, currency, accountId: accountId || undefined, date, categoryId, subcategory, note: note.trim() || undefined };
+  const patch: Partial<Payment> = {
+    amount: +amount,
+    currency,
+    accountId: accountId || undefined,
+    stashId: accountId.startsWith('stash_') ? accountId.replace('stash_', '') : (o.stashId || undefined),
+    date,
+    categoryId,
+    subcategory,
+    note: note.trim() || undefined,
+  };
   const currentCat = categories.find(c => c.id === categoryId);
 
   const isFuture = date > t;
@@ -215,13 +230,42 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
     return calcAllProjectedAccountBalances(accounts, date, payments, transfers, plans, stashes);
   }, [accounts, date, payments, transfers, plans, stashes, isFuture]);
 
-  const selAcc = accounts.find(a => a.id === accountId);
-  const selBals = selAcc
-    ? calcProjectedAccountBalance(selAcc, date, payments, transfers, plans, stashes)
-    : null;
+  const selParty = useMemo(() => {
+    if (!accountId) return null;
+    if (accountId.startsWith('stash_')) {
+      const sId = accountId.replace('stash_', '');
+      const st = stashes.find(s => s.id === sId);
+      if (!st) return null;
+      return {
+        name: `${st.emoji} ${st.name} (Stash)`,
+        currency: st.currency,
+        isStash: true,
+        stash: st,
+      };
+    }
+    const a = accounts.find(x => x.id === accountId);
+    if (!a) return null;
+    return {
+      name: a.name,
+      currency: a.currency,
+      isStash: false,
+      acc: a,
+    };
+  }, [accountId, accounts, stashes]);
+
+  const selBals = useMemo(() => {
+    if (!selParty) return null;
+    if (selParty.isStash && selParty.stash) {
+      return calcProjectedStashBalance(selParty.stash, date, payments, transfers, plans);
+    }
+    if (selParty.acc) {
+      return calcProjectedAccountBalance(selParty.acc, date, payments, transfers, plans, stashes);
+    }
+    return null;
+  }, [selParty, date, payments, transfers, plans, stashes]);
 
   const selFunds = o.kind !== 'income' && accountId
-    ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances)
+    ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances, stashes)
     : null;
   const valid = +amount > 0 && !!accountId;
 
@@ -250,6 +294,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       <Field label={o.kind === 'income' ? 'Into account' : 'From account'}>
         <AccountCardsSelect
           accounts={accounts}
+          stashes={stashes}
           value={accountId}
           onChange={id => setAccountId(id)}
           balances={balances}
@@ -262,7 +307,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           </p>
         )}
 
-        {selAcc && isFuture && selBals && (
+        {selParty && isFuture && selBals && (
           <div
             style={{
               background: '#F8FAFC',
@@ -274,13 +319,13 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ color: 'var(--mute)' }}>Current balance ({selAcc.name}):</span>
-              <b>{money(selBals.current, selAcc.currency)}</b>
+              <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
+              <b>{money(selBals.current, selParty.currency)}</b>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
               <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
               <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
-                {money(selBals.projected, selAcc.currency)}
+                {money(selBals.projected, selParty.currency)}
               </b>
             </div>
             {+amount > 0 && (
@@ -310,7 +355,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                     o.kind === 'income'
                       ? selBals.projected + +amount
                       : selBals.projected - +amount,
-                    selAcc.currency
+                    selParty.currency
                   )}
                 </b>
               </div>
@@ -319,11 +364,11 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         )}
       </Field>
 
-      {isFuture && selAcc && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
+      {isFuture && selParty && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>⚠️</span>
           <span>
-            <strong>Low projected balance in {selAcc.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selAcc.currency)}, which is {money(+amount - selBals.projected, selAcc.currency)} short.
+            <strong>Low projected balance in {selParty.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selParty.currency)}, which is {money(+amount - selBals.projected, selParty.currency)} short.
           </span>
         </div>
       )}

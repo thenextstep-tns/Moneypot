@@ -86,6 +86,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         let changed = false;
         for (const sp of incoming) {
           const isRelevant = (sp.stashId && d.stashes.some(s => s.id === sp.stashId))
+            || (sp.accountId && d.stashes.some(s => `stash_${s.id}` === sp.accountId))
             || (sp.categoryId && d.categories.some(c => c.id === sp.categoryId));
           if (isRelevant && !myMap.has(sp.id)) {
             myMap.set(sp.id, sp);
@@ -117,12 +118,21 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         }
       }
       if (local) {
+        if (c === 'payments') {
+          const stashId = o.stashId || (o.accountId?.startsWith('stash_') ? o.accountId.replace('stash_', '') : undefined);
+          const st = data.stashes.find(s => s.id === stashId);
+          const cat = data.categories.find(k => k.id === o.categoryId);
+          if (st?.sharedWith?.length || cat?.sharedWith?.length) {
+            o.isShared = true;
+          }
+        }
         setData(d => ({ ...d, [c]: [...(d[c] as { id: string }[]).filter(x => x.id !== o.id), o] }));
       } else {
         void setDoc(doc(db!, 'users', userId!, c, o.id), o);
         // If it's a payment on a shared stash or category, sync to shared_payments & owner
         if (c === 'payments') {
-          const st = data.stashes.find(s => s.id === o.stashId);
+          const stashId = o.stashId || (o.accountId?.startsWith('stash_') ? o.accountId.replace('stash_', '') : undefined);
+          const st = data.stashes.find(s => s.id === stashId);
           const cat = data.categories.find(k => k.id === o.categoryId);
           const isSharedStash = st && (st.sharedWith?.length || (st.ownerId && st.ownerId !== userId));
           const isSharedCat = cat && (cat.sharedWith?.length || (cat.ownerId && cat.ownerId !== userId));

@@ -13,17 +13,30 @@ interface SharingModalProps {
 }
 
 export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; item: Category | Stash; onClose: () => void }) {
-  const { user, invites, save } = useData();
+  const { user, invites, categories, save } = useData();
   const [email, setEmail] = useState('');
   const [createdInvite, setCreatedInvite] = useState<ShareInvite | null>(null);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState('');
+
+  const stashItem = type === 'stash' ? (item as Stash) : null;
+  const expenseCats = categories.filter(c => c.kind === 'expense');
+  const savingCats = categories.filter(c => c.kind === 'saving');
+  const [selectedPotId, setSelectedPotId] = useState<string>(
+    stashItem?.categoryId && stashItem.categoryId !== 'savings'
+      ? stashItem.categoryId
+      : (expenseCats[0]?.id || savingCats[0]?.id || '')
+  );
 
   const members = item.sharedWith ?? [];
   const myEmail = user?.email ?? 'you';
 
   const handleInvite = async () => {
     setErr('');
+    if (type === 'stash' && !selectedPotId) {
+      setErr('Please select an associated pot for this shared stash before inviting collaborators.');
+      return;
+    }
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
       setErr('Please enter a valid email address.');
@@ -38,6 +51,19 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
       return;
     }
 
+    // If sharing a stash, ensure isInstantAccess is false and associated pot is saved
+    let targetItemData = item;
+    if (type === 'stash' && stashItem) {
+      const updatedStash: Stash = {
+        ...stashItem,
+        isInstantAccess: false,
+        categoryId: selectedPotId,
+        subcategory: stashItem.subcategory || stashItem.name,
+      };
+      save('stashes', updatedStash);
+      targetItemData = updatedStash;
+    }
+
     const maskedCode = generateMaskedCode();
     const codeHash = await hashAccessCode(maskedCode);
     const codeKey = maskedCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -49,7 +75,7 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
       targetId: item.id,
       targetName: item.name,
       targetEmoji: item.emoji,
-      targetData: item,
+      targetData: targetItemData,
       inviterEmail: user?.email ?? 'anonymous',
       inviterName: user?.displayName ?? undefined,
       inviteeEmail: cleanEmail,
@@ -126,6 +152,33 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
         {/* Invite section */}
         {!createdInvite ? (
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+            {type === 'stash' && (
+              <div style={{ marginBottom: 14, background: '#F8FAFC', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--line)' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                  Associated Pot (Required for Shared Stash)
+                </span>
+                <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--mute)' }}>
+                  Shared stashes cannot be general instant access stashes. Select which Pot expenses from this stash will belong to:
+                </p>
+                <select
+                  value={selectedPotId}
+                  onChange={e => setSelectedPotId(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line)', background: '#fff' }}
+                >
+                  <optgroup label="💸 Expense Pots">
+                    {expenseCats.map(c => (
+                      <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🌱 Savings Pots">
+                    {savingCats.map(c => (
+                      <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            )}
+
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase' }}>
               Invite a new collaborator
             </span>
@@ -411,6 +464,9 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
           sharedWith: nextShared,
           ownerEmail: found.inviterEmail,
           ownerId: found.ownerId,
+          categoryId: masterData?.categoryId,
+          subcategory: masterData?.subcategory,
+          isInstantAccess: false,
         };
         save('stashes', newStash);
       }

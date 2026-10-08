@@ -22,13 +22,71 @@ export function calcAccountBalance(
   for (const t of transfers) {
     if (t.status === 'cancelled') continue;
     if (t.date && t.date > today()) continue;
-    if (t.fromAccountId === a.id) b -= t.fromAmount;
-    if (t.toAccountId === a.id) b += t.toAmount;
+    if (t.fromAccountId === a.id) {
+      const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
+      b -= amt;
+    }
+    if (t.toAccountId === a.id) {
+      const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
+      b += amt;
+    }
   }
   return b;
 }
 
-/** Map of all account balances keyed by account ID */
+/** Calculate live balance of a stash considering saving payments, withdrawals, transfers, and expenses */
+export function calcStashBalance(
+  s: Stash,
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = []
+): number {
+  let b = s.startAmount || 0;
+
+  // 1. Confirmed payments
+  for (const p of payments) {
+    if (p.status !== 'confirmed') continue;
+    const plan = plans.find(x => x.id === p.planId);
+    const kind = p.kind ?? plan?.kind;
+    const isThisStashSaving = kind === 'saving' && ((p.stashId && p.stashId === s.id) || (plan?.stashId && plan.stashId === s.id));
+    const isThisStashPayment = p.accountId === `stash_${s.id}` || p.accountId === s.id;
+    // Shared stash with associated pot: expenses in that pot
+    const isSharedStashExpense = Boolean(
+      s.sharedWith && s.sharedWith.length > 0 && s.categoryId && p.categoryId === s.categoryId && kind === 'expense'
+    );
+
+    if (!isThisStashSaving && !isThisStashPayment && !isSharedStashExpense) continue;
+
+    const amt = p.currency && p.currency !== s.currency ? convert(p.amount, p.currency, s.currency) : p.amount;
+
+    if (isThisStashSaving) {
+      b += amt;
+    } else if (isThisStashPayment) {
+      if (kind === 'income') b += amt;
+      else b -= amt;
+    } else if (isSharedStashExpense) {
+      b -= amt;
+    }
+  }
+
+  // 2. Active confirmed transfers
+  for (const t of transfers) {
+    if (t.status === 'cancelled') continue;
+    if (t.date && t.date > today()) continue;
+    if (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) {
+      const amt = t.toCurrency && t.toCurrency !== s.currency ? convert(t.toAmount, t.toCurrency, s.currency) : t.toAmount;
+      b += amt;
+    }
+    if (t.fromAccountId === `stash_${s.id}` || t.fromAccountId === s.id) {
+      const amt = t.fromCurrency && t.fromCurrency !== s.currency ? convert(t.fromAmount, t.fromCurrency, s.currency) : t.fromAmount;
+      b -= amt;
+    }
+  }
+
+  return b;
+}
+
+/** Map of all account balances keyed by account ID (and stash_ ID for stashes) */
 export function calcAllAccountBalances(
   accounts: Account[],
   payments: Payment[],
@@ -39,6 +97,11 @@ export function calcAllAccountBalances(
   const map = new Map<string, number>();
   for (const a of accounts) {
     map.set(a.id, calcAccountBalance(a, payments, transfers, plans, stashes));
+  }
+  for (const s of stashes) {
+    const sBal = calcStashBalance(s, payments, transfers, plans);
+    map.set(s.id, sBal);
+    map.set(`stash_${s.id}`, sBal);
   }
   return map;
 }
@@ -114,8 +177,73 @@ export function calcProjectedAccountBalance(
   };
 }
 
+/** Calculate projected balance of a stash on a future target date */
+export function calcProjectedStashBalance(
+  s: Stash,
+  targetDate: string,
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  todayDate: string = today()
+): ProjectedBalanceResult {
+  const current = calcStashBalance(s, payments, transfers, plans);
+  if (!targetDate || targetDate <= todayDate) {
+    return {
+      current,
+      projected: current,
+      isFuture: false,
+      targetDate: targetDate || todayDate,
+    };
+  }
+
+  const tomorrow = addDays(todayDate, 1);
+  const futurePending = occurrences(plans, payments, tomorrow, targetDate).filter(o => o.status === 'pending');
+
+  let projected = current;
+  for (const o of futurePending) {
+    const isThisStashSaving = o.kind === 'saving' && (o.stashId === s.id || o.plan?.stashId === s.id);
+    const isThisStashPayment = o.accountId === `stash_${s.id}` || o.accountId === s.id;
+    const isSharedStashExpense = Boolean(
+      s.sharedWith && s.sharedWith.length > 0 && s.categoryId && o.categoryId === s.categoryId && o.kind === 'expense'
+    );
+
+    if (!isThisStashSaving && !isThisStashPayment && !isSharedStashExpense) continue;
+
+    const amt = o.currency && o.currency !== s.currency ? convert(o.amount, o.currency, s.currency) : o.amount;
+    if (isThisStashSaving) {
+      projected += amt;
+    } else if (isThisStashPayment) {
+      if (o.kind === 'income') projected += amt;
+      else projected -= amt;
+    } else if (isSharedStashExpense) {
+      projected -= amt;
+    }
+  }
+
+  for (const tr of transfers) {
+    if (tr.status === 'cancelled') continue;
+    if (tr.date > todayDate && tr.date <= targetDate) {
+      if (tr.toAccountId === `stash_${s.id}` || tr.toAccountId === s.id) {
+        const amt = tr.toCurrency && tr.toCurrency !== s.currency ? convert(tr.toAmount, tr.toCurrency, s.currency) : tr.toAmount;
+        projected += amt;
+      }
+      if (tr.fromAccountId === `stash_${s.id}` || tr.fromAccountId === s.id) {
+        const amt = tr.fromCurrency && tr.fromCurrency !== s.currency ? convert(tr.fromAmount, tr.fromCurrency, s.currency) : tr.fromAmount;
+        projected -= amt;
+      }
+    }
+  }
+
+  return {
+    current,
+    projected,
+    isFuture: true,
+    targetDate,
+  };
+}
+
 /**
- * Returns a Map of accountId -> { current: number, projected: number }
+ * Returns a Map of accountId (and stash_ id) -> { current: number, projected: number }
  * as of targetDate.
  */
 export function calcAllProjectedAccountBalances(
@@ -131,6 +259,11 @@ export function calcAllProjectedAccountBalances(
   for (const a of accounts) {
     const res = calcProjectedAccountBalance(a, targetDate, payments, transfers, plans, stashes, todayDate);
     map.set(a.id, { current: res.current, projected: res.projected });
+  }
+  for (const s of stashes) {
+    const res = calcProjectedStashBalance(s, targetDate, payments, transfers, plans, todayDate);
+    map.set(s.id, { current: res.current, projected: res.projected });
+    map.set(`stash_${s.id}`, { current: res.current, projected: res.projected });
   }
   return map;
 }
@@ -152,17 +285,39 @@ export function calcTotalLiquidBalance(
   return sum;
 }
 
-/** Check if an account has sufficient balance for a specific payment/expense */
+/** Check if an account or stash has sufficient balance for a specific payment/expense */
 export function checkAccountFunds(
   accountId: string | undefined,
   amount: number,
   currency: string,
   accounts: Account[],
-  balances: Map<string, number>
+  balances: Map<string, number>,
+  stashes: Stash[] = []
 ): { hasAccount: boolean; accountName?: string; balance?: number; accountCurrency?: string; neededInAccCur: number; isShort: boolean; shortBy: number } {
   if (!accountId) {
     return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
   }
+
+  const isStash = accountId.startsWith('stash_') || stashes.some(s => s.id === accountId);
+  if (isStash) {
+    const sId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : accountId;
+    const stash = stashes.find(s => s.id === sId);
+    if (!stash) return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
+    const bal = balances.get(accountId) ?? balances.get(stash.id) ?? stash.startAmount;
+    const neededInAccCur = convert(amount, currency, stash.currency);
+    const isShort = bal < neededInAccCur;
+    const shortBy = Math.max(0, neededInAccCur - bal);
+    return {
+      hasAccount: true,
+      accountName: `${stash.emoji} ${stash.name} (Stash)`,
+      balance: bal,
+      accountCurrency: stash.currency,
+      neededInAccCur,
+      isShort,
+      shortBy,
+    };
+  }
+
   const acc = accounts.find(a => a.id === accountId);
   if (!acc) {
     return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };

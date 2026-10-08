@@ -36,7 +36,7 @@ interface LogItem {
 
 /** Complete transaction log book with search, filters, cancel (reverting money), and editing */
 export function LogBook() {
-  const { payments, transfers, accounts, categories, plans, save, remove } = useData();
+  const { payments, transfers, accounts, categories, plans, stashes, save, remove } = useData();
   const [filter, setFilter] = useState<FilterType>('all');
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -46,7 +46,21 @@ export function LogBook() {
 
   const catMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
   const accMap = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts]);
+  const stashMap = useMemo(() => new Map(stashes.map(s => [s.id, s])), [stashes]);
   const planMap = useMemo(() => new Map(plans.map(p => [p.id, p])), [plans]);
+
+  const resolvePartyName = (id?: string) => {
+    if (!id) return 'No account';
+    if (id.startsWith('stash_')) {
+      const sId = id.replace('stash_', '');
+      const st = stashMap.get(sId);
+      return st ? `${st.emoji} ${st.name} (Stash)` : 'Stash';
+    }
+    const st = stashMap.get(id);
+    if (st) return `${st.emoji} ${st.name} (Stash)`;
+    const acc = accMap.get(id);
+    return acc?.name ?? 'No account';
+  };
 
   // Combine and sort all transactions
   const items: LogItem[] = useMemo(() => {
@@ -55,9 +69,15 @@ export function LogBook() {
     for (const p of payments) {
       const plan = planMap.get(p.planId);
       const cat = catMap.get(p.categoryId ?? plan?.categoryId ?? '');
-      const acc = accMap.get(p.accountId ?? plan?.accountId ?? '');
       const kind = p.kind ?? plan?.kind ?? 'expense';
-      const isShared = Boolean(p.isShared || (cat?.sharedWith && cat.sharedWith.length > 0));
+      const effectiveAccId = p.accountId || (p.stashId ? `stash_${p.stashId}` : plan?.accountId);
+      const accName = resolvePartyName(effectiveAccId);
+      const isShared = Boolean(
+        p.isShared ||
+        (cat?.sharedWith && cat.sharedWith.length > 0) ||
+        (p.stashId && stashMap.get(p.stashId)?.sharedWith?.length) ||
+        (p.accountId?.startsWith('stash_') && stashMap.get(p.accountId.replace('stash_', ''))?.sharedWith?.length)
+      );
 
       list.push({
         id: p.id,
@@ -68,7 +88,7 @@ export function LogBook() {
         potEmoji: cat?.emoji,
         potColor: cat?.color,
         subcategory: p.subcategory ?? plan?.subcategory,
-        accountName: acc?.name ?? 'No account',
+        accountName: accName,
         amount: p.amount,
         currency: p.currency,
         status: p.status,
@@ -79,18 +99,17 @@ export function LogBook() {
       });
     }
 
-
     for (const t of transfers) {
-      const fromAcc = accMap.get(t.fromAccountId);
-      const toAcc = accMap.get(t.toAccountId);
+      const fromName = resolvePartyName(t.fromAccountId);
+      const toName = resolvePartyName(t.toAccountId);
 
       list.push({
         id: t.id,
         type: 'transfer',
         date: t.date,
-        title: `Transfer: ${fromAcc?.name ?? 'Account'} → ${toAcc?.name ?? 'Account'}`,
-        accountName: fromAcc?.name,
-        toAccountName: toAcc?.name,
+        title: `Transfer: ${fromName} → ${toName}`,
+        accountName: fromName,
+        toAccountName: toName,
         amount: t.fromAmount,
         currency: t.fromCurrency,
         toAmount: t.toAmount,
@@ -102,7 +121,7 @@ export function LogBook() {
     }
 
     return list.sort((a, b) => b.date.localeCompare(a.date));
-  }, [payments, transfers, catMap, accMap, planMap]);
+  }, [payments, transfers, catMap, accMap, stashMap, planMap]);
 
   // Apply filters
   const filtered = useMemo(() => {
@@ -114,8 +133,14 @@ export function LogBook() {
 
       // Account filter
       if (selectedAccount !== 'all') {
-        const matchesFrom = item.payment?.accountId === selectedAccount;
-        const matchesTransfer = item.transfer?.fromAccountId === selectedAccount || item.transfer?.toAccountId === selectedAccount;
+        const sId = selectedAccount.startsWith('stash_') ? selectedAccount.replace('stash_', '') : selectedAccount;
+        const matchesFrom = item.payment?.accountId === selectedAccount
+          || item.payment?.accountId === sId
+          || item.payment?.stashId === sId;
+        const matchesTransfer = item.transfer?.fromAccountId === selectedAccount
+          || item.transfer?.fromAccountId === sId
+          || item.transfer?.toAccountId === selectedAccount
+          || item.transfer?.toAccountId === sId;
         if (!matchesFrom && !matchesTransfer) return false;
       }
 
@@ -177,8 +202,19 @@ export function LogBook() {
 
         <div className="row even" style={{ marginTop: 8 }}>
           <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)}>
-            <option value="all">All accounts</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            <option value="all">All accounts & stashes</option>
+            <optgroup label="💳 Accounts">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            </optgroup>
+            {stashes.length > 0 && (
+              <optgroup label="🐷 Stashes">
+                {stashes.map(s => (
+                  <option key={`stash_${s.id}`} value={`stash_${s.id}`}>
+                    {s.emoji} {s.name} ({s.currency})
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
 
           <div className="chips">
@@ -319,12 +355,14 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
   const curCat = categories.find(c => c.id === categoryId);
 
   const submit = () => {
+    const targetStashId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : (payment.stashId || undefined);
     save('payments', {
       ...payment,
       name: name.trim() || undefined,
       amount: +amount,
       currency,
       accountId: accountId || undefined,
+      stashId: targetStashId,
       categoryId: categoryId || undefined,
       subcategory,
       date,
@@ -351,6 +389,7 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
       <Field label="Account">
         <AccountCardsSelect
           accounts={accounts}
+          stashes={stashes}
           value={accountId}
           onChange={id => setAccountId(id)}
         />
