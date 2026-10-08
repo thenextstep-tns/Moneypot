@@ -487,6 +487,28 @@ export function calcMonthStartingBalances(
     let unassignedNet = 0;
 
     for (const o of priorPending) {
+      if (o.kind === 'transfer') {
+        if (o.accountId) {
+          const fromAcc = accounts.find(a => a.id === o.accountId);
+          if (fromAcc) {
+            const amtInFrom = convert(o.amount, o.currency, fromAcc.currency);
+            const curr = accBals.get(fromAcc.id) ?? 0;
+            accBals.set(fromAcc.id, curr - amtInFrom);
+          }
+        }
+        if (o.toAccountId) {
+          const toAcc = accounts.find(a => a.id === o.toAccountId);
+          if (toAcc) {
+            const toAmt = o.toAmount ?? o.amount;
+            const toCur = o.toCurrency ?? o.currency;
+            const amtInTo = convert(toAmt, toCur, toAcc.currency);
+            const curr = accBals.get(toAcc.id) ?? 0;
+            accBals.set(toAcc.id, curr + amtInTo);
+          }
+        }
+        continue;
+      }
+
       if (o.accountId) {
         const acc = accounts.find(a => a.id === o.accountId);
         if (acc) {
@@ -503,6 +525,26 @@ export function calcMonthStartingBalances(
         const amtInTarget = convert(o.amount, o.currency, targetCurrency);
         if (o.kind === 'income') unassignedNet += amtInTarget;
         else unassignedNet -= amtInTarget;
+      }
+    }
+
+    for (const tr of transfers) {
+      if (tr.status === 'cancelled') continue;
+      if (tr.date && tr.date > todayDate && tr.date <= toDate) {
+        if (tr.fromAccountId) {
+          const fromAcc = accounts.find(a => a.id === tr.fromAccountId);
+          if (fromAcc) {
+            const amt = tr.fromCurrency && tr.fromCurrency !== fromAcc.currency ? convert(tr.fromAmount, tr.fromCurrency, fromAcc.currency) : tr.fromAmount;
+            accBals.set(fromAcc.id, (accBals.get(fromAcc.id) ?? 0) - amt);
+          }
+        }
+        if (tr.toAccountId) {
+          const toAcc = accounts.find(a => a.id === tr.toAccountId);
+          if (toAcc) {
+            const amt = tr.toCurrency && tr.toCurrency !== toAcc.currency ? convert(tr.toAmount, tr.toCurrency, toAcc.currency) : tr.toAmount;
+            accBals.set(toAcc.id, (accBals.get(toAcc.id) ?? 0) + amt);
+          }
+        }
       }
     }
 
