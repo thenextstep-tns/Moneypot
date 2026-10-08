@@ -22,6 +22,7 @@ export function calcAccountBalance(
   }
   for (const t of transfers) {
     if (t.status === 'cancelled') continue;
+    if (t.date && t.date > today()) continue;
     if (t.fromAccountId === a.id) b -= t.fromAmount;
     if (t.toAccountId === a.id) b += t.toAmount;
   }
@@ -39,6 +40,105 @@ export function calcAllAccountBalances(
   const map = new Map<string, number>();
   for (const a of accounts) {
     map.set(a.id, calcAccountBalance(a, payments, transfers, plans, stashes));
+  }
+  return map;
+}
+
+export interface ProjectedBalanceResult {
+  current: number;
+  projected: number;
+  isFuture: boolean;
+  targetDate: string;
+}
+
+/**
+ * Calculates both the current live balance and the projected balance of an account
+ * as of a given target date (YYYY-MM-DD), taking into account pending plan occurrences
+ * and future transfers.
+ */
+export function calcProjectedAccountBalance(
+  account: Account,
+  targetDate: string,
+  payments: Payment[],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  stashes: Stash[] = [],
+  todayDate: string = today()
+): ProjectedBalanceResult {
+  const current = calcAccountBalance(account, payments, transfers, plans, stashes);
+  if (!targetDate || targetDate <= todayDate) {
+    return {
+      current,
+      projected: current,
+      isFuture: false,
+      targetDate: targetDate || todayDate,
+    };
+  }
+
+  // Future date: take today's live balance and apply all pending transactions
+  // scheduled between tomorrow and targetDate.
+  const tomorrow = addDays(todayDate, 1);
+  const futurePending = occurrences(plans, payments, tomorrow, targetDate).filter(o => o.status === 'pending');
+
+  let projected = current;
+
+  // 1. Pending occurrences for this account
+  for (const o of futurePending) {
+    const amtInAcc = convert(o.amount, o.currency, account.currency);
+    if (o.accountId === account.id) {
+      if (o.kind === 'income') {
+        projected += amtInAcc;
+      } else {
+        projected -= amtInAcc;
+      }
+    }
+    // If saving into a stash linked to this account:
+    if (o.kind === 'saving' && o.stashId) {
+      const stash = stashes.find(s => s.id === o.stashId);
+      if (stash?.accountId === account.id) {
+        projected += amtInAcc;
+      }
+    }
+  }
+
+  // 2. Future transfers between tomorrow and targetDate
+  for (const tr of transfers) {
+    if (tr.status === 'cancelled') continue;
+    if (tr.date > todayDate && tr.date <= targetDate) {
+      if (tr.fromAccountId === account.id) {
+        projected -= tr.fromAmount;
+      }
+      if (tr.toAccountId === account.id) {
+        projected += tr.toAmount;
+      }
+    }
+  }
+
+  return {
+    current,
+    projected,
+    isFuture: true,
+    targetDate,
+  };
+}
+
+/**
+ * Returns a Map of accountId -> { current: number, projected: number }
+ * as of targetDate.
+ */
+export function calcAllProjectedAccountBalances(
+  accounts: Account[],
+  targetDate: string,
+  payments: Payment[],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  stashes: Stash[] = [],
+  todayDate: string = today()
+): Map<string, { current: number; projected: number }> {
+  const map = new Map<string, { current: number; projected: number }>();
+  for (const a of accounts) {
+    const res = calcProjectedAccountBalance(a, targetDate, payments, transfers, plans, stashes, todayDate);
+    map.set(a.id, { current: res.current, projected: res.projected });
   }
   return map;
 }

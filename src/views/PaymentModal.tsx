@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
-import { dayLabel, today } from '../schedule';
-import { calcAllAccountBalances, checkAccountFunds } from '../balances';
+import { dayLabel, money, today } from '../schedule';
+import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, checkAccountFunds } from '../balances';
 import type { Payment, Plan, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Field, Modal } from '../ui';
 import { EmojiPicker } from '../emojis';
@@ -60,6 +60,16 @@ export function OneOffPaymentModal({
     : null;
 
   const isFuture = date > today();
+
+  const projectedBalances = useMemo(() => {
+    if (!isFuture) return undefined;
+    return calcAllProjectedAccountBalances(accounts, date, payments, transfers, plans, stashes);
+  }, [accounts, date, payments, transfers, plans, stashes, isFuture]);
+
+  const selAcc = accounts.find(a => a.id === accountId);
+  const selBals = selAcc
+    ? calcProjectedAccountBalance(selAcc, date, payments, transfers, plans, stashes)
+    : null;
 
   const handleSave = (addQuickTemplate: boolean) => {
     if (!valid) return;
@@ -287,12 +297,73 @@ export function OneOffPaymentModal({
           value={accountId}
           onChange={id => setAccountId(id)}
           balances={balances}
+          targetDate={date}
+          projectedBalances={projectedBalances}
         />
+
+        {selAcc && isFuture && selBals && (
+          <div
+            style={{
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: 12,
+              padding: '10px 14px',
+              marginTop: 8,
+              fontSize: 12,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ color: 'var(--mute)' }}>Current balance ({selAcc.name}):</span>
+              <b>{money(selBals.current, selAcc.currency)}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: Number(amount) > 0 ? 4 : 0 }}>
+              <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
+              <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                {money(selBals.projected, selAcc.currency)}
+              </b>
+            </div>
+            {Number(amount) > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: 4,
+                  borderTop: '1px dashed #E2E8F0',
+                }}
+              >
+                <span style={{ color: 'var(--mute)' }}>After this payment:</span>
+                <b
+                  style={{
+                    color:
+                      selBals.projected - Number(amount) < 0
+                        ? '#DC2626'
+                        : '#166534',
+                  }}
+                >
+                  {money(selBals.projected - Number(amount), selAcc.currency)}
+                </b>
+              </div>
+            )}
+          </div>
+        )}
       </Field>
 
-      {funds?.isShort && (
+      {!isFuture && funds?.isShort && (
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13 }}>
           ⚠️ <b>Low balance:</b> {funds.accountName} only has {funds.balance} {funds.accountCurrency}.
+        </div>
+      )}
+
+      {isFuture && selAcc && Number(amount) > 0 && selBals && selBals.projected < Number(amount) && (
+        <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13 }}>
+          ⚠️ <b>Low projected balance:</b> On {dayLabel(date)}, {selAcc.name} is projected to have {money(selBals.projected, selAcc.currency)}, which is {money(Number(amount) - selBals.projected, selAcc.currency)} short.
+        </div>
+      )}
+
+      {isFuture && selAcc && Number(amount) > 0 && selBals && selBals.current < Number(amount) && selBals.projected >= Number(amount) && (
+        <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13 }}>
+          ℹ️ Current balance is {money(selBals.current, selAcc.currency)}, but projected to reach {money(selBals.projected, selAcc.currency)} by {dayLabel(date)} (sufficient funds expected).
         </div>
       )}
 

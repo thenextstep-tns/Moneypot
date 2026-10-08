@@ -5,7 +5,7 @@ import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
-import { calcAccountBalance } from '../balances';
+import { calcAccountBalance, calcProjectedAccountBalance } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { SharingModal } from './SharingModal';
 
@@ -270,31 +270,89 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
     onClose();
   };
 
-  const fromBal = fromAcc ? calcAccountBalance(fromAcc, payments, transfers, plans, stashes) : 0;
-  const toBal = toAcc ? calcAccountBalance(toAcc, payments, transfers, plans, stashes) : 0;
-  const isShort = !!fromAcc && fromAmount > 0 && fromAmount > fromBal;
+  const isFuture = date > today();
+  const fromBals = fromAcc ? calcProjectedAccountBalance(fromAcc, date, payments, transfers, plans, stashes) : null;
+  const toBals = toAcc ? calcProjectedAccountBalance(toAcc, date, payments, transfers, plans, stashes) : null;
+
+  const effectiveFromBal = isFuture ? (fromBals?.projected ?? 0) : (fromBals?.current ?? 0);
+  const isShort = !!fromAcc && fromAmount > 0 && fromAmount > effectiveFromBal;
 
   return (
     <Modal title={transfer ? 'Edit transfer' : 'Move money between accounts'} onClose={onClose}>
+      <Field label="When (Date)">
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+
       <Field label="From account">
         <select value={fromId} onChange={e => { setFromId(e.target.value); setUserEditedTo(false); }}>
-          {accounts.map(a => (
-            <option key={a.id} value={a.id} disabled={a.id === toId}>
-              {a.name} ({a.currency}) · Available: {money(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency)}
-            </option>
-          ))}
+          {accounts.map(a => {
+            const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
+            return (
+              <option key={a.id} value={a.id} disabled={a.id === toId}>
+                {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
+              </option>
+            );
+          })}
         </select>
       </Field>
 
       <Field label="To account">
         <select value={toId} onChange={e => { setToId(e.target.value); setUserEditedTo(false); }}>
-          {accounts.map(a => (
-            <option key={a.id} value={a.id} disabled={a.id === fromId}>
-              {a.name} ({a.currency}) · Current: {money(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency)}
-            </option>
-          ))}
+          {accounts.map(a => {
+            const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
+            return (
+              <option key={a.id} value={a.id} disabled={a.id === fromId}>
+                {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
+              </option>
+            );
+          })}
         </select>
       </Field>
+
+      {/* Projection summary card */}
+      {fromAcc && toAcc && fromBals && toBals && (
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 14px', margin: '4px 0 14px' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mute)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span>{isFuture ? `🗓 Projected balances on ${dayLabel(date)}` : '💳 Live account balances'}</span>
+            {isFuture && <span style={{ color: 'var(--brand)', textTransform: 'none', fontWeight: 600 }}>Includes scheduled transactions</span>}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>From: {fromAcc.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
+                Current: <b>{money(fromBals.current, fromAcc.currency)}</b>
+              </div>
+              {isFuture && (
+                <div style={{ fontSize: 11, color: fromBals.projected < 0 ? '#DC2626' : '#2563EB', marginTop: 2, fontWeight: 600 }}>
+                  Projected: <b>{money(fromBals.projected, fromAcc.currency)}</b>
+                </div>
+              )}
+              {fromAmount > 0 && (
+                <div style={{ fontSize: 11, color: effectiveFromBal - fromAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
+                  After move: <b>{money(effectiveFromBal - fromAmount, fromAcc.currency)}</b>
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>To: {toAcc.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
+                Current: <b>{money(toBals.current, toAcc.currency)}</b>
+              </div>
+              {isFuture && (
+                <div style={{ fontSize: 11, color: '#2563EB', marginTop: 2, fontWeight: 600 }}>
+                  Projected: <b>{money(toBals.projected, toAcc.currency)}</b>
+                </div>
+              )}
+              {toAmount > 0 && (
+                <div style={{ fontSize: 11, color: '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
+                  After move: <b>{money((isFuture ? toBals.projected : toBals.current) + toAmount, toAcc.currency)}</b>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="row even">
         <Field label={`Amount taken out (${fromAcc?.currency ?? ''})`}>
@@ -321,7 +379,16 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>⚠️</span>
           <span>
-            <strong>Insufficient funds in {fromAcc?.name}:</strong> Available balance is {money(fromBal, fromAcc?.currency)}, which is {money(fromAmount - fromBal, fromAcc?.currency)} short.
+            <strong>Insufficient {isFuture ? 'projected ' : ''}funds in {fromAcc?.name}:</strong> {isFuture ? `Projected balance on ${dayLabel(date)}` : 'Available balance'} is {money(effectiveFromBal, fromAcc?.currency)}, which is {money(fromAmount - effectiveFromBal, fromAcc?.currency)} short.
+          </span>
+        </div>
+      )}
+
+      {isFuture && fromAcc && fromAmount > 0 && fromAmount > (fromBals?.current ?? 0) && fromAmount <= (fromBals?.projected ?? 0) && (
+        <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>ℹ️</span>
+          <span>
+            Current balance is {money(fromBals?.current ?? 0, fromAcc.currency)}, but projected to reach {money(fromBals?.projected ?? 0, fromAcc.currency)} by {dayLabel(date)} from scheduled incoming money.
           </span>
         </div>
       )}
@@ -331,10 +398,6 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
           💱 Effective rate: 1 {fromAcc.currency} = {(toAmount / fromAmount).toFixed(4)} {toAcc.currency}
         </div>
       )}
-
-      <Field label="Date">
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-      </Field>
 
       <Field label="Note (optional)">
         <input

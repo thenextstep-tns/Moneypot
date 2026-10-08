@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
-import { dayLabel, freqLabel, money, occurrences, perMonth, toPayment, today } from '../schedule';
-import { calcAllAccountBalances } from '../balances';
+import { addDays, dayLabel, dueDates, freqLabel, money, occurrences, perMonth, toPayment, today } from '../schedule';
+import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance } from '../balances';
 import type { Kind, Plan } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { RecurrenceEditor } from './Recurrence';
@@ -111,6 +111,24 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
   const [addingSub, setAddingSub] = useState(false);
   const [newSubVal, setNewSubVal] = useState('');
 
+  const t = today();
+  const targetDate = useMemo(() => {
+    if (p.freq === 'once') return p.startDate || t;
+    const next = dueDates(p, t > p.startDate ? t : p.startDate, addDays(t, 800));
+    return next[0] || p.startDate || t;
+  }, [p, t]);
+
+  const isFuture = targetDate > t;
+  const projectedBalances = useMemo(() => {
+    if (!isFuture) return undefined;
+    return calcAllProjectedAccountBalances(accounts, targetDate, payments, transfers, plans, stashes);
+  }, [accounts, targetDate, payments, transfers, plans, stashes, isFuture]);
+
+  const selAcc = accounts.find(a => a.id === p.accountId);
+  const selBals = selAcc
+    ? calcProjectedAccountBalance(selAcc, targetDate, payments, transfers, plans, stashes)
+    : null;
+
   const set = (patch: Partial<Plan>) => setP(x => ({ ...x, ...patch }));
   const cats = categories.filter(c => c.kind === p.kind);
   const categoryId = p.categoryId || cats[0]?.id || '';
@@ -211,7 +229,71 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
           value={p.accountId}
           onChange={id => set({ accountId: id })}
           balances={balances}
+          targetDate={targetDate}
+          projectedBalances={projectedBalances}
         />
+
+        {selAcc && isFuture && selBals && (
+          <div
+            style={{
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: 12,
+              padding: '10px 14px',
+              marginTop: 8,
+              fontSize: 12,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ color: 'var(--mute)' }}>Current balance ({selAcc.name}):</span>
+              <b>{money(selBals.current, selAcc.currency)}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: p.amount > 0 ? 4 : 0 }}>
+              <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(targetDate)}:</span>
+              <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                {money(selBals.projected, selAcc.currency)}
+              </b>
+            </div>
+            {p.amount > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: 4,
+                  borderTop: '1px dashed #E2E8F0',
+                }}
+              >
+                <span style={{ color: 'var(--mute)' }}>
+                  After this {p.kind === 'income' ? 'income' : 'expense'}:
+                </span>
+                <b
+                  style={{
+                    color:
+                      (p.kind === 'income'
+                        ? selBals.projected + p.amount
+                        : selBals.projected - p.amount) < 0
+                        ? '#DC2626'
+                        : '#166534',
+                  }}
+                >
+                  {money(
+                    p.kind === 'income'
+                      ? selBals.projected + p.amount
+                      : selBals.projected - p.amount,
+                    selAcc.currency
+                  )}
+                </b>
+              </div>
+            )}
+          </div>
+        )}
+
+        {selAcc && isFuture && selBals && p.kind !== 'income' && p.amount > 0 && (selBals.projected - p.amount < 0) && (
+          <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+            ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selAcc.name} is projected to have {money(selBals.projected, selAcc.currency)}, which is {money(p.amount - selBals.projected, selAcc.currency)} short.
+          </div>
+        )}
       </Field>
 
       <Field label="Notes (optional)">

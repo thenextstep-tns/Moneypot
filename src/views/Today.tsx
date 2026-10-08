@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
-import { calcAllAccountBalances, checkAccountFunds } from '../balances';
+import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, checkAccountFunds } from '../balances';
 import type { Occurrence, Payment, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
 import { OneOffPaymentModal, TemplateModal } from './PaymentModal';
@@ -208,6 +208,17 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const patch: Partial<Payment> = { amount: +amount, currency, accountId: accountId || undefined, date, categoryId, subcategory, note: note.trim() || undefined };
   const currentCat = categories.find(c => c.id === categoryId);
 
+  const isFuture = date > t;
+  const projectedBalances = useMemo(() => {
+    if (!isFuture) return undefined;
+    return calcAllProjectedAccountBalances(accounts, date, payments, transfers, plans, stashes);
+  }, [accounts, date, payments, transfers, plans, stashes, isFuture]);
+
+  const selAcc = accounts.find(a => a.id === accountId);
+  const selBals = selAcc
+    ? calcProjectedAccountBalance(selAcc, date, payments, transfers, plans, stashes)
+    : null;
+
   const selFunds = o.kind !== 'income' && accountId
     ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances)
     : null;
@@ -241,11 +252,69 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           value={accountId}
           onChange={id => setAccountId(id)}
           balances={balances}
+          targetDate={date}
+          projectedBalances={projectedBalances}
         />
         {!accountId && (
           <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
             Please select an account
           </p>
+        )}
+
+        {selAcc && isFuture && selBals && (
+          <div
+            style={{
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: 12,
+              padding: '10px 14px',
+              marginTop: 8,
+              fontSize: 12,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ color: 'var(--mute)' }}>Current balance ({selAcc.name}):</span>
+              <b>{money(selBals.current, selAcc.currency)}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
+              <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
+              <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                {money(selBals.projected, selAcc.currency)}
+              </b>
+            </div>
+            {+amount > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: 4,
+                  borderTop: '1px dashed #E2E8F0',
+                }}
+              >
+                <span style={{ color: 'var(--mute)' }}>
+                  After this {o.kind === 'income' ? 'income' : 'payment'}:
+                </span>
+                <b
+                  style={{
+                    color:
+                      (o.kind === 'income'
+                        ? selBals.projected + +amount
+                        : selBals.projected - +amount) < 0
+                        ? '#DC2626'
+                        : '#166534',
+                  }}
+                >
+                  {money(
+                    o.kind === 'income'
+                      ? selBals.projected + +amount
+                      : selBals.projected - +amount,
+                    selAcc.currency
+                  )}
+                </b>
+              </div>
+            )}
+          </div>
         )}
       </Field>
 
@@ -255,8 +324,16 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         </select>
       </Field>
 
+      {isFuture && selAcc && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
+        <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>⚠️</span>
+          <span>
+            <strong>Low projected balance in {selAcc.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selAcc.currency)}, which is {money(+amount - selBals.projected, selAcc.currency)} short.
+          </span>
+        </div>
+      )}
 
-      {selFunds?.isShort && (
+      {!isFuture && selFunds?.isShort && (
         <div className="preview" style={{ background: '#FFFBEB', color: '#92400E', borderColor: '#FDE68A', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>⚠️</span>
           <span>

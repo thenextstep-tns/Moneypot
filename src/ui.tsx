@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Account, Payment } from './types';
-import { money, today } from './schedule';
+import { dayLabel, money, today } from './schedule';
 import { uid, useData } from './store';
 import { calcAccountBalance } from './balances';
 
@@ -272,16 +272,21 @@ export function AccountCardsSelect({
   value,
   onChange,
   balances,
+  targetDate,
+  projectedBalances,
 }: {
   accounts: Account[];
   value?: string;
   onChange: (id: string) => void;
   balances?: Map<string, number>;
+  targetDate?: string;
+  projectedBalances?: Map<string, { current: number; projected: number }> | Map<string, number>;
 }) {
   const [showAdd, setShowAdd] = useState(false);
 
   // An account must always be selected. Fallback to first available account.
   const activeId = value && accounts.some(a => a.id === value) ? value : accounts[0]?.id;
+  const isFuture = !!targetDate && targetDate > today();
 
   return (
     <>
@@ -289,7 +294,19 @@ export function AccountCardsSelect({
         {accounts.map(a => {
           const isSel = activeId === a.id;
           const bal = balances?.get(a.id);
+
+          let projBal: number | undefined;
+          if (projectedBalances) {
+            const entry = projectedBalances.get(a.id);
+            if (typeof entry === 'number') {
+              projBal = entry;
+            } else if (entry && typeof entry === 'object' && 'projected' in entry) {
+              projBal = entry.projected;
+            }
+          }
+          const hasProjection = isFuture && projBal !== undefined;
           const icon = ACC_ICONS[a.type] ?? '💳';
+
           return (
             <button
               key={a.id}
@@ -301,10 +318,24 @@ export function AccountCardsSelect({
               <div className="acc-card-icon">{icon}</div>
               <div className="acc-card-info">
                 <span className="acc-card-name">{a.name}</span>
-                <small className="acc-card-sub">
-                  {a.currency}
-                  {bal !== undefined ? ` · ${money(bal, a.currency)}` : ''}
-                </small>
+                <div className="acc-card-sub" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>
+                    {a.currency}
+                    {bal !== undefined ? ` · Current: ${money(bal, a.currency)}` : ''}
+                  </span>
+                  {isFuture && targetDate && projBal !== undefined && (
+                    <span
+                      style={{
+                        color: projBal < 0 ? '#DC2626' : '#2563EB',
+                        fontWeight: 600,
+                        fontSize: 11,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      🗓 Proj ({dayLabel(targetDate)}): {money(projBal, a.currency)}
+                    </span>
+                  )}
+                </div>
               </div>
               {isSel && <span className="acc-card-check">✓</span>}
             </button>
