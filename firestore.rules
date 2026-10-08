@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
+
+    // users/{uid} holds settings; everything else lives in its subcollections
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // accounts | categories | plans | stashes | payments
+      match /{coll}/{id} {
+        allow read, delete: if isOwner(uid);
+        // every document must be stamped with its owner — no cross-user data, safe for collectionGroup queries
+        allow create, update: if isOwner(uid)
+          && coll in ['accounts', 'categories', 'plans', 'stashes', 'payments']
+          && request.resource.data.ownerId == uid
+          && request.resource.data.id == id;
+      }
+    }
+
+    // collectionGroup queries (e.g. admin analytics) can only ever return the caller's own docs
+    match /{path=**}/{coll}/{id} {
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}

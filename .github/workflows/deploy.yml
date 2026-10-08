@@ -1,0 +1,51 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with Firebase config
+        env:
+          VITE_FB_API_KEY: ${{ secrets.VITE_FB_API_KEY || 'AIzaSyCGlXGlR7JgDOcCNQQmGbyEhg2mPuIZpbQ' }}
+          VITE_FB_AUTH_DOMAIN: ${{ secrets.VITE_FB_AUTH_DOMAIN || 'honeypot-834a1.firebaseapp.com' }}
+          VITE_FB_PROJECT_ID: ${{ secrets.VITE_FB_PROJECT_ID || 'honeypot-834a1' }}
+          VITE_FB_APP_ID: ${{ secrets.VITE_FB_APP_ID || '1:1093994142262:web:34ae22d54101375ff69697' }}
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
