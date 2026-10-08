@@ -1,7 +1,7 @@
 // ---- Data model (Firestore: users/{uid}/{collection}/{id}) ----
 // Every document carries `ownerId` (= uid, injected by the store and enforced by security rules).
 
-export type Kind = 'income' | 'expense' | 'saving';
+export type Kind = 'income' | 'expense' | 'saving' | 'transfer';
 export type Freq = 'once' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 interface Owned { id: string; ownerId?: string }
@@ -30,14 +30,17 @@ export interface Category extends Owned {
 
 /** A recurring (or one-off) money movement the user expects */
 export interface Plan extends Owned {
-  name: string;                 // "Rent", "Salary", "Netflix"
+  name: string;                 // "Rent", "Salary", "Netflix", "Card Top-up"
   kind: Kind;
-  categoryId: string;
+  categoryId?: string;          // optional for kind === 'transfer'
   subcategory?: string;         // e.g. "Groceries", "Flat rent"
   stashId?: string;             // for kind === 'saving'
   amount: number;
   currency: string;
-  accountId?: string;
+  accountId?: string;           // source account ("From")
+  toAccountId?: string;         // destination account ("To") for kind === 'transfer'
+  toAmount?: number;            // destination amount (if multi-currency)
+  toCurrency?: string;          // destination currency
   note?: string;                // what it entails, e.g. "electricity + water"
   isShared?: boolean;           // part of a shared pot or stash
   // recurrence
@@ -102,6 +105,9 @@ export interface Payment extends Owned {
   amount: number;
   currency: string;
   accountId?: string;
+  toAccountId?: string;
+  toAmount?: number;
+  toCurrency?: string;
   name?: string;
   kind?: Kind;
   categoryId?: string;
@@ -125,6 +131,8 @@ export interface Transfer extends Owned {
   note?: string;
   status: 'confirmed' | 'cancelled';
   createdAt?: number;
+  planId?: string;
+  dueDate?: string;
 }
 
 export interface Settings { currency: string }
@@ -152,6 +160,9 @@ export interface Occurrence {
   amount: number;
   currency: string;
   accountId?: string;
+  toAccountId?: string;
+  toAmount?: number;
+  toCurrency?: string;
   status: 'pending' | 'confirmed' | 'cancelled';
   postponed: boolean;
   name: string;

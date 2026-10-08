@@ -107,6 +107,7 @@ export function calculateCashflowRange(
   const getPaymentDelta = (p: Payment, a: Account): number => {
     const plan = plans.find(x => x.id === p.planId);
     const kind = p.kind ?? plan?.kind ?? 'expense';
+    if (kind === 'transfer') return 0; // Handled in activeTransfers
     const stashId = p.stashId ?? plan?.stashId;
     const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
     const sourceAccId = p.accountId || plan?.accountId || s?.accountId;
@@ -132,7 +133,21 @@ export function calculateCashflowRange(
 
   // Helper: compute delta for an account from a future occurrence
   const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
-    const kind = o.plan.kind ?? 'expense';
+    const kind = o.kind ?? o.plan.kind ?? 'expense';
+    if (kind === 'transfer') {
+      let d = 0;
+      if (o.accountId === a.id) {
+        const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
+        d -= amt;
+      }
+      if (o.toAccountId === a.id) {
+        const toAmt = o.toAmount ?? o.amount;
+        const toCur = o.toCurrency ?? o.currency;
+        const amt = toCur !== a.currency ? convert(toAmt, toCur, a.currency) : toAmt;
+        d += amt;
+      }
+      return d;
+    }
     const s = o.stashId ? stashes.find(x => x.id === o.stashId) : (o.plan.stashId ? stashes.find(x => x.id === o.plan.stashId) : undefined);
     const sourceAccId = o.accountId || o.plan.accountId || s?.accountId;
     const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
@@ -168,10 +183,11 @@ export function calculateCashflowRange(
     // 1. Confirmed payments on this date
     for (const p of confirmedPayments) {
       if (p.date === date) {
-        if (p.accountId && !accounts.some(a => a.id === p.accountId)) continue;
         const plan = plans.find(x => x.id === p.planId);
-        const cat = plan?.categoryId ? categories.find(c => c.id === plan.categoryId) : undefined;
         const kind = p.kind ?? plan?.kind ?? 'expense';
+        if (kind === 'transfer') continue; // Handled in activeTransfers
+        if (p.accountId && !accounts.some(a => a.id === p.accountId)) continue;
+        const cat = plan?.categoryId ? categories.find(c => c.id === plan.categoryId) : undefined;
         const acc = accounts.find(a => a.id === p.accountId);
         const isCorrection = p.name === 'Balance correction' || p.planId?.startsWith('adj_');
         items.push({
@@ -222,6 +238,27 @@ export function calculateCashflowRange(
     if (isFuture) {
       const dayOccurrences = futureOccurrencesByDate.get(date) ?? [];
       for (const o of dayOccurrences) {
+        const kind = o.kind ?? o.plan.kind ?? 'expense';
+        if (kind === 'transfer') {
+          if (!accounts.some(a => a.id === o.accountId || a.id === o.toAccountId)) continue;
+          const fromAcc = accounts.find(a => a.id === o.accountId);
+          const toAcc = accounts.find(a => a.id === o.toAccountId);
+          items.push({
+            id: o.key,
+            name: o.name || `Transfer (${fromAcc?.name ?? 'Account'} → ${toAcc?.name ?? 'Account'})`,
+            amount: o.amount,
+            currency: o.currency,
+            amountInMain: convert(o.amount, o.currency, mainCurrency),
+            kind: 'transfer',
+            status: 'pending',
+            date,
+            accountId: o.accountId,
+            accountName: fromAcc?.name,
+            accountColor: fromAcc?.color,
+            emoji: '⇄',
+          });
+          continue;
+        }
         if (o.accountId && !accounts.some(a => a.id === o.accountId)) continue;
         const acc = accounts.find(a => a.id === o.accountId);
         const cat = o.plan.categoryId ? categories.find(c => c.id === o.plan.categoryId) : undefined;
@@ -231,7 +268,7 @@ export function calculateCashflowRange(
           amount: o.amount,
           currency: o.currency,
           amountInMain: convert(o.amount, o.currency, mainCurrency),
-          kind: o.plan.kind ?? 'expense',
+          kind,
           status: 'pending',
           date,
           accountId: o.accountId,

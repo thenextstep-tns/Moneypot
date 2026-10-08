@@ -15,6 +15,7 @@ export function calcAccountBalance(
     if (p.status !== 'confirmed') continue;
     const plan = plans.find(x => x.id === p.planId);
     const kind = p.kind ?? plan?.kind ?? 'expense';
+    if (kind === 'transfer') continue; // Handled via transfers collection
     const stashId = p.stashId ?? plan?.stashId;
     const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
     if (p.accountId === a.id) b += kind === 'income' ? amt : -amt;
@@ -48,6 +49,7 @@ export function calcStashBalance(
     if (p.status !== 'confirmed') continue;
     const plan = plans.find(x => x.id === p.planId);
     const kind = p.kind ?? plan?.kind;
+    if (kind === 'transfer') continue; // Handled via transfers collection
     const isThisStashSaving = kind === 'saving' && ((p.stashId && p.stashId === s.id) || (plan?.stashId && plan.stashId === s.id));
     const isThisStashPayment = p.accountId === `stash_${s.id}` || p.accountId === s.id;
     // Shared stash with associated pot: expenses in that pot
@@ -146,6 +148,19 @@ export function calcProjectedAccountBalance(
 
   // 1. Pending occurrences for this account
   for (const o of futurePending) {
+    if (o.kind === 'transfer') {
+      if (o.accountId === account.id) {
+        const amtInAcc = convert(o.amount, o.currency, account.currency);
+        projected -= amtInAcc;
+      }
+      if (o.toAccountId === account.id) {
+        const toAmt = o.toAmount ?? o.amount;
+        const toCur = o.toCurrency ?? o.currency;
+        const amtInAcc = convert(toAmt, toCur, account.currency);
+        projected += amtInAcc;
+      }
+      continue;
+    }
     const amtInAcc = convert(o.amount, o.currency, account.currency);
     if (o.accountId === account.id) {
       if (o.kind === 'income') {
@@ -201,6 +216,19 @@ export function calcProjectedStashBalance(
 
   let projected = current;
   for (const o of futurePending) {
+    if (o.kind === 'transfer') {
+      if (o.accountId === `stash_${s.id}` || o.accountId === s.id) {
+        const amtInStash = convert(o.amount, o.currency, s.currency);
+        projected -= amtInStash;
+      }
+      if (o.toAccountId === `stash_${s.id}` || o.toAccountId === s.id) {
+        const toAmt = o.toAmount ?? o.amount;
+        const toCur = o.toCurrency ?? o.currency;
+        const amtInStash = convert(toAmt, toCur, s.currency);
+        projected += amtInStash;
+      }
+      continue;
+    }
     const isThisStashSaving = o.kind === 'saving' && (o.stashId === s.id || o.plan?.stashId === s.id);
     const isThisStashPayment = o.accountId === `stash_${s.id}` || o.accountId === s.id;
     const isSharedStashExpense = Boolean(

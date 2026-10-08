@@ -11,19 +11,30 @@ const GROUPS: [Kind, string, string][] = [
   ['income', 'Money coming in', 'Salary, freelance, anything you receive'],
   ['expense', 'Money going out', 'Bills, groceries, subscriptions…'],
   ['saving', 'Putting aside', 'Regular top-ups of your stashes'],
+  ['transfer', 'Transfers between accounts', 'Regular card top-ups, moving money to savings, or between accounts'],
 ];
 
 /** Setup: income & expenses with their regularity */
 export function Plans() {
-  const { plans, categories, stashes, settings } = useData();
+  const { plans, categories, accounts, stashes, settings } = useData();
   const [edit, setEdit] = useState<Plan | Kind | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [showOneOffs, setShowOneOffs] = useState(false);
-  const cat = (id: string) => categories.find(c => c.id === id);
+  const cat = (id?: string) => (id ? categories.find(c => c.id === id) : undefined);
   const isShared = (p: Plan) => {
     const c = cat(p.categoryId);
     const s = stashes.find(x => x.id === p.stashId);
     return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0) || s?.name?.toLowerCase().trim() === 'kinky fund');
+  };
+
+  const getPartyName = (id?: string) => {
+    if (!id) return 'Account';
+    if (id.startsWith('stash_')) {
+      const s = stashes.find(x => x.id === id.replace('stash_', ''));
+      return s ? `${s.emoji} ${s.name}` : 'Stash';
+    }
+    const a = accounts.find(x => x.id === id);
+    return a ? a.name : 'Account';
   };
 
   return (
@@ -64,28 +75,45 @@ export function Plans() {
               {showOneOffs && oneOffTotal > 0 && <span className="muted"> · +{money(oneOffTotal, settings.currency)} one-off</span>}
             </h2>
             {list.length === 0 && <p className="muted">{hint}</p>}
-            {list.map(p => (
-              <button key={p.id} className="item click" style={{ ['--c' as string]: cat(p.categoryId)?.color }} onClick={() => setEdit(p)}>
-                <div className="emoji">{cat(p.categoryId)?.emoji}</div>
-                <div className="grow">
-                  <div className="title">
-                    {p.name}
-                    {p.freq === 'once' && (
-                      <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>
-                        One-off · {dayLabel(p.startDate)}
-                      </span>
-                    )}
-                    {p.subcategory && <span className="tag subcat-badge">{p.subcategory}</span>}
-                    {isShared(p) && <span className="tag shared-tag">👥 Shared</span>}
+            {list.map(p => {
+              const isTransfer = p.kind === 'transfer';
+              const c = cat(p.categoryId);
+              const fromName = getPartyName(p.accountId);
+              const toName = getPartyName(p.toAccountId);
+              return (
+                <button
+                  key={p.id}
+                  className="item click"
+                  style={{ ['--c' as string]: isTransfer ? '#6366F1' : c?.color }}
+                  onClick={() => setEdit(p)}
+                >
+                  <div className="emoji">{isTransfer ? '⇄' : c?.emoji}</div>
+                  <div className="grow">
+                    <div className="title">
+                      {p.name}
+                      {p.freq === 'once' && (
+                        <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>
+                          One-off · {dayLabel(p.startDate)}
+                        </span>
+                      )}
+                      {isTransfer && (
+                        <span className="tag" style={{ background: '#EEF2FF', color: '#4338CA' }}>
+                          {fromName} → {toName}
+                        </span>
+                      )}
+                      {p.subcategory && <span className="tag subcat-badge">{p.subcategory}</span>}
+                      {isShared(p) && <span className="tag shared-tag">👥 Shared</span>}
+                    </div>
+                    <div className="sub">
+                      {p.freq === 'once' ? `Due ${dayLabel(p.startDate)}` : freqLabel(p)}
+                      {isTransfer ? ` · ${fromName} → ${toName}` : (c?.name ? ` · ${c.name}` : '')}
+                    </div>
+                    {p.note && <div className="note">📝 {p.note}</div>}
                   </div>
-                  <div className="sub">
-                    {p.freq === 'once' ? `Due ${dayLabel(p.startDate)}` : freqLabel(p)} · {cat(p.categoryId)?.name}
-                  </div>
-                  {p.note && <div className="note">📝 {p.note}</div>}
-                </div>
-                <div className={`amt ${kind === 'income' ? 'in' : ''}`}>{money(p.amount, p.currency)}</div>
-              </button>
-            ))}
+                  <div className={`amt ${kind === 'income' ? 'in' : ''}`}>{money(p.amount, p.currency)}</div>
+                </button>
+              );
+            })}
             <button className="btn dashed wide" onClick={() => setEdit(kind)}>+ Add</button>
           </section>
         );
@@ -106,7 +134,9 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
 
   const [p, setP] = useState<Plan>(plan ?? {
     id: uid(), name: '', kind: kind ?? 'expense', categoryId: '', amount: 0, currency: settings.currency,
-    accountId: accounts[0]?.id || '', freq: 'monthly', every: 1, startDate: today(),
+    accountId: accounts[0]?.id || '',
+    toAccountId: accounts.find(a => a.id !== accounts[0]?.id)?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''),
+    freq: 'monthly', every: 1, startDate: today(),
   });
   const [addingSub, setAddingSub] = useState(false);
   const [newSubVal, setNewSubVal] = useState('');
@@ -147,6 +177,29 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
     };
   }, [p.accountId, accounts, stashes]);
 
+  const toParty = useMemo(() => {
+    if (!p.toAccountId) return null;
+    if (p.toAccountId.startsWith('stash_')) {
+      const sId = p.toAccountId.replace('stash_', '');
+      const st = stashes.find(s => s.id === sId);
+      if (!st) return null;
+      return {
+        name: `${st.emoji} ${st.name} (Stash)`,
+        currency: st.currency,
+        isStash: true,
+        stash: st,
+      };
+    }
+    const a = accounts.find(x => x.id === p.toAccountId);
+    if (!a) return null;
+    return {
+      name: a.name,
+      currency: a.currency,
+      isStash: false,
+      acc: a,
+    };
+  }, [p.toAccountId, accounts, stashes]);
+
   const selBals = useMemo(() => {
     if (!selParty) return null;
     if (selParty.isStash && selParty.stash) {
@@ -158,6 +211,17 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
     return null;
   }, [selParty, targetDate, payments, transfers, plans, stashes]);
 
+  const toBals = useMemo(() => {
+    if (!toParty) return null;
+    if (toParty.isStash && toParty.stash) {
+      return calcProjectedStashBalance(toParty.stash, targetDate, payments, transfers, plans);
+    }
+    if (toParty.acc) {
+      return calcProjectedAccountBalance(toParty.acc, targetDate, payments, transfers, plans, stashes);
+    }
+    return null;
+  }, [toParty, targetDate, payments, transfers, plans, stashes]);
+
   const set = (patch: Partial<Plan>) => setP(x => ({ ...x, ...patch }));
   const currentStashId = p.stashId || (p.kind === 'saving' ? stashes[0]?.id : undefined);
   const activeStash = stashes.find(s => s.id === currentStashId);
@@ -165,7 +229,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
   const categoryId = p.kind === 'saving'
     ? (activeStash?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings')
     : (p.categoryId || cats[0]?.id || '');
-  const valid = p.name.trim() && p.amount > 0 && !!p.accountId;
+  const valid = p.name.trim() && p.amount > 0 && !!p.accountId && (p.kind !== 'transfer' || (!!p.toAccountId && p.toAccountId !== p.accountId));
 
   const handleQuickAddSub = () => {
     const v = newSubVal.trim();
@@ -188,14 +252,21 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
       finalStashId = currentStashId;
       finalCatId = activeStash?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings';
       finalSub = activeStash?.subcategory || activeStash?.name;
+    } else if (p.kind === 'transfer') {
+      finalCatId = '';
+      finalSub = undefined;
+      finalStashId = undefined;
     } else if (p.accountId?.startsWith('stash_')) {
       finalStashId = p.accountId.replace('stash_', '');
     }
-    const final = {
+    const final: Plan = {
       ...p,
       stashId: finalStashId,
       categoryId: finalCatId,
       subcategory: finalSub,
+      toAccountId: p.kind === 'transfer' ? p.toAccountId : undefined,
+      toAmount: p.kind === 'transfer' ? (p.toAmount ?? p.amount) : undefined,
+      toCurrency: p.kind === 'transfer' ? (p.toCurrency ?? p.currency) : undefined,
       name: p.name.trim(),
     };
     save('plans', final);
@@ -216,17 +287,31 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
               subcategory: defStash?.subcategory || defStash?.name,
               name: p.name || defStash?.name || '',
             });
+          } else if (k === 'transfer') {
+            set({
+              kind: k,
+              categoryId: '',
+              stashId: undefined,
+              subcategory: undefined,
+              toAccountId: p.toAccountId || accounts.find(a => a.id !== p.accountId)?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''),
+              name: p.name || 'Transfer',
+            });
           } else {
-            set({ kind: k, categoryId: '', stashId: undefined });
+            set({ kind: k, categoryId: '', stashId: undefined, toAccountId: undefined });
           }
         }}
-        options={[['income', '💰 In'], ['expense', '💸 Out'], ['saving', '🌱 Save']]}
+        options={[
+          ['income', '💰 In'],
+          ['expense', '💸 Out'],
+          ['saving', '🌱 Save'],
+          ['transfer', '⇄ Transfer'],
+        ]}
       />
       <Field label="What is it?">
         <input
           autoFocus
           value={p.name}
-          placeholder={p.kind === 'income' ? 'Salary' : p.kind === 'saving' ? 'Safety cushion' : 'Rent, Groceries, Netflix…'}
+          placeholder={p.kind === 'income' ? 'Salary' : p.kind === 'saving' ? 'Safety cushion' : p.kind === 'transfer' ? 'Card top-up, savings move…' : 'Rent, Groceries, Netflix…'}
           onChange={e => set({ name: e.target.value })}
         />
       </Field>
@@ -236,174 +321,302 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
       </div>
       <RecurrenceEditor p={p} set={set} />
 
-      {/* For stashes, omit pot and subcategory pickers - directly select stash */}
-      {p.kind === 'saving' ? (
-        <Field label="Into which stash?">
-          {stashes.length > 0 ? (
-            <select
-              value={currentStashId ?? ''}
-              onChange={e => {
-                const sid = e.target.value;
-                const chosen = stashes.find(s => s.id === sid);
-                const sCat = chosen?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings';
-                const sSub = chosen?.subcategory || chosen?.name;
-                set({
-                  stashId: sid,
-                  categoryId: sCat,
-                  subcategory: sSub,
-                  name: p.name.trim() ? p.name : (chosen?.name ?? ''),
-                });
-              }}
-            >
-              {stashes.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-            </select>
-          ) : (
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              ⚠️ No stashes found. Create one in the Stashes tab.
-            </p>
-          )}
-        </Field>
-      ) : (
+      {p.kind === 'transfer' ? (
         <>
-          <Field label="Which pot?">
-            <div className="chips">
-              {cats.map(c => (
-                <button
-                  type="button"
-                  key={c.id}
-                  className={c.id === categoryId ? 'chip on' : 'chip'}
-                  onClick={() => set({ categoryId: c.id, subcategory: undefined })}
-                >
-                  {c.emoji} {c.name}
-                </button>
-              ))}
-            </div>
-          </Field>
-          {categories.find(c => c.id === categoryId) && (
-            <Field label="Subcategory (optional)">
-              <div className="chips" style={{ alignItems: 'center' }}>
-                <button
-                  type="button"
-                  className={!p.subcategory ? 'chip on' : 'chip'}
-                  onClick={() => set({ subcategory: undefined })}
-                >
-                  General
-                </button>
-                {(categories.find(c => c.id === categoryId)?.subcategories ?? []).map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={p.subcategory === s ? 'chip on' : 'chip'}
-                    onClick={() => set({ subcategory: s })}
-                  >
-                    {s}
-                  </button>
-                ))}
-                {addingSub ? (
-                  <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                    <input
-                      autoFocus
-                      style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
-                      placeholder="New name…"
-                      value={newSubVal}
-                      onChange={e => setNewSubVal(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
-                        if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
-                      }}
-                    />
-                    <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
-                    <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="chip"
-                    style={{ borderStyle: 'dashed' }}
-                    onClick={() => setAddingSub(true)}
-                  >
-                    + Add subcategory
-                  </button>
-                )}
-              </div>
-            </Field>
-          )}
-        </>
-      )}
-      <Field label={p.kind === 'income' ? 'Arrives to' : 'Paid from'}>
-        <AccountCardsSelect
-          accounts={accounts}
-          stashes={stashes}
-          allowStashes={p.kind !== 'saving'}
-          value={p.accountId}
-          onChange={id => set({ accountId: id })}
-          balances={balances}
-          targetDate={targetDate}
-          projectedBalances={projectedBalances}
-        />
+          <Field label="From (Source account / stash)">
+            <AccountCardsSelect
+              accounts={accounts}
+              stashes={stashes}
+              allowStashes={true}
+              value={p.accountId}
+              onChange={id => set({ accountId: id })}
+              balances={balances}
+              targetDate={targetDate}
+              projectedBalances={projectedBalances}
+            />
 
-        {selParty && isFuture && selBals && (
-          <div
-            style={{
-              background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              borderRadius: 12,
-              padding: '10px 14px',
-              marginTop: 8,
-              fontSize: 12,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
-              <b>{money(selBals.current, selParty.currency)}</b>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: p.amount > 0 ? 4 : 0 }}>
-              <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(targetDate)}:</span>
-              <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
-                {money(selBals.projected, selParty.currency)}
-              </b>
-            </div>
-            {p.amount > 0 && (
+            {selParty && isFuture && selBals && (
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingTop: 4,
-                  borderTop: '1px dashed #E2E8F0',
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  marginTop: 8,
+                  fontSize: 12,
                 }}
               >
-                <span style={{ color: 'var(--mute)' }}>
-                  After this {p.kind === 'income' ? 'income' : 'expense'}:
-                </span>
-                <b
-                  style={{
-                    color:
-                      (p.kind === 'income'
-                        ? selBals.projected + p.amount
-                        : selBals.projected - p.amount) < 0
-                        ? '#DC2626'
-                        : '#166534',
-                  }}
-                >
-                  {money(
-                    p.kind === 'income'
-                      ? selBals.projected + p.amount
-                      : selBals.projected - p.amount,
-                    selParty.currency
-                  )}
-                </b>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
+                  <b>{money(selBals.current, selParty.currency)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: p.amount > 0 ? 4 : 0 }}>
+                  <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(targetDate)}:</span>
+                  <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                    {money(selBals.projected, selParty.currency)}
+                  </b>
+                </div>
+                {p.amount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 4,
+                      borderTop: '1px dashed #E2E8F0',
+                    }}
+                  >
+                    <span style={{ color: 'var(--mute)' }}>
+                      After this transfer:
+                    </span>
+                    <b style={{ color: selBals.projected - p.amount < 0 ? '#DC2626' : '#166534' }}>
+                      {money(selBals.projected - p.amount, selParty.currency)}
+                    </b>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {selParty && isFuture && selBals && p.kind !== 'income' && p.amount > 0 && (selBals.projected - p.amount < 0) && (
-          <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
-            ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(p.amount - selBals.projected, selParty.currency)} short.
-          </div>
-        )}
-      </Field>
+            {selParty && isFuture && selBals && p.amount > 0 && (selBals.projected - p.amount < 0) && (
+              <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+                ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(p.amount - selBals.projected, selParty.currency)} short.
+              </div>
+            )}
+          </Field>
+
+          <Field label="To (Destination account / stash)">
+            <AccountCardsSelect
+              accounts={accounts}
+              stashes={stashes}
+              allowStashes={true}
+              value={p.toAccountId}
+              onChange={id => set({ toAccountId: id })}
+              balances={balances}
+              targetDate={targetDate}
+              projectedBalances={projectedBalances}
+            />
+
+            {p.toAccountId && p.toAccountId === p.accountId && (
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
+                Source and destination cannot be the same
+              </p>
+            )}
+
+            {toParty && isFuture && toBals && (
+              <div
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  marginTop: 8,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--mute)' }}>Current balance ({toParty.name}):</span>
+                  <b>{money(toBals.current, toParty.currency)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: p.amount > 0 ? 4 : 0 }}>
+                  <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(targetDate)}:</span>
+                  <b style={{ color: '#2563EB' }}>
+                    {money(toBals.projected, toParty.currency)}
+                  </b>
+                </div>
+                {p.amount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 4,
+                      borderTop: '1px dashed #E2E8F0',
+                    }}
+                  >
+                    <span style={{ color: 'var(--mute)' }}>
+                      After receiving transfer:
+                    </span>
+                    <b style={{ color: '#166534' }}>
+                      {money(toBals.projected + p.amount, toParty.currency)}
+                    </b>
+                  </div>
+                )}
+              </div>
+            )}
+          </Field>
+        </>
+      ) : (
+        <>
+          {p.kind === 'saving' ? (
+            <Field label="Into which stash?">
+              {stashes.length > 0 ? (
+                <select
+                  value={currentStashId ?? ''}
+                  onChange={e => {
+                    const sid = e.target.value;
+                    const chosen = stashes.find(s => s.id === sid);
+                    const sCat = chosen?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings';
+                    const sSub = chosen?.subcategory || chosen?.name;
+                    set({
+                      stashId: sid,
+                      categoryId: sCat,
+                      subcategory: sSub,
+                      name: p.name.trim() ? p.name : (chosen?.name ?? ''),
+                    });
+                  }}
+                >
+                  {stashes.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+                </select>
+              ) : (
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  ⚠️ No stashes found. Create one in the Stashes tab.
+                </p>
+              )}
+            </Field>
+          ) : (
+            <>
+              <Field label="Which pot?">
+                <div className="chips">
+                  {cats.map(c => (
+                    <button
+                      type="button"
+                      key={c.id}
+                      className={c.id === categoryId ? 'chip on' : 'chip'}
+                      onClick={() => set({ categoryId: c.id, subcategory: undefined })}
+                    >
+                      {c.emoji} {c.name}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              {categories.find(c => c.id === categoryId) && (
+                <Field label="Subcategory (optional)">
+                  <div className="chips" style={{ alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className={!p.subcategory ? 'chip on' : 'chip'}
+                      onClick={() => set({ subcategory: undefined })}
+                    >
+                      General
+                    </button>
+                    {(categories.find(c => c.id === categoryId)?.subcategories ?? []).map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={p.subcategory === s ? 'chip on' : 'chip'}
+                        onClick={() => set({ subcategory: s })}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                    {addingSub ? (
+                      <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                        <input
+                          autoFocus
+                          style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
+                          placeholder="New name…"
+                          value={newSubVal}
+                          onChange={e => setNewSubVal(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
+                            if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
+                          }}
+                        />
+                        <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
+                        <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="chip"
+                        style={{ borderStyle: 'dashed' }}
+                        onClick={() => setAddingSub(true)}
+                      >
+                        + Add subcategory
+                      </button>
+                    )}
+                  </div>
+                </Field>
+              )}
+            </>
+          )}
+
+          <Field label={p.kind === 'income' ? 'Arrives to' : 'Paid from'}>
+            <AccountCardsSelect
+              accounts={accounts}
+              stashes={stashes}
+              allowStashes={p.kind !== 'saving'}
+              value={p.accountId}
+              onChange={id => set({ accountId: id })}
+              balances={balances}
+              targetDate={targetDate}
+              projectedBalances={projectedBalances}
+            />
+
+            {selParty && isFuture && selBals && (
+              <div
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  marginTop: 8,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
+                  <b>{money(selBals.current, selParty.currency)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: p.amount > 0 ? 4 : 0 }}>
+                  <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(targetDate)}:</span>
+                  <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                    {money(selBals.projected, selParty.currency)}
+                  </b>
+                </div>
+                {p.amount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 4,
+                      borderTop: '1px dashed #E2E8F0',
+                    }}
+                  >
+                    <span style={{ color: 'var(--mute)' }}>
+                      After this {p.kind === 'income' ? 'income' : 'expense'}:
+                    </span>
+                    <b
+                      style={{
+                        color:
+                          (p.kind === 'income'
+                            ? selBals.projected + p.amount
+                            : selBals.projected - p.amount) < 0
+                            ? '#DC2626'
+                            : '#166534',
+                      }}
+                    >
+                      {money(
+                        p.kind === 'income'
+                          ? selBals.projected + p.amount
+                          : selBals.projected - p.amount,
+                        selParty.currency
+                      )}
+                    </b>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selParty && isFuture && selBals && p.kind !== 'income' && p.amount > 0 && (selBals.projected - p.amount < 0) && (
+              <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+                ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(p.amount - selBals.projected, selParty.currency)} short.
+              </div>
+            )}
+          </Field>
+        </>
+      )}
 
       <Field label="Notes (optional)">
         <textarea rows={2} value={p.note ?? ''} placeholder="What does it include? e.g. electricity + water" onChange={e => set({ note: e.target.value || undefined })} />

@@ -50,29 +50,41 @@ export function Today() {
   const write = (o: Occurrence, status: Payment['status'], patch: Partial<Payment> = {}) => save('payments', toPayment(o, status, patch));
 
   const Card = ({ o }: { o: Occurrence }) => {
+    const isTransfer = o.kind === 'transfer';
     const c = cat(o.categoryId);
     const inc = o.kind === 'income';
-    const verb = inc ? 'Got it' : o.kind === 'saving' ? 'Put aside' : 'Paid';
+    const verb = isTransfer ? 'Moved' : inc ? 'Got it' : o.kind === 'saving' ? 'Put aside' : 'Paid';
     const funds = (!inc && o.accountId)
-      ? checkAccountFunds(o.accountId, o.amount, o.currency, accounts, balances)
+      ? checkAccountFunds(o.accountId, o.amount, o.currency, accounts, balances, stashes)
       : null;
 
     const handleConfirm = () => {
       setAct({ o, mode: 'confirm' });
     };
 
-    const accountLabel = o.accountId?.startsWith('stash_')
-      ? (stashes.find(s => s.id === o.accountId?.replace('stash_', ''))?.name
-          ? `${stashes.find(s => s.id === o.accountId?.replace('stash_', ''))?.emoji} ${stashes.find(s => s.id === o.accountId?.replace('stash_', ''))?.name} (Stash)`
-          : 'Stash')
-      : (acc(o.accountId)?.name ?? 'No account');
+    const getPartyLabel = (partyId?: string) => {
+      if (!partyId) return 'No account';
+      if (partyId.startsWith('stash_')) {
+        const s = stashes.find(x => x.id === partyId.replace('stash_', ''));
+        return s ? `${s.emoji} ${s.name} (Stash)` : 'Stash';
+      }
+      return acc(partyId)?.name ?? 'No account';
+    };
+
+    const fromLabel = getPartyLabel(o.accountId);
+    const toLabel = getPartyLabel(o.toAccountId);
 
     return (
-      <div className="item" style={{ ['--c' as string]: c?.color }}>
-        <div className="emoji">{c?.emoji ?? '•'}</div>
+      <div className="item" style={{ ['--c' as string]: isTransfer ? '#6366F1' : c?.color }}>
+        <div className="emoji">{isTransfer ? '⇄' : c?.emoji ?? '•'}</div>
         <div className="grow">
           <div className="title">
             {o.name}
+            {isTransfer && (
+              <span className="tag" style={{ background: '#EEF2FF', color: '#4338CA' }}>
+                {fromLabel} → {toLabel}
+              </span>
+            )}
             {o.subcategory && <span className="tag subcat-badge">{o.subcategory}</span>}
             {isSharedItem(o) && <span className="tag shared-tag">👥 Shared</span>}
             {o.contributorName && <span className="tag" style={{ background: '#EFF6FF', color: '#1E40AF' }}>👤 {o.contributorName}</span>}
@@ -83,7 +95,9 @@ export function Today() {
               </span>
             )}
           </div>
-          <div className="sub">{dayLabel(o.date)} · {c?.name ?? 'Pot'}{o.subcategory ? ` › ${o.subcategory}` : ''} · {accountLabel}</div>
+          <div className="sub">
+            {dayLabel(o.date)} · {isTransfer ? `Transfer · ${fromLabel} → ${toLabel}` : `${c?.name ?? 'Pot'}${o.subcategory ? ` › ${o.subcategory}` : ''} · ${fromLabel}`}
+          </div>
           {(o.planNote || o.note) && <div className="note">📝 {[o.planNote, o.note].filter(Boolean).join(' — ')}</div>}
         </div>
         <div className={`amt ${inc ? 'in' : ''}`}>{inc ? '+' : ''}{money(o.amount, o.currency)}</div>
@@ -174,16 +188,59 @@ export function Today() {
           <h2>Recently done</h2>
           {done.map(o => (
             <div key={o.key} className="item small">
-              <div className="emoji">{o.status === 'confirmed' ? '✅' : '⏭️'}</div>
-              <div className="grow"><div className="title">{o.name}</div><div className="sub">{o.status === 'confirmed' ? 'Done' : 'Skipped'} · {dayLabel(o.date)}{o.note && ` · 📝 ${o.note}`}</div></div>
+              <div className="emoji">{o.kind === 'transfer' ? '⇄' : o.status === 'confirmed' ? '✅' : '⏭️'}</div>
+              <div className="grow"><div className="title">{o.name}</div><div className="sub">{o.status === 'confirmed' ? (o.kind === 'transfer' ? 'Transferred' : 'Done') : 'Skipped'} · {dayLabel(o.date)}{o.note && ` · 📝 ${o.note}`}</div></div>
               <div className="amt">{money(o.amount, o.currency)}</div>
-              <button className="btn ghost" onClick={() => remove('payments', o.key)}>Undo</button>
+              <button
+                className="btn ghost"
+                onClick={() => {
+                  remove('payments', o.key);
+                  if (o.kind === 'transfer') {
+                    remove('transfers', `tr_${o.key}`);
+                  }
+                }}
+              >
+                Undo
+              </button>
             </div>
           ))}
         </section>
       )}
 
-      {act && <ActModal {...act} onClose={() => setAct(null)} onSave={(s, p) => { write(act.o, s, p); setAct(null); }} />}
+      {act && (
+        <ActModal
+          {...act}
+          onClose={() => setAct(null)}
+          onSave={(s, p) => {
+            write(act.o, s, p);
+            if (act.o.kind === 'transfer' && s === 'confirmed') {
+              const trId = `tr_${act.o.key}`;
+              const fromPartyId = p.accountId || act.o.accountId || '';
+              const toPartyId = p.toAccountId || act.o.toAccountId || '';
+              const fromAmt = p.amount ?? act.o.amount;
+              const fromCur = p.currency || act.o.currency;
+              const toAmt = p.toAmount ?? fromAmt;
+              const toCur = p.toCurrency || fromCur;
+              save('transfers', {
+                id: trId,
+                date: p.date || act.o.date,
+                fromAccountId: fromPartyId,
+                toAccountId: toPartyId,
+                fromAmount: fromAmt,
+                fromCurrency: fromCur,
+                toAmount: toAmt,
+                toCurrency: toCur,
+                note: p.note || act.o.note,
+                status: 'confirmed',
+                createdAt: Date.now(),
+                planId: act.o.plan.id,
+                dueDate: act.o.dueDate,
+              });
+            }
+            setAct(null);
+          }}
+        />
+      )}
       {oneOffModal?.open && (
         <OneOffPaymentModal
           template={oneOffModal.template}
@@ -208,6 +265,9 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const [amount, setAmount] = useState(o.amount);
   const [currency, setCurrency] = useState(o.currency);
   const [accountId, setAccountId] = useState(o.accountId || accounts[0]?.id || '');
+  const [toAccountId, setToAccountId] = useState(o.toAccountId || accounts.find(a => a.id !== (o.accountId || accounts[0]?.id))?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''));
+  const [toAmount, setToAmount] = useState(o.toAmount ?? o.amount);
+  const [toCurrency, setToCurrency] = useState(o.toCurrency ?? o.currency);
   const [categoryId, setCategoryId] = useState(o.categoryId);
   const [subcategory, setSubcategory] = useState(o.subcategory);
   const [note, setNote] = useState(o.note ?? '');
@@ -216,10 +276,13 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
     amount: +amount,
     currency,
     accountId: accountId || undefined,
+    toAccountId: o.kind === 'transfer' ? (toAccountId || undefined) : undefined,
+    toAmount: o.kind === 'transfer' ? (+toAmount || +amount) : undefined,
+    toCurrency: o.kind === 'transfer' ? (toCurrency || currency) : undefined,
     stashId: accountId.startsWith('stash_') ? accountId.replace('stash_', '') : (o.stashId || undefined),
     date,
-    categoryId,
-    subcategory,
+    categoryId: o.kind === 'transfer' ? '' : categoryId,
+    subcategory: o.kind === 'transfer' ? undefined : subcategory,
     note: note.trim() || undefined,
   };
   const currentCat = categories.find(c => c.id === categoryId);
@@ -253,6 +316,29 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
     };
   }, [accountId, accounts, stashes]);
 
+  const toParty = useMemo(() => {
+    if (!toAccountId) return null;
+    if (toAccountId.startsWith('stash_')) {
+      const sId = toAccountId.replace('stash_', '');
+      const st = stashes.find(s => s.id === sId);
+      if (!st) return null;
+      return {
+        name: `${st.emoji} ${st.name} (Stash)`,
+        currency: st.currency,
+        isStash: true,
+        stash: st,
+      };
+    }
+    const a = accounts.find(x => x.id === toAccountId);
+    if (!a) return null;
+    return {
+      name: a.name,
+      currency: a.currency,
+      isStash: false,
+      acc: a,
+    };
+  }, [toAccountId, accounts, stashes]);
+
   const selBals = useMemo(() => {
     if (!selParty) return null;
     if (selParty.isStash && selParty.stash) {
@@ -264,16 +350,29 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
     return null;
   }, [selParty, date, payments, transfers, plans, stashes]);
 
+  const toBals = useMemo(() => {
+    if (!toParty) return null;
+    if (toParty.isStash && toParty.stash) {
+      return calcProjectedStashBalance(toParty.stash, date, payments, transfers, plans);
+    }
+    if (toParty.acc) {
+      return calcProjectedAccountBalance(toParty.acc, date, payments, transfers, plans, stashes);
+    }
+    return null;
+  }, [toParty, date, payments, transfers, plans, stashes]);
+
   const selFunds = o.kind !== 'income' && accountId
     ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances, stashes)
     : null;
-  const valid = +amount > 0 && !!accountId;
+  const valid = +amount > 0 && !!accountId && (o.kind !== 'transfer' || (!!toAccountId && toAccountId !== accountId));
 
   return (
-    <Modal title={mode === 'later' ? `Move "${o.name}" to…` : `Confirm payment: "${o.name}"`} onClose={onClose}>
+    <Modal title={mode === 'later' ? `Move "${o.name}" to…` : o.kind === 'transfer' ? `Confirm transfer: "${o.name}"` : `Confirm payment: "${o.name}"`} onClose={onClose}>
       {mode === 'confirm' && (
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
-          {o.kind === 'income'
+          {o.kind === 'transfer'
+            ? 'Please confirm the amount and accounts for this transfer:'
+            : o.kind === 'income'
             ? 'Please confirm the final sum and the account the money goes into:'
             : 'Please confirm the final sum and the account the money is taken out of:'}
         </p>
@@ -291,134 +390,262 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         <Field label="Currency"><CurrencySelect value={currency} onChange={setCurrency} /></Field>
       </div>
 
-      <Field label={o.kind === 'income' ? 'Into account' : 'From account'}>
-        <AccountCardsSelect
-          accounts={accounts}
-          stashes={stashes}
-          value={accountId}
-          onChange={id => setAccountId(id)}
-          balances={balances}
-          targetDate={date}
-          projectedBalances={projectedBalances}
-        />
-        {!accountId && (
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
-            Please select an account
-          </p>
-        )}
+      {o.kind === 'transfer' ? (
+        <>
+          <Field label="From (Source account / stash)">
+            <AccountCardsSelect
+              accounts={accounts}
+              stashes={stashes}
+              allowStashes={true}
+              value={accountId}
+              onChange={id => setAccountId(id)}
+              balances={balances}
+              targetDate={date}
+              projectedBalances={projectedBalances}
+            />
+            {!accountId && (
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
+                Please select source account
+              </p>
+            )}
 
-        {selParty && isFuture && selBals && (
-          <div
-            style={{
-              background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              borderRadius: 12,
-              padding: '10px 14px',
-              marginTop: 8,
-              fontSize: 12,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
-              <b>{money(selBals.current, selParty.currency)}</b>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
-              <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
-              <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
-                {money(selBals.projected, selParty.currency)}
-              </b>
-            </div>
-            {+amount > 0 && (
+            {selParty && isFuture && selBals && (
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingTop: 4,
-                  borderTop: '1px dashed #E2E8F0',
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  marginTop: 8,
+                  fontSize: 12,
                 }}
               >
-                <span style={{ color: 'var(--mute)' }}>
-                  After this {o.kind === 'income' ? 'income' : 'payment'}:
-                </span>
-                <b
-                  style={{
-                    color:
-                      (o.kind === 'income'
-                        ? selBals.projected + +amount
-                        : selBals.projected - +amount) < 0
-                        ? '#DC2626'
-                        : '#166534',
-                  }}
-                >
-                  {money(
-                    o.kind === 'income'
-                      ? selBals.projected + +amount
-                      : selBals.projected - +amount,
-                    selParty.currency
-                  )}
-                </b>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
+                  <b>{money(selBals.current, selParty.currency)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
+                  <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
+                  <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                    {money(selBals.projected, selParty.currency)}
+                  </b>
+                </div>
+                {+amount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 4,
+                      borderTop: '1px dashed #E2E8F0',
+                    }}
+                  >
+                    <span style={{ color: 'var(--mute)' }}>
+                      After this transfer:
+                    </span>
+                    <b style={{ color: selBals.projected - +amount < 0 ? '#DC2626' : '#166534' }}>
+                      {money(selBals.projected - +amount, selParty.currency)}
+                    </b>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
-      </Field>
-
-      {isFuture && selParty && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
-        <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>⚠️</span>
-          <span>
-            <strong>Low projected balance in {selParty.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selParty.currency)}, which is {money(+amount - selBals.projected, selParty.currency)} short.
-          </span>
-        </div>
-      )}
-
-      {!isFuture && selFunds?.isShort && (
-        <div className="preview" style={{ background: '#FFFBEB', color: '#92400E', borderColor: '#FDE68A', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>⚠️</span>
-          <span>
-            <strong>Low balance in {selFunds.accountName}:</strong> Has {money(selFunds.balance ?? 0, selFunds.accountCurrency)}, but this payment needs {money(selFunds.neededInAccCur, selFunds.accountCurrency)} (short by {money(selFunds.shortBy, selFunds.accountCurrency)}).
-          </span>
-        </div>
-      )}
-
-      {o.kind === 'saving' ? (
-        <div className="preview" style={{ background: '#F0FDF4', color: '#166534', borderColor: '#BBF7D0', margin: '4px 0 10px' }}>
-          🌱 Saving into stash: <b>{stashes.find(s => s.id === o.stashId)?.name || o.name}</b>
-        </div>
-      ) : (
-        <>
-          <Field label="Pot">
-            <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
-              {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-            </select>
           </Field>
 
-          {currentCat?.subcategories && currentCat.subcategories.length > 0 && (
-            <Field label="Subcategory (optional)">
-              <div className="chips">
-                <button
-                  type="button"
-                  className={!subcategory ? 'chip on' : 'chip'}
-                  onClick={() => setSubcategory(undefined)}
-                >
-                  General
-                </button>
-                {currentCat.subcategories.map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={subcategory === s ? 'chip on' : 'chip'}
-                    onClick={() => setSubcategory(s)}
+          <Field label="To (Destination account / stash)">
+            <AccountCardsSelect
+              accounts={accounts}
+              stashes={stashes}
+              allowStashes={true}
+              value={toAccountId}
+              onChange={id => setToAccountId(id)}
+              balances={balances}
+              targetDate={date}
+              projectedBalances={projectedBalances}
+            />
+
+            {toAccountId && toAccountId === accountId && (
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
+                Source and destination cannot be the same
+              </p>
+            )}
+
+            {toParty && isFuture && toBals && (
+              <div
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  marginTop: 8,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--mute)' }}>Current balance ({toParty.name}):</span>
+                  <b>{money(toBals.current, toParty.currency)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
+                  <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
+                  <b style={{ color: '#2563EB' }}>
+                    {money(toBals.projected, toParty.currency)}
+                  </b>
+                </div>
+                {+amount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 4,
+                      borderTop: '1px dashed #E2E8F0',
+                    }}
                   >
-                    {s}
-                  </button>
-                ))}
+                    <span style={{ color: 'var(--mute)' }}>
+                      After receiving transfer:
+                    </span>
+                    <b style={{ color: '#166534' }}>
+                      {money(toBals.projected + +amount, toParty.currency)}
+                    </b>
+                  </div>
+                )}
               </div>
-            </Field>
+            )}
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label={o.kind === 'income' ? 'Into account' : 'From account'}>
+            <AccountCardsSelect
+              accounts={accounts}
+              stashes={stashes}
+              value={accountId}
+              onChange={id => setAccountId(id)}
+              balances={balances}
+              targetDate={date}
+              projectedBalances={projectedBalances}
+            />
+            {!accountId && (
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bad)' }}>
+                Please select an account
+              </p>
+            )}
+
+            {selParty && isFuture && selBals && (
+              <div
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  marginTop: 8,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--mute)' }}>Current balance ({selParty.name}):</span>
+                  <b>{money(selBals.current, selParty.currency)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
+                  <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
+                  <b style={{ color: selBals.projected < 0 ? '#DC2626' : '#2563EB' }}>
+                    {money(selBals.projected, selParty.currency)}
+                  </b>
+                </div>
+                {+amount > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 4,
+                      borderTop: '1px dashed #E2E8F0',
+                    }}
+                  >
+                    <span style={{ color: 'var(--mute)' }}>
+                      After this {o.kind === 'income' ? 'income' : 'payment'}:
+                    </span>
+                    <b
+                      style={{
+                        color:
+                          (o.kind === 'income'
+                            ? selBals.projected + +amount
+                            : selBals.projected - +amount) < 0
+                            ? '#DC2626'
+                            : '#166534',
+                      }}
+                    >
+                      {money(
+                        o.kind === 'income'
+                          ? selBals.projected + +amount
+                          : selBals.projected - +amount,
+                        selParty.currency
+                      )}
+                    </b>
+                  </div>
+                )}
+              </div>
+            )}
+          </Field>
+
+          {isFuture && selParty && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
+            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⚠️</span>
+              <span>
+                <strong>Low projected balance in {selParty.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selParty.currency)}, which is {money(+amount - selBals.projected, selParty.currency)} short.
+              </span>
+            </div>
+          )}
+
+          {!isFuture && selFunds?.isShort && (
+            <div className="preview" style={{ background: '#FFFBEB', color: '#92400E', borderColor: '#FDE68A', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⚠️</span>
+              <span>
+                <strong>Low balance in {selFunds.accountName}:</strong> Has {money(selFunds.balance ?? 0, selFunds.accountCurrency)}, but this payment needs {money(selFunds.neededInAccCur, selFunds.accountCurrency)} (short by {money(selFunds.shortBy, selFunds.accountCurrency)}).
+              </span>
+            </div>
+          )}
+
+          {o.kind === 'saving' ? (
+            <div className="preview" style={{ background: '#F0FDF4', color: '#166534', borderColor: '#BBF7D0', margin: '4px 0 10px' }}>
+              🌱 Saving into stash: <b>{stashes.find(s => s.id === o.stashId)?.name || o.name}</b>
+            </div>
+          ) : (
+            <>
+              <Field label="Pot">
+                <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
+                  {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                </select>
+              </Field>
+
+              {currentCat?.subcategories && currentCat.subcategories.length > 0 && (
+                <Field label="Subcategory (optional)">
+                  <div className="chips">
+                    <button
+                      type="button"
+                      className={!subcategory ? 'chip on' : 'chip'}
+                      onClick={() => setSubcategory(undefined)}
+                    >
+                      General
+                    </button>
+                    {currentCat.subcategories.map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={subcategory === s ? 'chip on' : 'chip'}
+                        onClick={() => setSubcategory(s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              )}
+            </>
           )}
         </>
       )}
+
       <Field label="Comment (optional)">
         <textarea rows={2} value={note} placeholder={mode === 'later' ? 'Why later? e.g. waiting for the invoice' : 'What exactly was it? e.g. bought a new kettle too'} onChange={e => setNote(e.target.value)} />
       </Field>
@@ -429,6 +656,8 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       >
         {mode === 'later'
           ? '⏰ Move it'
+          : o.kind === 'transfer'
+          ? '✓ Approve & Transfer'
           : selFunds?.isShort
           ? '✓ Approve & Pay anyway (Overdraft)'
           : o.kind === 'income'

@@ -70,8 +70,10 @@ export function LogBook() {
       const plan = planMap.get(p.planId);
       const cat = catMap.get(p.categoryId ?? plan?.categoryId ?? '');
       const kind = p.kind ?? plan?.kind ?? 'expense';
+      if (kind === 'transfer' && p.status !== 'cancelled') continue;
       const effectiveAccId = p.accountId || (p.stashId ? `stash_${p.stashId}` : plan?.accountId);
       const accName = resolvePartyName(effectiveAccId);
+      const toAccName = p.toAccountId ? resolvePartyName(p.toAccountId) : undefined;
       const isShared = Boolean(
         p.isShared ||
         (cat?.sharedWith && cat.sharedWith.length > 0) ||
@@ -83,14 +85,17 @@ export function LogBook() {
         id: p.id,
         type: kind,
         date: p.date,
-        title: p.name ?? plan?.name ?? 'Expense',
+        title: kind === 'transfer' ? `Transfer: ${accName} → ${toAccName ?? 'Account'}` : (p.name ?? plan?.name ?? 'Expense'),
         potName: cat?.name,
-        potEmoji: cat?.emoji,
-        potColor: cat?.color,
+        potEmoji: kind === 'transfer' ? '⇄' : cat?.emoji,
+        potColor: kind === 'transfer' ? '#6366F1' : cat?.color,
         subcategory: p.subcategory ?? plan?.subcategory,
         accountName: accName,
+        toAccountName: toAccName,
         amount: p.amount,
         currency: p.currency,
+        toAmount: p.toAmount,
+        toCurrency: p.toCurrency,
         status: p.status,
         note: p.note,
         payment: p,

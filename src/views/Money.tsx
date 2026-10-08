@@ -491,6 +491,8 @@ export function TransferModal({
   const [toAmount, setToAmount] = useState<number>(transfer?.toAmount ?? 0);
   const [date, setDate] = useState(transfer?.date ?? today());
   const [note, setNote] = useState(transfer?.note ?? '');
+  const [scheduleAsPlan, setScheduleAsPlan] = useState(false);
+  const [planFreq, setPlanFreq] = useState<'once' | 'weekly' | 'monthly'>('once');
 
   const fromParty = allParties.find(p => p.id === fromId);
   const toParty = allParties.find(p => p.id === toId);
@@ -520,6 +522,26 @@ export function TransferModal({
 
   const submit = () => {
     if (!fromParty || !toParty || fromAmount <= 0 || toAmount <= 0 || fromId === toId) return;
+    if (scheduleAsPlan) {
+      const p: Plan = {
+        id: uid(),
+        name: note.trim() || `Transfer (${fromParty.name} → ${toParty.name})`,
+        kind: 'transfer',
+        accountId: fromId,
+        toAccountId: toId,
+        amount: +fromAmount,
+        currency: fromParty.currency,
+        toAmount: +toAmount,
+        toCurrency: toParty.currency,
+        freq: planFreq,
+        every: 1,
+        startDate: date,
+        note: note.trim() || undefined,
+      };
+      save('plans', p);
+      onClose();
+      return;
+    }
     const t: Transfer = {
       id: transfer?.id ?? uid(),
       date,
@@ -704,12 +726,43 @@ export function TransferModal({
         />
       </Field>
 
+      {!transfer && (
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 12px', margin: '10px 0 14px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13, margin: 0 }}>
+            <input
+              type="checkbox"
+              checked={scheduleAsPlan}
+              onChange={e => setScheduleAsPlan(e.target.checked)}
+            />
+            <span>🗓️ Schedule as planned transfer (manage in Plan & Today)</span>
+          </label>
+          {scheduleAsPlan && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: 'var(--mute)' }}>Frequency:</span>
+              <div className="chips" style={{ margin: 0 }}>
+                {(['once', 'weekly', 'monthly'] as const).map(f => (
+                  <button
+                    type="button"
+                    key={f}
+                    className={planFreq === f ? 'chip on' : 'chip'}
+                    style={{ fontSize: 12, padding: '3px 8px' }}
+                    onClick={() => setPlanFreq(f)}
+                  >
+                    {f === 'once' ? 'One-off' : f === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <button
         className="btn primary wide"
-        disabled={!fromParty || !toParty || fromId === toId || fromAmount <= 0 || toAmount <= 0 || isShort}
+        disabled={!fromParty || !toParty || fromId === toId || fromAmount <= 0 || toAmount <= 0 || (!scheduleAsPlan && isShort)}
         onClick={submit}
       >
-        {transfer ? 'Save changes' : '✓ Move money'}
+        {scheduleAsPlan ? '🗓️ Schedule planned transfer' : transfer ? 'Save changes' : '✓ Move money'}
       </button>
 
       {transfer && (
