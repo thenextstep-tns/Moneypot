@@ -105,7 +105,8 @@ export function occurrences(plans: Plan[], payments: Payment[], from: string, to
   const used = new Set<string>();
   const inRange = (d: string) => d >= from && d <= to;
   const mk = (plan: Plan, due: string, p?: Payment): Occurrence => ({
-    key: `${plan.id}_${due}`, plan, dueDate: due,
+    key: p?.id ?? `${plan.id}_${due}`,
+    plan, dueDate: due,
     date: p?.date ?? due,
     amount: p?.amount ?? plan.amount,
     currency: p?.currency ?? plan.currency,

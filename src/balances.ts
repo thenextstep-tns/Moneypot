@@ -14,11 +14,11 @@ export function calcAccountBalance(
   for (const p of payments) {
     if (p.status !== 'confirmed') continue;
     const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind;
+    const kind = p.kind ?? plan?.kind ?? 'expense';
     const stashId = p.stashId ?? plan?.stashId;
-    if (!kind) continue;
-    if (p.accountId === a.id) b += kind === 'income' ? p.amount : -p.amount;
-    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) b += p.amount;
+    const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
+    if (p.accountId === a.id) b += kind === 'income' ? amt : -amt;
+    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) b += amt;
   }
   for (const t of transfers) {
     if (t.status === 'cancelled') continue;

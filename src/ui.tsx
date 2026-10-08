@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react';
-import type { Account } from './types';
-import { money } from './schedule';
+import { useMemo, useState, type ReactNode } from 'react';
+import type { Account, Payment } from './types';
+import { money, today } from './schedule';
 import { uid, useData } from './store';
+import { calcAccountBalance } from './balances';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -54,7 +55,7 @@ export function AccountForm({
   onSaved?: (account: Account) => void;
   onClose: () => void;
 }) {
-  const { settings, save, remove } = useData();
+  const { settings, categories, payments, transfers, plans, stashes, save, remove } = useData();
   const [a, setA] = useState<Account>(
     acc ?? {
       id: uid(),
@@ -66,6 +67,43 @@ export function AccountForm({
     }
   );
   const set = (p: Partial<Account>) => setA(x => ({ ...x, ...p }));
+
+  const currentBal = useMemo(
+    () => (acc ? calcAccountBalance(acc, payments, transfers, plans, stashes) : 0),
+    [acc, payments, transfers, plans, stashes]
+  );
+
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [targetBalStr, setTargetBalStr] = useState('');
+  const [correctionNote, setCorrectionNote] = useState('');
+
+  const targetBalNum = +targetBalStr;
+  const correctionDiff = targetBalStr !== '' ? targetBalNum - currentBal : 0;
+
+  const handleApplyCorrection = () => {
+    if (!acc || targetBalStr === '' || correctionDiff === 0) return;
+    const isInc = correctionDiff > 0;
+    const defaultCat = categories.find(c => c.kind === (isInc ? 'income' : 'expense'));
+
+    const corrPayment: Payment = {
+      id: `pay_${uid()}`,
+      planId: `adj_${uid()}`,
+      dueDate: today(),
+      date: today(),
+      amount: Math.abs(correctionDiff),
+      currency: acc.currency,
+      accountId: acc.id,
+      name: 'Balance correction',
+      kind: isInc ? 'income' : 'expense',
+      categoryId: defaultCat?.id ?? 'other',
+      note: correctionNote.trim() || `Manual balance correction (adjusted from ${money(currentBal, acc.currency)} to ${money(targetBalNum, acc.currency)})`,
+      status: 'confirmed',
+    };
+    save('payments', corrPayment);
+    setShowCorrection(false);
+    setTargetBalStr('');
+    setCorrectionNote('');
+  };
 
   const submit = () => {
     if (!a.name.trim()) return;
@@ -97,20 +135,113 @@ export function AccountForm({
           onChange={e => set({ institution: e.target.value || undefined })}
         />
       </Field>
-      <div className="row">
-        <Field label="Money there now">
-          <input
-            type="number"
-            inputMode="decimal"
-            value={a.startBalance || ''}
-            placeholder="0.00"
-            onChange={e => set({ startBalance: +e.target.value })}
-          />
-        </Field>
+
+      {!acc ? (
+        <div className="row">
+          <Field label="Starter balance">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={a.startBalance || ''}
+              placeholder="0.00"
+              onChange={e => set({ startBalance: +e.target.value })}
+            />
+          </Field>
+          <Field label="Currency">
+            <CurrencySelect value={a.currency} onChange={v => set({ currency: v })} />
+          </Field>
+        </div>
+      ) : (
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 16px', margin: '14px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700, letterSpacing: '0.04em' }}>
+                CURRENT BALANCE
+              </span>
+              <b style={{ fontSize: 22, letterSpacing: '-0.02em', color: currentBal < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+                {money(currentBal, acc.currency)}
+              </b>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              style={{ fontSize: 13, fontWeight: 600, padding: '6px 12px', background: showCorrection ? '#E2E8F0' : undefined }}
+              onClick={() => setShowCorrection(!showCorrection)}
+            >
+              ⚖️ Balance Correction
+            </button>
+          </div>
+
+          {showCorrection && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #E2E8F0' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#1E293B', marginBottom: 4 }}>
+                Set Current Balance Manually
+              </div>
+              <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+                Override the live balance to match your actual bank/wallet account. The adjustment difference will be logged as a manual correction in your Log Book.
+              </p>
+              <div className="row">
+                <Field label="Actual current balance">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    autoFocus
+                    placeholder={currentBal.toFixed(2)}
+                    value={targetBalStr}
+                    onChange={e => setTargetBalStr(e.target.value)}
+                  />
+                </Field>
+                <Field label="Currency">
+                  <input value={acc.currency} disabled style={{ opacity: 0.7 }} />
+                </Field>
+              </div>
+
+              {targetBalStr !== '' && (
+                <div style={{ fontSize: 13, margin: '4px 0 10px', color: correctionDiff >= 0 ? '#166534' : '#991B1B' }}>
+                  Correction adjustment: <b>{correctionDiff >= 0 ? `+${money(correctionDiff, acc.currency)}` : money(correctionDiff, acc.currency)}</b>
+                </div>
+              )}
+
+              <Field label="Reason / note (optional)">
+                <input
+                  placeholder="e.g. Bank statement reconciliation, cash count…"
+                  value={correctionNote}
+                  onChange={e => setCorrectionNote(e.target.value)}
+                />
+              </Field>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={targetBalStr === '' || correctionDiff === 0}
+                  onClick={handleApplyCorrection}
+                >
+                  Apply Balance Correction
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    setShowCorrection(false);
+                    setTargetBalStr('');
+                    setCorrectionNote('');
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {acc && (
         <Field label="Currency">
           <CurrencySelect value={a.currency} onChange={v => set({ currency: v })} />
         </Field>
-      </div>
+      )}
+
       <Field label="Colour">
         <input type="color" value={a.color} onChange={e => set({ color: e.target.value })} />
       </Field>

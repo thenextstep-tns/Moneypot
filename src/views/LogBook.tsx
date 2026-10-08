@@ -139,8 +139,14 @@ export function LogBook() {
   };
 
   const deleteItem = (item: LogItem) => {
-    if (!confirm(`Delete this ${item.type} record permanently?`)) return;
-    if (item.payment) remove('payments', item.payment.id);
+    if (!confirm(`Delete this ${item.type} record permanently? The money will be restored to the account.`)) return;
+    if (item.payment) {
+      remove('payments', item.payment.id);
+      const plan = plans.find(x => x.id === item.payment?.planId);
+      if (plan && plan.freq === 'once') {
+        remove('plans', plan.id);
+      }
+    }
     if (item.transfer) remove('transfers', item.transfer.id);
   };
 
@@ -201,20 +207,22 @@ export function LogBook() {
           const isCancelled = item.status === 'cancelled';
           const isTransfer = item.type === 'transfer';
           const isIncome = item.type === 'income';
+          const isCorrection = item.title === 'Balance correction' || item.payment?.planId?.startsWith('adj_');
 
           return (
             <div
               key={item.id}
               className={`item log-item ${isCancelled ? 'cancelled-item' : ''}`}
-              style={{ ['--c' as string]: item.potColor ?? (isTransfer ? '#3FB5A6' : '#9AA0A6') }}
+              style={{ ['--c' as string]: item.potColor ?? (isCorrection ? '#F59E0B' : isTransfer ? '#3FB5A6' : '#9AA0A6') }}
             >
               <div className="emoji">
-                {isCancelled ? '🚫' : isTransfer ? '⇄' : item.potEmoji ?? (isIncome ? '💰' : '💸')}
+                {isCancelled ? '🚫' : isCorrection ? '⚖️' : isTransfer ? '⇄' : item.potEmoji ?? (isIncome ? '💰' : '💸')}
               </div>
 
               <div className="grow">
                 <div className="title">
                   {item.title}
+                  {isCorrection && <span className="tag" style={{ background: '#FEF3C7', color: '#92400E' }}>Manual correction</span>}
                   {item.subcategory && <span className="tag subcat-badge">{item.subcategory}</span>}
                   {item.isShared && <span className="tag shared-tag">👥 Shared</span>}
                   {isCancelled && <span className="tag danger-tag">Cancelled (Money restored)</span>}
@@ -295,7 +303,7 @@ export function LogBook() {
 
 /** Modal to edit a logged payment */
 function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
-  const { accounts, categories, save, remove } = useData();
+  const { accounts, categories, plans, save, remove } = useData();
   const [name, setName] = useState(payment.name ?? '');
   const [amount, setAmount] = useState(payment.amount);
   const [currency, setCurrency] = useState(payment.currency);
@@ -392,8 +400,12 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
       <button
         className="btn ghost wide danger"
         onClick={() => {
-          if (confirm('Delete this payment record permanently?')) {
+          if (confirm('Delete this payment record permanently? The money will be restored to the account.')) {
             remove('payments', payment.id);
+            const plan = plans.find(x => x.id === payment.planId);
+            if (plan && plan.freq === 'once') {
+              remove('plans', plan.id);
+            }
             onClose();
           }
         }}
