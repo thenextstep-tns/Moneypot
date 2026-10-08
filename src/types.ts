@@ -62,6 +62,7 @@ export interface Stash extends Owned {
   startAmount: number;
   deadline?: string;
   sharedWith?: string[];        // emails of confirmed members
+  invitedEmails?: string[];     // pending invited emails
   ownerEmail?: string;          // email of the creator
   categoryId?: string;          // default pot for this stash (e.g. 'savings')
   subcategory?: string;         // default subcategory (e.g. stash name)

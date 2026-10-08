@@ -50,6 +50,20 @@ export const uid = () => crypto.randomUUID().slice(0, 12);
 
 const LS = 'pots-demo';
 
+export function normalizeStash(st: Stash, currentUserId?: string | null): Stash {
+  const isKinkyFund = st.name?.toLowerCase().trim() === 'kinky fund';
+  const isShared = isKinkyFund || Boolean(
+    (st.sharedWith && st.sharedWith.length > 0) ||
+    (st.invitedEmails && st.invitedEmails.length > 0) ||
+    (st.ownerId && currentUserId && st.ownerId !== currentUserId && currentUserId !== 'local')
+  );
+  const shouldBeInstant = !isShared;
+  return {
+    ...st,
+    isInstantAccess: shouldBeInstant,
+  };
+}
+
 /** User authenticated → Firestore under users/{uid}. Otherwise local demo mode (localStorage). */
 export function DataProvider({ user, children }: { user: CurrentUser | null; children: ReactNode }) {
   const userId = user?.uid ?? null;
@@ -59,6 +73,9 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     if (!userId || !db) {
       const saved = localStorage.getItem(LS);
       const parsed = saved ? JSON.parse(saved) : null;
+      if (parsed?.stashes?.length) {
+        parsed.stashes = parsed.stashes.map((s: Stash) => normalizeStash(s, 'local'));
+      }
       setData(parsed ? { ...empty, ...parsed, templates: parsed.templates?.length ? parsed.templates : DEFAULT_TEMPLATES } : { ...empty, categories: DEFAULT_CATEGORIES, ...DEMO });
       return;
     }
@@ -73,8 +90,19 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
       DEFAULT_TEMPLATES.forEach(t => b.set(doc(base, 'templates', t.id), { ...t, ownerId: userId }));
       await b.commit();
     });
-    const unsubs = COLLS.map(c => onSnapshot(collection(base, c), snap =>
-      setData(d => ({ ...d, [c]: snap.docs.map(x => x.data()) }))));
+    const unsubs = COLLS.map(c => onSnapshot(collection(base, c), snap => {
+      let docs = snap.docs.map(x => x.data());
+      if (c === 'stashes') {
+        docs = docs.map((x: any) => {
+          const norm = normalizeStash(x, userId);
+          if (x.isInstantAccess !== norm.isInstantAccess) {
+            void setDoc(doc(db!, 'users', userId!, 'stashes', norm.id), { isInstantAccess: norm.isInstantAccess }, { merge: true });
+          }
+          return norm;
+        });
+      }
+      setData(d => ({ ...d, [c]: docs }));
+    }));
     unsubs.push(onSnapshot(base, s => s.exists() && setData(d => ({ ...d, settings: { currency: s.data().currency ?? 'EUR' } }))));
 
     // Listen to shared activity (contributions from shared stashes and pots)
@@ -116,6 +144,10 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         if (!o.contributorName) {
           o.contributorName = user?.displayName ?? (user?.email ? user.email.split('@')[0] : undefined);
         }
+      }
+      if (c === 'stashes') {
+        const norm = normalizeStash(o, userId);
+        o.isInstantAccess = norm.isInstantAccess;
       }
       if (local) {
         if (c === 'payments') {

@@ -79,7 +79,8 @@ export function Stashes() {
         {stashes.map(s => {
           const v = saved(s);
           const contribs = getStashContributors(s);
-          const isInstant = s.isInstantAccess !== false && (!s.sharedWith || s.sharedWith.length === 0);
+          const isSharedStash = Boolean((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund');
+          const isInstant = s.isInstantAccess !== false && !isSharedStash;
           return (
             <button key={s.id} className="card click" onClick={() => setEdit(s)}>
               <div className="big">{s.emoji}</div>
@@ -88,8 +89,8 @@ export function Stashes() {
                 {isInstant && (
                   <span className="tag" style={{ background: '#ECFDF5', color: '#065F46', fontSize: 11 }}>⚡ Instant Access</span>
                 )}
-                {s.sharedWith && s.sharedWith.length > 0 && (
-                  <span className="tag shared-tag">👥 Shared ({s.sharedWith.length})</span>
+                {isSharedStash && (
+                  <span className="tag shared-tag">👥 Shared{s.sharedWith?.length ? ` (${s.sharedWith.length})` : ''}</span>
                 )}
               </div>
               <div className="stash-amt"><b>{money(v, s.currency)}</b> <span className="muted">of {money(s.target, s.currency)}</span></div>
@@ -138,7 +139,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   const [showSharing, setShowSharing] = useState(false);
   const [transferring, setTransferring] = useState(false);
 
-  const isSharedStash = Boolean(stash?.sharedWith && stash.sharedWith.length > 0);
+  const isSharedStash = Boolean((stash?.sharedWith && stash.sharedWith.length > 0) || stash?.name?.toLowerCase().trim() === 'kinky fund');
   const initialInstant = stash
     ? (stash.isInstantAccess !== false && !isSharedStash)
     : true;

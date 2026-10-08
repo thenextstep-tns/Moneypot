@@ -105,7 +105,7 @@ export function OneOffPaymentModal({
     const numAmount = Number(amount);
     const targetStashId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : undefined;
     const targetStash = targetStashId ? stashes.find(s => s.id === targetStashId) : undefined;
-    const isSharedStash = Boolean(targetStash?.sharedWith && targetStash.sharedWith.length > 0);
+    const isSharedStash = Boolean((targetStash?.sharedWith && targetStash.sharedWith.length > 0) || targetStash?.name?.toLowerCase().trim() === 'kinky fund');
     const isShared = isSharedStash || Boolean(selCat?.sharedWith && selCat.sharedWith.length > 0);
 
     if (isFuture) {
@@ -330,7 +330,10 @@ export function OneOffPaymentModal({
 
       {/* If current pot is linked to a shared stash, show quick helper */}
       {(() => {
-        const sharedStashForCat = stashes.find(s => s.categoryId === categoryId && s.sharedWith && s.sharedWith.length > 0);
+        const sharedStashForCat = stashes.find(s =>
+          ((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund') &&
+          (s.categoryId === categoryId || s.name.toLowerCase() === selCat?.name.toLowerCase())
+        );
         if (!sharedStashForCat) return null;
         const isUsingStash = accountId === `stash_${sharedStashForCat.id}`;
         return (

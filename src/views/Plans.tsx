@@ -23,7 +23,7 @@ export function Plans() {
   const isShared = (p: Plan) => {
     const c = cat(p.categoryId);
     const s = stashes.find(x => x.id === p.stashId);
-    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0));
+    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0) || s?.name?.toLowerCase().trim() === 'kinky fund');
   };
 
   return (

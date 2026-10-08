@@ -288,10 +288,13 @@ export function AccountCardsSelect({
 }) {
   const [showAdd, setShowAdd] = useState(false);
 
-  // Available instant access stashes (personal stashes where isInstantAccess !== false)
+  // Available instant access stashes (personal stashes where isInstantAccess !== false and not shared)
   const instantStashes = useMemo(() => {
     if (!allowStashes || !stashes) return [];
-    return stashes.filter(s => s.isInstantAccess !== false && (!s.sharedWith || s.sharedWith.length === 0));
+    return stashes.filter(s => {
+      const isShared = Boolean((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund');
+      return !isShared && s.isInstantAccess !== false;
+    });
   }, [allowStashes, stashes]);
 
   // Selected stash (might also be a shared stash if passed directly as value)
@@ -416,7 +419,7 @@ export function AccountCardsSelect({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span className="acc-card-name">{s.name}</span>
                       <span style={{ fontSize: 10, fontWeight: 600, background: '#ECFDF5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>
-                        {s.sharedWith?.length ? 'Shared Stash' : 'Stash'}
+                        {(s.sharedWith?.length || s.name?.toLowerCase().trim() === 'kinky fund') ? 'Shared Stash' : 'Stash'}
                       </span>
                     </div>
                     <div className="acc-card-sub" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

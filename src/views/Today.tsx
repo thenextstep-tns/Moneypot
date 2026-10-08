@@ -38,7 +38,7 @@ export function Today() {
   const isSharedItem = (o: Occurrence) => {
     const c = cat(o.categoryId);
     const s = stashes.find(x => x.id === o.stashId);
-    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0));
+    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0) || s?.name?.toLowerCase().trim() === 'kinky fund');
   };
 
   const pending = occ.filter(o => o.status === 'pending');
