@@ -388,21 +388,46 @@ export function findAccountShortfalls(
 
   for (const a of accounts) {
     const bal = balances.get(a.id) ?? 0;
-    const aPending = pending.filter(o => o.accountId === a.id);
     let outSum = 0;
     let inSum = 0;
 
-    for (const o of aPending) {
-      const amtInAcc = convert(o.amount, o.currency, a.currency);
-      if (o.kind === 'income') {
+    // Net balance change per due date (incoming transfers count as money in)
+    const deltaByDate = new Map<string, number>();
+    const addDelta = (date: string, d: number) => deltaByDate.set(date, (deltaByDate.get(date) ?? 0) + d);
+
+    for (const o of pending) {
+      const isSource = o.accountId === a.id;
+      const isTransferTarget = o.kind === 'transfer' && o.toAccountId === a.id;
+      if (isSource && isTransferTarget) continue; // transfer to itself: no effect
+
+      if (isSource) {
+        const amtInAcc = convert(o.amount, o.currency, a.currency);
+        if (o.kind === 'income') {
+          inSum += amtInAcc;
+          addDelta(o.dueDate, amtInAcc);
+        } else {
+          outSum += amtInAcc;
+          addDelta(o.dueDate, -amtInAcc);
+        }
+      } else if (isTransferTarget) {
+        const toAmt = o.toAmount ?? o.amount;
+        const toCur = o.toCurrency ?? o.currency;
+        const amtInAcc = convert(toAmt, toCur, a.currency);
         inSum += amtInAcc;
-      } else {
-        outSum += amtInAcc;
+        addDelta(o.dueDate, amtInAcc);
       }
     }
 
+    // Walk through the period day by day and find the lowest balance
+    let running = bal;
+    let lowest = bal;
+    for (const date of [...deltaByDate.keys()].sort()) {
+      running += deltaByDate.get(date) ?? 0;
+      if (running < lowest) lowest = running;
+    }
+
     const projected = bal + inSum - outSum;
-    if (projected < 0 || (bal < outSum && outSum > 0)) {
+    if (lowest < -0.005) {
       warnings.push({
         accountId: a.id,
         accountName: a.name,
@@ -411,7 +436,7 @@ export function findAccountShortfalls(
         scheduledOutgoing: outSum,
         scheduledIncoming: inSum,
         projectedBalance: projected,
-        shortBy: Math.max(0, outSum - (bal + inSum)),
+        shortBy: -lowest,
       });
     }
   }
