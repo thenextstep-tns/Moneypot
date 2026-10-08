@@ -32,7 +32,7 @@ export function Stashes() {
       ? (s.ownerEmail === user?.email ? 'You (Creator)' : s.ownerEmail.split('@')[0])
       : 'Initial balance';
 
-    if (s.startAmount > 0) {
+    if (s.startAmount > 0 && !payments.some(p => p.id === `init_stash_${s.id}` && p.status === 'confirmed')) {
       byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + s.startAmount);
     }
 
@@ -44,10 +44,13 @@ export function Stashes() {
       if (!label) {
         label = p.ownerId === user?.uid ? 'You' : 'Collaborator';
       }
-      byUser.set(label, (byUser.get(label) ?? 0) + p.amount);
+      const delta = p.kind === 'expense' ? -p.amount : p.amount;
+      byUser.set(label, (byUser.get(label) ?? 0) + delta);
     }
 
-    return Array.from(byUser.entries()).map(([name, amount]) => ({ name, amount }));
+    return Array.from(byUser.entries())
+      .filter(([_, amount]) => amount > 0)
+      .map(([name, amount]) => ({ name, amount }));
   };
 
   return (
@@ -96,7 +99,7 @@ export function Stashes() {
               <div className="stash-amt"><b>{money(v, s.currency)}</b> <span className="muted">of {money(s.target, s.currency)}</span></div>
               <Bar done={v} total={s.target} color="#2FA36B" />
               <div className="sub">{v >= s.target ? '🎉 Goal reached!' : `${money(s.target - v, s.currency)} to go`}</div>
-              {s.sharedWith && s.sharedWith.length > 0 && contribs.length > 0 && (
+              {s.sharedWith && s.sharedWith.length > 0 && v > 0 && contribs.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
                   {contribs.map(c => (
                     <span key={c.name} style={{ fontSize: 11, background: '#F1F5F9', padding: '2px 6px', borderRadius: 6, color: 'var(--ink)' }}>
@@ -160,6 +163,45 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   const [monthly, setMonthly] = useState(0);
   const set = (p: Partial<Stash>) => setS(x => ({ ...x, ...p }));
 
+  const currentBal = stash ? calcStashBalance(stash, payments, transfers, plans) : 0;
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [targetBalStr, setTargetBalStr] = useState('');
+  const [correctionNote, setCorrectionNote] = useState('');
+
+  const targetBalNum = targetBalStr !== '' ? +targetBalStr : currentBal;
+  const correctionDiff = targetBalNum - currentBal;
+
+  const handleApplyCorrection = () => {
+    if (targetBalStr === '' || !stash) return;
+    const targetBalNum = +targetBalStr;
+    const diff = targetBalNum - currentBal;
+    if (diff === 0) return;
+
+    const isInc = diff > 0;
+    const corrPayment: Payment = {
+      id: `adj_stash_${stash.id}_${Date.now()}`,
+      planId: `adj_stash_${stash.id}`,
+      dueDate: today(),
+      date: today(),
+      amount: Math.abs(diff),
+      currency: stash.currency,
+      accountId: `stash_${stash.id}`,
+      stashId: stash.id,
+      name: 'Balance correction',
+      kind: isInc ? 'income' : 'expense',
+      categoryId: stash.categoryId || (isInc ? 'savings' : 'other'),
+      subcategory: stash.name,
+      note: correctionNote.trim() || `Manual stash balance correction (adjusted from ${money(currentBal, stash.currency)} to ${money(targetBalNum, stash.currency)})`,
+      status: 'confirmed',
+      contributorEmail: user?.email || undefined,
+      contributorName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'You'),
+    };
+    save('payments', corrPayment);
+    setShowCorrection(false);
+    setTargetBalStr('');
+    setCorrectionNote('');
+  };
+
   const contribs = useMemo(() => {
     if (!stash) return [];
     const pays = payments.filter(
@@ -170,7 +212,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       ? (stash.ownerEmail === user?.email ? 'You (Creator)' : stash.ownerEmail.split('@')[0])
       : 'Initial balance';
 
-    if (stash.startAmount > 0) {
+    if (stash.startAmount > 0 && !payments.some(p => p.id === `init_stash_${stash.id}` && p.status === 'confirmed')) {
       byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + stash.startAmount);
     }
     for (const p of pays) {
@@ -181,22 +223,48 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       if (!label) {
         label = p.ownerId === user?.uid ? 'You' : 'Collaborator';
       }
-      byUser.set(label, (byUser.get(label) ?? 0) + p.amount);
+      const delta = p.kind === 'expense' ? -p.amount : p.amount;
+      byUser.set(label, (byUser.get(label) ?? 0) + delta);
     }
-    return Array.from(byUser.entries()).map(([name, amount]) => ({ name, amount }));
+    return Array.from(byUser.entries())
+      .filter(([_, amount]) => amount > 0)
+      .map(([name, amount]) => ({ name, amount }));
   }, [stash, payments, plans, user]);
 
   const submit = () => {
     const finalIsInstant = !isSharedStash && isInstant;
     const finalCatId = finalIsInstant ? undefined : (s.categoryId || defaultCatId);
     const finalSubcat = finalIsInstant ? undefined : (s.subcategory || s.name.trim());
+    const initialAmount = !stash ? (s.startAmount || 0) : 0;
     const finalStash: Stash = {
       ...s,
+      startAmount: stash ? s.startAmount : 0,
       isInstantAccess: finalIsInstant,
       categoryId: finalCatId,
       subcategory: finalSubcat,
     };
     save('stashes', finalStash);
+    if (!stash && initialAmount > 0) {
+      const initPayment: Payment = {
+        id: `init_stash_${s.id}`,
+        planId: `init_stash_${s.id}`,
+        dueDate: today(),
+        date: today(),
+        amount: initialAmount,
+        currency: s.currency,
+        accountId: `stash_${s.id}`,
+        stashId: s.id,
+        name: 'Starter balance',
+        kind: 'saving',
+        categoryId: finalCatId || defaultCatId,
+        subcategory: finalSubcat || s.name.trim(),
+        note: `Initial starter balance for ${s.name.trim()}`,
+        status: 'confirmed',
+        contributorEmail: user?.email || undefined,
+        contributorName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'You'),
+      };
+      save('payments', initPayment);
+    }
     if (monthly > 0) {
       save('plans', {
         id: uid(),
@@ -225,7 +293,101 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
         <Field label="Goal"><input type="number" value={s.target || ''} onChange={e => set({ target: +e.target.value })} /></Field>
         <Field label="Currency"><CurrencySelect value={s.currency} onChange={v => set({ currency: v })} /></Field>
       </div>
-      <Field label="Already have"><input type="number" value={s.startAmount || ''} onChange={e => set({ startAmount: +e.target.value })} /></Field>
+
+      {!stash ? (
+        <Field label="Starter balance">
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={s.startAmount || ''}
+            onChange={e => set({ startAmount: +e.target.value })}
+          />
+        </Field>
+      ) : (
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 16px', margin: '14px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700, letterSpacing: '0.04em' }}>
+                CURRENT BALANCE
+              </span>
+              <b style={{ fontSize: 22, letterSpacing: '-0.02em', color: currentBal < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+                {money(currentBal, stash.currency)}
+              </b>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              style={{ fontSize: 13, fontWeight: 600, padding: '6px 12px', background: showCorrection ? '#E2E8F0' : undefined }}
+              onClick={() => setShowCorrection(!showCorrection)}
+            >
+              ⚖️ Balance Correction
+            </button>
+          </div>
+
+          {showCorrection && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #E2E8F0' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#1E293B', marginBottom: 4 }}>
+                Set Current Balance Manually
+              </div>
+              <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+                Override the live balance of this stash. The adjustment difference will be logged as a manual correction in your Log Book.
+              </p>
+              <div className="row">
+                <Field label="Actual current balance">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    autoFocus
+                    placeholder={currentBal.toFixed(2)}
+                    value={targetBalStr}
+                    onChange={e => setTargetBalStr(e.target.value)}
+                  />
+                </Field>
+                <Field label="Currency">
+                  <input value={stash.currency} disabled style={{ opacity: 0.7 }} />
+                </Field>
+              </div>
+
+              {targetBalStr !== '' && (
+                <div style={{ fontSize: 13, margin: '4px 0 10px', color: correctionDiff >= 0 ? '#166534' : '#991B1B' }}>
+                  Correction adjustment: <b>{correctionDiff >= 0 ? `+${money(correctionDiff, stash.currency)}` : money(correctionDiff, stash.currency)}</b>
+                </div>
+              )}
+
+              <Field label="Reason / note (optional)">
+                <input
+                  placeholder="e.g. Reconciliation, cash adjustment, savings recalculation…"
+                  value={correctionNote}
+                  onChange={e => setCorrectionNote(e.target.value)}
+                />
+              </Field>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={targetBalStr === '' || correctionDiff === 0}
+                  onClick={handleApplyCorrection}
+                >
+                  Apply Balance Correction
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    setShowCorrection(false);
+                    setTargetBalStr('');
+                    setCorrectionNote('');
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Instant access parameter */}
       <div style={{ margin: '6px 0 14px' }}>
@@ -294,7 +456,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       <div className="note" style={{ margin: '8px 0 14px' }}>
         💡 Stashes act as dedicated money buckets. Transferring money between accounts and stashes adjusts your available account balances.
       </div>
-      {stash && contribs.length > 0 && (
+      {stash && currentBal > 0 && contribs.length > 0 && (
         <div style={{ background: '#F8FAFC', border: '1px solid var(--line)', borderRadius: 12, padding: 12, margin: '0 0 14px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 8 }}>
             👥 Contributors Breakdown
