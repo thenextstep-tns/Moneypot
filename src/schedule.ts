@@ -140,6 +140,9 @@ export function occurrences(plans: Plan[], payments: Payment[], from: string, to
     stashId: p?.stashId ?? plan.stashId,
     note: p?.note,
     planNote: plan.note,
+    isShared: p?.isShared ?? plan.isShared,
+    contributorEmail: p?.contributorEmail,
+    contributorName: p?.contributorName,
   });
   const out: Occurrence[] = [];
   for (const plan of plans)
@@ -159,6 +162,7 @@ export function occurrences(plans: Plan[], payments: Payment[], from: string, to
 export const toPayment = (o: Occurrence, status: Payment['status'], patch: Partial<Payment> = {}): Payment => ({
   id: o.key, planId: o.plan.id, dueDate: o.dueDate, date: o.date, amount: o.amount, currency: o.currency,
   accountId: o.accountId, name: o.name, kind: o.kind, categoryId: o.categoryId, subcategory: o.subcategory, stashId: o.stashId, note: o.note,
+  isShared: o.isShared, contributorEmail: o.contributorEmail, contributorName: o.contributorName,
   ...patch, status,
 });
 

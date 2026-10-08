@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { uid, useData } from '../store';
 import { addDays, dayLabel, money, occurrences, today } from '../schedule';
 import { convert, getRate } from '../fx';
@@ -15,13 +15,41 @@ const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cas
 
 /** Savings goals */
 export function Stashes() {
-  const { stashes, plans, payments } = useData();
+  const { user, stashes, plans, payments } = useData();
   const [edit, setEdit] = useState<Stash | 'new' | null>(null);
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const saved = (s: Stash) => s.startAmount + payments
     .filter(p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id)
     .reduce((a, p) => a + p.amount, 0);
+
+  const getStashContributors = (s: Stash) => {
+    const pays = payments.filter(
+      p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id
+    );
+    const byUser = new Map<string, number>();
+
+    const ownerLabel = s.ownerEmail
+      ? (s.ownerEmail === user?.email ? 'You (Creator)' : s.ownerEmail.split('@')[0])
+      : 'Initial balance';
+
+    if (s.startAmount > 0) {
+      byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + s.startAmount);
+    }
+
+    for (const p of pays) {
+      let label = p.contributorName;
+      if (!label && p.contributorEmail) {
+        label = p.contributorEmail === user?.email ? 'You' : p.contributorEmail.split('@')[0];
+      }
+      if (!label) {
+        label = p.ownerId === user?.uid ? 'You' : 'Collaborator';
+      }
+      byUser.set(label, (byUser.get(label) ?? 0) + p.amount);
+    }
+
+    return Array.from(byUser.entries()).map(([name, amount]) => ({ name, amount }));
+  };
 
   return (
     <div className="page">
@@ -51,6 +79,7 @@ export function Stashes() {
       <div className="grid">
         {stashes.map(s => {
           const v = saved(s);
+          const contribs = getStashContributors(s);
           return (
             <button key={s.id} className="card click" onClick={() => setEdit(s)}>
               <div className="big">{s.emoji}</div>
@@ -63,6 +92,15 @@ export function Stashes() {
               <div className="stash-amt"><b>{money(v, s.currency)}</b> <span className="muted">of {money(s.target, s.currency)}</span></div>
               <Bar done={v} total={s.target} color="#2FA36B" />
               <div className="sub">{v >= s.target ? '🎉 Goal reached!' : `${money(s.target - v, s.currency)} to go`}</div>
+              {s.sharedWith && s.sharedWith.length > 0 && contribs.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+                  {contribs.map(c => (
+                    <span key={c.name} style={{ fontSize: 11, background: '#F1F5F9', padding: '2px 6px', borderRadius: 6, color: 'var(--ink)' }}>
+                      👤 {c.name}: <b>{money(c.amount, s.currency)}</b>
+                    </span>
+                  ))}
+                </div>
+              )}
             </button>
           );
         })}
@@ -75,11 +113,38 @@ export function Stashes() {
 }
 
 function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
-  const { accounts, settings, save, remove } = useData();
+  const { user, accounts, settings, payments, plans, save, remove } = useData();
   const [showSharing, setShowSharing] = useState(false);
   const [s, setS] = useState<Stash>(stash ?? { id: uid(), name: '', emoji: '🎯', target: 0, currency: settings.currency, startAmount: 0, accountId: accounts.find(a => a.type === 'savings')?.id });
   const [monthly, setMonthly] = useState(0);
   const set = (p: Partial<Stash>) => setS(x => ({ ...x, ...p }));
+
+  const contribs = useMemo(() => {
+    if (!stash) return [];
+    const pays = payments.filter(
+      p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === stash.id
+    );
+    const byUser = new Map<string, number>();
+    const ownerLabel = stash.ownerEmail
+      ? (stash.ownerEmail === user?.email ? 'You (Creator)' : stash.ownerEmail.split('@')[0])
+      : 'Initial balance';
+
+    if (stash.startAmount > 0) {
+      byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + stash.startAmount);
+    }
+    for (const p of pays) {
+      let label = p.contributorName;
+      if (!label && p.contributorEmail) {
+        label = p.contributorEmail === user?.email ? 'You' : p.contributorEmail.split('@')[0];
+      }
+      if (!label) {
+        label = p.ownerId === user?.uid ? 'You' : 'Collaborator';
+      }
+      byUser.set(label, (byUser.get(label) ?? 0) + p.amount);
+    }
+    return Array.from(byUser.entries()).map(([name, amount]) => ({ name, amount }));
+  }, [stash, payments, plans, user]);
+
   const submit = () => {
     save('stashes', s);
     if (monthly > 0) save('plans', { id: uid(), name: s.name, kind: 'saving', categoryId: 'savings', stashId: s.id, amount: monthly, currency: s.currency, freq: 'monthly', every: 1, startDate: today(), accountId: accounts[0]?.id });
@@ -104,6 +169,22 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           onChange={id => set({ accountId: id })}
         />
       </Field>
+      <div className="note" style={{ margin: '8px 0 14px' }}>
+        💡 Stashes track money strictly by summing what has been put away (starting amount + confirmed payments). The linked account is just a reference of where it is physically held.
+      </div>
+      {stash && contribs.length > 0 && (
+        <div style={{ background: '#F8FAFC', border: '1px solid var(--line)', borderRadius: 12, padding: 12, margin: '0 0 14px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 8 }}>
+            👥 Contributors Breakdown
+          </div>
+          {contribs.map(c => (
+            <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid #F1F5F9' }}>
+              <span>👤 {c.name}</span>
+              <b>{money(c.amount, s.currency)}</b>
+            </div>
+          ))}
+        </div>
+      )}
       <button className="btn primary wide" disabled={!s.name || !s.target} onClick={submit}>{stash ? 'Save' : 'Create stash'}</button>
       {stash && (
         <button

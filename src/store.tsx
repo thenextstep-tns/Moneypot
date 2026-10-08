@@ -76,6 +76,28 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     const unsubs = COLLS.map(c => onSnapshot(collection(base, c), snap =>
       setData(d => ({ ...d, [c]: snap.docs.map(x => x.data()) }))));
     unsubs.push(onSnapshot(base, s => s.exists() && setData(d => ({ ...d, settings: { currency: s.data().currency ?? 'EUR' } }))));
+
+    // Listen to shared activity (contributions from shared stashes and pots)
+    unsubs.push(onSnapshot(collection(db, 'shared_payments'), snap => {
+      const incoming = snap.docs.map(x => x.data() as Payment);
+      if (!incoming.length) return;
+      setData(d => {
+        const myMap = new Map(d.payments.map(p => [p.id, p]));
+        let changed = false;
+        for (const sp of incoming) {
+          const isRelevant = (sp.stashId && d.stashes.some(s => s.id === sp.stashId))
+            || (sp.categoryId && d.categories.some(c => c.id === sp.categoryId));
+          if (isRelevant && !myMap.has(sp.id)) {
+            myMap.set(sp.id, sp);
+            changed = true;
+          }
+        }
+        return changed ? { ...d, payments: Array.from(myMap.values()) } : d;
+      });
+    }, err => {
+      console.warn('shared_payments listener error:', err.message);
+    }));
+
     return () => unsubs.forEach(u => u());
   }, [userId]);
 
@@ -87,13 +109,53 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     ...data,
     user,
     save: (c, raw) => {
-      const o = { ...raw, ownerId: userId ?? 'local' };
-      if (local) setData(d => ({ ...d, [c]: [...(d[c] as { id: string }[]).filter(x => x.id !== o.id), o] }));
-      else void setDoc(doc(db!, 'users', userId!, c, o.id), o);
+      const o: any = { ...raw, ownerId: (raw as any).ownerId ?? userId ?? 'local' };
+      if (c === 'payments') {
+        if (!o.contributorEmail && user?.email) o.contributorEmail = user.email;
+        if (!o.contributorName) {
+          o.contributorName = user?.displayName ?? (user?.email ? user.email.split('@')[0] : undefined);
+        }
+      }
+      if (local) {
+        setData(d => ({ ...d, [c]: [...(d[c] as { id: string }[]).filter(x => x.id !== o.id), o] }));
+      } else {
+        void setDoc(doc(db!, 'users', userId!, c, o.id), o);
+        // If it's a payment on a shared stash or category, sync to shared_payments & owner
+        if (c === 'payments') {
+          const st = data.stashes.find(s => s.id === o.stashId);
+          const cat = data.categories.find(k => k.id === o.categoryId);
+          const isSharedStash = st && (st.sharedWith?.length || (st.ownerId && st.ownerId !== userId));
+          const isSharedCat = cat && (cat.sharedWith?.length || (cat.ownerId && cat.ownerId !== userId));
+          if (isSharedStash || isSharedCat) {
+            o.isShared = true;
+            void setDoc(doc(db!, 'shared_payments', o.id), o);
+            if (st?.ownerId && st.ownerId !== userId) {
+              void setDoc(doc(db!, 'users', st.ownerId, 'payments', o.id), o);
+            }
+            if (cat?.ownerId && cat.ownerId !== userId) {
+              void setDoc(doc(db!, 'users', cat.ownerId, 'payments', o.id), o);
+            }
+          }
+        }
+        // If updating a shared stash or category, also sync to master owner
+        if (c === 'stashes' && o.ownerId && o.ownerId !== userId) {
+          void setDoc(doc(db!, 'users', o.ownerId, 'stashes', o.id), o, { merge: true });
+        }
+        if (c === 'categories' && o.ownerId && o.ownerId !== userId) {
+          void setDoc(doc(db!, 'users', o.ownerId, 'categories', o.id), o, { merge: true });
+        }
+      }
     },
-    remove: (c, id) => local
-      ? setData(d => ({ ...d, [c]: (d[c] as { id: string }[]).filter(x => x.id !== id) }))
-      : void deleteDoc(doc(db!, 'users', userId!, c, id)),
+    remove: (c, id) => {
+      if (local) {
+        setData(d => ({ ...d, [c]: (d[c] as { id: string }[]).filter(x => x.id !== id) }));
+      } else {
+        void deleteDoc(doc(db!, 'users', userId!, c, id));
+        if (c === 'payments') {
+          void deleteDoc(doc(db!, 'shared_payments', id));
+        }
+      }
+    },
     setSettings: s => local ? setData(d => ({ ...d, settings: s })) : void setDoc(doc(db!, 'users', userId!), s, { merge: true }),
   };
   return <DataCtx.Provider value={ctx}>{children}</DataCtx.Provider>;

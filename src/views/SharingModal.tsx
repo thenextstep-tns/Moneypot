@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { collectionGroup, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useData, uid } from '../store';
 import { buildShareEmailDraft, generateMaskedCode, hashAccessCode, verifyAccessCode } from '../sharing';
 import type { Category, ShareInvite, Stash } from '../types';
@@ -38,6 +40,7 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
 
     const maskedCode = generateMaskedCode();
     const codeHash = await hashAccessCode(maskedCode);
+    const codeKey = maskedCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
     const invite: ShareInvite = {
       id: uid(),
@@ -46,16 +49,36 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
       targetId: item.id,
       targetName: item.name,
       targetEmoji: item.emoji,
+      targetData: item,
       inviterEmail: user?.email ?? 'anonymous',
       inviterName: user?.displayName ?? undefined,
       inviteeEmail: cleanEmail,
       maskedCode,
+      codeKey,
       codeHash,
       status: 'pending',
       createdAt: Date.now(),
     };
 
     save('invites', invite);
+
+    // Save to shared root invites collection for instant cross-user code lookup
+    if (db) {
+      try {
+        await setDoc(doc(db, 'invites', codeKey), invite);
+        await setDoc(doc(db, 'invites', maskedCode), invite);
+        await setDoc(doc(db, 'invites', invite.id), invite);
+      } catch (e) {
+        console.warn('Could not write to root invites:', e);
+      }
+    }
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('moneypot-shared-invites') || '[]');
+      stored.push(invite);
+      localStorage.setItem('moneypot-shared-invites', JSON.stringify(stored));
+    } catch {}
+
     setCreatedInvite(invite);
     setEmail('');
   };
@@ -181,64 +204,195 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
 
 /** Modal to accept a shared pot or stash using a one-off masked access code */
 export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { initialInviteId?: string; initialCode?: string; onClose: () => void }) {
-  const { user, invites, categories, stashes, save } = useData();
+  const { user, invites, categories, stashes, accounts, settings, save } = useData();
   const [code, setCode] = useState(initialCode ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [msg, setMsg] = useState('');
 
   const submit = async () => {
     setStatus('idle');
     setMsg('');
-    const cleanCode = code.trim().toUpperCase().replace(/\s+/g, '');
-    if (!cleanCode) {
-      setMsg('Please enter the masked code.');
+    const raw = code.trim().toUpperCase();
+    const stripped = raw.replace(/[^A-Z0-9]/g, '');
+    if (!stripped) {
+      setMsg('Please enter the masked access code.');
       setStatus('error');
       return;
     }
 
-    // Find invite matching code
-    let found: ShareInvite | undefined = undefined;
-    for (const inv of invites) {
-      if (inv.status !== 'accepted' && (await verifyAccessCode(cleanCode, inv.codeHash, inv.maskedCode))) {
-        found = inv;
-        break;
-      }
-    }
+    setLoading(true);
 
-    if (!found) {
-      // Check if code itself starts with MP-
-      if (!cleanCode.startsWith('MP-') && !cleanCode.startsWith('MP')) {
-        setMsg('Invalid code format. Codes look like MP-XXXX-XX.');
+    try {
+      // Reconstruct standard masked format if prefixed with MP
+      const standardMasked = stripped.startsWith('MP') && stripped.length >= 8
+        ? `MP-${stripped.slice(2, 6)}-${stripped.slice(6)}`
+        : raw;
+
+      let found: ShareInvite | undefined = undefined;
+
+      // 1. Search current user's locally synced invites
+      for (const inv of invites) {
+        const invStripped = (inv.maskedCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (invStripped === stripped || (await verifyAccessCode(stripped, inv.codeHash, inv.maskedCode))) {
+          found = inv;
+          break;
+        }
+      }
+
+      // 2. Query Firestore root /invites collection
+      if (!found && db) {
+        try {
+          const keysToTry = [stripped, standardMasked, raw];
+          if (initialInviteId) keysToTry.push(initialInviteId);
+          for (const key of keysToTry) {
+            const snap = await getDoc(doc(db, 'invites', key));
+            if (snap.exists()) {
+              found = snap.data() as ShareInvite;
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn('Error reading root invites:', e);
+        }
+      }
+
+      // 3. Fallback: Search all invites across collections in Firestore
+      if (!found && db) {
+        try {
+          const snap = await getDocs(collectionGroup(db, 'invites'));
+          for (const d of snap.docs) {
+            const inv = d.data() as ShareInvite;
+            const invStripped = (inv.maskedCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (invStripped === stripped || (await verifyAccessCode(stripped, inv.codeHash, inv.maskedCode))) {
+              found = inv;
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn('Error querying collectionGroup invites:', e);
+        }
+      }
+
+      // 4. LocalStorage demo fallback
+      if (!found) {
+        try {
+          const localList: ShareInvite[] = JSON.parse(localStorage.getItem('moneypot-shared-invites') || '[]');
+          for (const inv of localList) {
+            const invStripped = (inv.maskedCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (invStripped === stripped || (await verifyAccessCode(stripped, inv.codeHash, inv.maskedCode))) {
+              found = inv;
+              break;
+            }
+          }
+        } catch {}
+      }
+
+      if (!found) {
+        setMsg('Invite code not found or already used. Please double-check with the sender.');
         setStatus('error');
+        setLoading(false);
         return;
       }
-      setMsg('Invite code not found or already used. Please double-check with the sender.');
+
+      const acceptedEmail = email.trim().toLowerCase() || user?.email?.toLowerCase() || 'collaborator';
+      const now = Date.now();
+      const updatedInvite: ShareInvite = {
+        ...found,
+        status: 'accepted',
+        acceptedByEmail: acceptedEmail,
+        acceptedByUid: user?.uid ?? 'local',
+        acceptedAt: now,
+      };
+
+      // Save accepted status in current user store
+      save('invites', updatedInvite);
+
+      // Update root invites doc and owner's invites doc
+      if (db) {
+        try {
+          await setDoc(doc(db, 'invites', stripped), updatedInvite, { merge: true });
+          await setDoc(doc(db, 'invites', standardMasked), updatedInvite, { merge: true });
+          if (found.ownerId) {
+            await setDoc(doc(db, 'users', found.ownerId, 'invites', found.id), updatedInvite, { merge: true });
+          }
+        } catch (e) {
+          console.warn('Could not update invite in firestore:', e);
+        }
+      }
+
+      // Fetch latest target data from master doc if available
+      let masterData: any = found.targetData ?? null;
+      if (db && found.ownerId && found.targetId) {
+        try {
+          const coll = found.targetType === 'pot' ? 'categories' : 'stashes';
+          const snap = await getDoc(doc(db, 'users', found.ownerId, coll, found.targetId));
+          if (snap.exists()) {
+            masterData = snap.data();
+          }
+        } catch (e) {
+          console.warn('Could not read master doc from owner:', e);
+        }
+      }
+
+      const currentShared = Array.isArray(masterData?.sharedWith) ? masterData.sharedWith : [];
+      const nextShared = Array.from(new Set([...currentShared, acceptedEmail, found.inviterEmail]));
+
+      // Update master doc on the creator/owner account with nextShared
+      if (db && found.ownerId && found.targetId) {
+        try {
+          const coll = found.targetType === 'pot' ? 'categories' : 'stashes';
+          await setDoc(doc(db, 'users', found.ownerId, coll, found.targetId), {
+            ...(masterData ?? {}),
+            sharedWith: nextShared,
+            ownerEmail: found.inviterEmail,
+          }, { merge: true });
+        } catch (e) {
+          console.warn('Could not update owner doc with collaborator:', e);
+        }
+      }
+
+      // Add the shared item into the invitee's own library
+      if (found.targetType === 'pot') {
+        const newCat: Category = {
+          id: found.targetId,
+          name: masterData?.name ?? found.targetName,
+          emoji: masterData?.emoji ?? found.targetEmoji,
+          color: masterData?.color ?? '#2FA36B',
+          kind: masterData?.kind ?? 'expense',
+          hints: masterData?.hints,
+          subcategories: masterData?.subcategories,
+          sharedWith: nextShared,
+          ownerEmail: found.inviterEmail,
+          ownerId: found.ownerId,
+        };
+        save('categories', newCat);
+      } else {
+        const newStash: Stash = {
+          id: found.targetId,
+          name: masterData?.name ?? found.targetName,
+          emoji: masterData?.emoji ?? found.targetEmoji,
+          target: masterData?.target ?? 0,
+          currency: masterData?.currency ?? settings.currency,
+          startAmount: masterData?.startAmount ?? 0,
+          deadline: masterData?.deadline,
+          accountId: accounts[0]?.id,
+          sharedWith: nextShared,
+          ownerEmail: found.inviterEmail,
+          ownerId: found.ownerId,
+        };
+        save('stashes', newStash);
+      }
+
+      setStatus('success');
+      setMsg(`🎉 You have successfully joined the shared ${found.targetType} "${found.targetEmoji} ${found.targetName}"!`);
+    } catch (e: any) {
+      setMsg(e.message || 'Failed to accept invite. Please try again.');
       setStatus('error');
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    // Accept invite
-    const acceptedEmail = email.trim().toLowerCase() || user?.email?.toLowerCase() || 'collaborator';
-    save('invites', { ...found, status: 'accepted' });
-
-    // Link target pot or stash
-    if (found.targetType === 'pot') {
-      const cat = categories.find(c => c.id === found?.targetId);
-      if (cat) {
-        const nextShared = Array.from(new Set([...(cat.sharedWith ?? []), acceptedEmail]));
-        save('categories', { ...cat, sharedWith: nextShared });
-      }
-    } else {
-      const s = stashes.find(x => x.id === found?.targetId);
-      if (s) {
-        const nextShared = Array.from(new Set([...(s.sharedWith ?? []), acceptedEmail]));
-        save('stashes', { ...s, sharedWith: nextShared });
-      }
-    }
-
-    setStatus('success');
-    setMsg(`🎉 You have successfully joined the shared ${found.targetType} "${found.targetEmoji} ${found.targetName}"!`);
   };
 
   return (
@@ -291,8 +445,8 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
             </div>
           )}
 
-          <button type="button" className="btn primary wide" disabled={!code} onClick={submit}>
-            ✓ Confirm and accept
+          <button type="button" className="btn primary wide" disabled={!code || loading} onClick={submit}>
+            {loading ? 'Verifying code...' : '✓ Confirm and accept'}
           </button>
         </div>
       )}

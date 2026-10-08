@@ -69,6 +69,7 @@ export function Today() {
             {o.name}
             {o.subcategory && <span className="tag subcat-badge">{o.subcategory}</span>}
             {isSharedItem(o) && <span className="tag shared-tag">👥 Shared</span>}
+            {o.contributorName && <span className="tag" style={{ background: '#EFF6FF', color: '#1E40AF' }}>👤 {o.contributorName}</span>}
             {o.postponed && <span className="tag">moved</span>}
             {funds?.isShort && (
               <span className="tag warn-badge" title={`Account has only ${money(funds.balance ?? 0, funds.accountCurrency)}`}>

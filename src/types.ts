@@ -71,13 +71,18 @@ export interface ShareInvite extends Owned {
   targetId: string;
   targetName: string;
   targetEmoji: string;
+  targetData?: Category | Stash;
   inviterEmail: string;
   inviterName?: string;
   inviteeEmail: string;
   maskedCode: string;          // e.g. "MP-8492-31"
+  codeKey?: string;            // normalized alphanumeric key, e.g. "MP849231"
   codeHash: string;            // hashed verification token
   status: 'pending' | 'accepted' | 'declined';
   createdAt: number;
+  acceptedByEmail?: string;
+  acceptedByUid?: string;
+  acceptedAt?: number;
 }
 
 
@@ -100,6 +105,8 @@ export interface Payment extends Owned {
   stashId?: string;
   note?: string;                // comment added when confirming / postponing
   isShared?: boolean;
+  contributorEmail?: string;
+  contributorName?: string;
 }
 
 /** Money movement between two accounts (with currency exchange support) */
@@ -151,5 +158,7 @@ export interface Occurrence {
   note?: string;
   planNote?: string;
   isShared?: boolean;
+  contributorEmail?: string;
+  contributorName?: string;
 }
 

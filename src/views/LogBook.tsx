@@ -31,6 +31,7 @@ interface LogItem {
   payment?: Payment;
   transfer?: Transfer;
   isShared?: boolean;
+  contributorName?: string;
 }
 
 /** Complete transaction log book with search, filters, cancel (reverting money), and editing */
@@ -56,7 +57,7 @@ export function LogBook() {
       const cat = catMap.get(p.categoryId ?? plan?.categoryId ?? '');
       const acc = accMap.get(p.accountId ?? plan?.accountId ?? '');
       const kind = p.kind ?? plan?.kind ?? 'expense';
-      const isShared = Boolean(cat?.sharedWith && cat.sharedWith.length > 0);
+      const isShared = Boolean(p.isShared || (cat?.sharedWith && cat.sharedWith.length > 0));
 
       list.push({
         id: p.id,
@@ -74,6 +75,7 @@ export function LogBook() {
         note: p.note,
         payment: p,
         isShared,
+        contributorName: p.contributorName || (p.contributorEmail ? p.contributorEmail.split('@')[0] : undefined),
       });
     }
 
@@ -225,6 +227,7 @@ export function LogBook() {
                   {isCorrection && <span className="tag" style={{ background: '#FEF3C7', color: '#92400E' }}>Manual correction</span>}
                   {item.subcategory && <span className="tag subcat-badge">{item.subcategory}</span>}
                   {item.isShared && <span className="tag shared-tag">👥 Shared</span>}
+                  {item.contributorName && <span className="tag" style={{ background: '#EFF6FF', color: '#1E40AF' }}>👤 {item.contributorName}</span>}
                   {isCancelled && <span className="tag danger-tag">Cancelled (Money restored)</span>}
 
                 </div>
