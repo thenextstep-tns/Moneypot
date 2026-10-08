@@ -31,8 +31,9 @@ export function Cashflow() {
   const [customFrom, setCustomFrom] = useState<string>(today());
   const [customTo, setCustomTo] = useState<string>(addDays(today(), 30));
 
-  // Selected / Hovered day
-  const [activeDate, setActiveDate] = useState<string | null>(null);
+  // Pinned & Hovered day state
+  const [pinnedDate, setPinnedDate] = useState<string>(today());
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [inspectDay, setInspectDay] = useState<DayCashflow | null>(null);
 
   // FX state
@@ -79,6 +80,29 @@ export function Cashflow() {
     );
   }, [fromDate, toDate, accounts, payments, transfers, plans, stashes, categories, mainCurrency]);
 
+  // Synchronize pinnedDate if it's out of range
+  useEffect(() => {
+    if (days.length > 0) {
+      const exists = days.some(d => d.date === pinnedDate);
+      if (!exists) {
+        const todayItem = days.find(d => d.date === today());
+        setPinnedDate(todayItem ? todayItem.date : days[0].date);
+      }
+    }
+  }, [days, pinnedDate]);
+
+  const activeDate = hoveredDate ?? pinnedDate ?? (days[0]?.date || null);
+
+  const handleStepDay = (delta: number) => {
+    const idx = days.findIndex(d => d.date === pinnedDate);
+    if (idx === -1) return;
+    const nextIdx = idx + delta;
+    if (nextIdx >= 0 && nextIdx < days.length) {
+      setPinnedDate(days[nextIdx].date);
+      setHoveredDate(null);
+    }
+  };
+
   // Overall KPIs for this period
   const kpis = useMemo(() => {
     if (!days.length) return { startBal: 0, endBal: 0, net: 0, income: 0, expense: 0, minBal: 0, maxBal: 0 };
@@ -105,12 +129,6 @@ export function Cashflow() {
       maxBal,
     };
   }, [days]);
-
-  // Hovered day object
-  const activeDay = useMemo(() => {
-    if (!activeDate) return null;
-    return days.find(d => d.date === activeDate) ?? null;
-  }, [activeDate, days]);
 
   return (
     <div className="page wide cashflow-view">
@@ -330,7 +348,7 @@ export function Cashflow() {
           <div>
             <h3 style={{ margin: 0, fontSize: 16 }}>Cashflow Trajectory</h3>
             <span style={{ fontSize: 12, color: 'var(--mute)' }}>
-              Top line shows total balance. Colored layers represent stacked account contributions.
+              Top line shows total balance. Colored layers represent stacked account contributions. Click any date to pin rundown.
             </span>
           </div>
 
@@ -355,8 +373,15 @@ export function Cashflow() {
           accounts={accounts}
           mainCurrency={mainCurrency}
           activeDate={activeDate}
-          onHoverDate={setActiveDate}
-          onSelectDate={d => setInspectDay(d)}
+          pinnedDate={pinnedDate}
+          hoveredDate={hoveredDate}
+          onHoverDate={setHoveredDate}
+          onPinDate={d => {
+            setPinnedDate(d);
+            setHoveredDate(null);
+          }}
+          onStepDay={handleStepDay}
+          onOpenModal={d => setInspectDay(d)}
         />
       </div>
 
@@ -368,7 +393,7 @@ export function Cashflow() {
               {mode === 'month' ? 'Payment Calendar Grid' : mode === 'week' ? 'Weekly Payment Breakdown' : 'Daily Cashflow Schedule'}
             </h3>
             <span style={{ fontSize: 12, color: 'var(--mute)' }}>
-              All incomes and expenses written in calendar cells. Tap any day for the full rundown.
+              All incomes and expenses written in calendar cells. Tap any day to pin and see full rundown.
             </span>
           </div>
         </div>
@@ -377,21 +402,23 @@ export function Cashflow() {
           <MonthCalendarGrid
             days={days}
             mainCurrency={mainCurrency}
-            activeDate={activeDate}
-            onSelectDay={d => {
-              setActiveDate(d.date);
-              setInspectDay(d);
+            pinnedDate={pinnedDate}
+            onPinDate={d => {
+              setPinnedDate(d);
+              setHoveredDate(null);
             }}
+            onOpenModal={d => setInspectDay(d)}
           />
         ) : (
           <WeekOrRangeCalendarList
             days={days}
             mainCurrency={mainCurrency}
-            activeDate={activeDate}
-            onSelectDay={d => {
-              setActiveDate(d.date);
-              setInspectDay(d);
+            pinnedDate={pinnedDate}
+            onPinDate={d => {
+              setPinnedDate(d);
+              setHoveredDate(null);
             }}
+            onOpenModal={d => setInspectDay(d)}
           />
         )}
       </div>
@@ -417,8 +444,12 @@ interface SvgChartProps {
   accounts: any[];
   mainCurrency: string;
   activeDate: string | null;
+  pinnedDate: string;
+  hoveredDate: string | null;
   onHoverDate: (date: string | null) => void;
-  onSelectDate: (day: DayCashflow) => void;
+  onPinDate: (date: string) => void;
+  onStepDay: (delta: number) => void;
+  onOpenModal: (day: DayCashflow) => void;
 }
 
 function CashflowSvgChart({
@@ -426,8 +457,12 @@ function CashflowSvgChart({
   accounts,
   mainCurrency,
   activeDate,
+  pinnedDate,
+  hoveredDate,
   onHoverDate,
-  onSelectDate,
+  onPinDate,
+  onStepDay,
+  onOpenModal,
 }: SvgChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -709,26 +744,79 @@ function CashflowSvgChart({
               fill="transparent"
               style={{ cursor: 'pointer' }}
               onMouseEnter={() => onHoverDate(d.date)}
-              onClick={() => onSelectDate(d)}
+              onClick={() => onPinDate(d.date)}
             />
           );
         })}
       </svg>
 
-      {/* Floating Info Pill under the graph when a day is active */}
+      {/* Persistent Info Card under the graph */}
       {activeDayObj && (
         <div className="graph-active-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <b style={{ fontSize: 14 }}>{activeDayObj.fullLabel}</b>
-              {activeDayObj.isToday && <span className="tag ok-badge">Today</span>}
-              {activeDayObj.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected</span>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className="btn ghost icon"
+                  style={{ width: 28, height: 28, fontSize: 13, border: '1px solid var(--line)' }}
+                  title="Previous Day"
+                  onClick={() => onStepDay(-1)}
+                >
+                  ◀
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost icon"
+                  style={{ width: 28, height: 28, fontSize: 13, border: '1px solid var(--line)' }}
+                  title="Next Day"
+                  onClick={() => onStepDay(1)}
+                >
+                  ▶
+                </button>
+              </div>
+
+              <div>
+                <b style={{ fontSize: 15, marginRight: 8 }}>{activeDayObj.fullLabel}</b>
+                {activeDayObj.isToday && <span className="tag ok-badge">Today</span>}
+                {activeDayObj.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected</span>}
+                {hoveredDate && hoveredDate !== pinnedDate ? (
+                  <span className="tag" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                    👁️ Hovering (Click to pin)
+                  </span>
+                ) : (
+                  <span className="tag" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>
+                    📌 Pinned
+                  </span>
+                )}
+              </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block' }}>TOTAL END OF DAY</span>
-              <b style={{ fontSize: 16, color: activeDayObj.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-                {money(activeDayObj.totalBalance, mainCurrency)}
-              </b>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: 10.5, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
+                  END OF DAY TOTAL
+                </span>
+                <b style={{ fontSize: 16, color: activeDayObj.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+                  {money(activeDayObj.totalBalance, mainCurrency)}
+                </b>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: 10.5, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
+                  DAY NET CHANGE
+                </span>
+                <b style={{ fontSize: 16, color: activeDayObj.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
+                  {activeDayObj.netChange >= 0 ? `+${money(activeDayObj.netChange, mainCurrency)}` : money(activeDayObj.netChange, mainCurrency)}
+                </b>
+              </div>
+              <button
+                type="button"
+                className="btn ghost"
+                style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--line)' }}
+                onClick={() => onOpenModal(activeDayObj)}
+              >
+                🔍 Details Modal
+              </button>
             </div>
           </div>
 
@@ -742,31 +830,42 @@ function CashflowSvgChart({
             ))}
           </div>
 
-          {/* Rundown summary if items exist */}
+          {/* Rundown of all items on this date */}
           {activeDayObj.items.length > 0 ? (
             <div className="active-items-preview">
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)' }}>
-                {activeDayObj.items.length} TRANSACTIONS ON THIS DAY:
+                {activeDayObj.items.length} TRANSACTIONS & SCHEDULED BILLS ON THIS DAY:
               </span>
-              <div className="preview-items-list">
-                {activeDayObj.items.slice(0, 4).map(it => (
-                  <span
+              <div className="preview-items-list" style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {activeDayObj.items.map(it => (
+                  <div
                     key={it.id}
-                    className={`item-pill ${it.kind}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#FFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      fontSize: 13,
+                    }}
                   >
-                    <span>{it.emoji}</span>
-                    <span>{it.name}</span>
-                    <b>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{it.emoji}</span>
+                      <span style={{ fontWeight: 600 }}>{it.name}</span>
+                      {it.category && <span className="tag" style={{ background: '#F1F5F9', color: '#475569' }}>{it.category}</span>}
+                      {it.accountName && <span className="muted" style={{ fontSize: 12 }}>({it.accountName})</span>}
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled'}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, color: it.kind === 'income' ? '#16A34A' : it.kind === 'expense' ? '#DC2626' : 'var(--ink)' }}>
                       {it.kind === 'income' ? '+' : it.kind === 'expense' ? '-' : ''}
                       {money(it.amount, it.currency)}
-                    </b>
-                  </span>
+                    </div>
+                  </div>
                 ))}
-                {activeDayObj.items.length > 4 && (
-                  <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>
-                    +{activeDayObj.items.length - 4} more…
-                  </span>
-                )}
               </div>
             </div>
           ) : (
@@ -899,11 +998,12 @@ function ChartCalloutBalloons({
 interface MonthGridProps {
   days: DayCashflow[];
   mainCurrency: string;
-  activeDate: string | null;
-  onSelectDay: (day: DayCashflow) => void;
+  pinnedDate: string;
+  onPinDate: (date: string) => void;
+  onOpenModal: (day: DayCashflow) => void;
 }
 
-function MonthCalendarGrid({ days, mainCurrency, activeDate, onSelectDay }: MonthGridProps) {
+function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenModal }: MonthGridProps) {
   if (!days.length) return null;
 
   // First day of month determines column offset (Monday-based: Mon=0, Sun=6)
@@ -931,15 +1031,15 @@ function MonthCalendarGrid({ days, mainCurrency, activeDate, onSelectDay }: Mont
 
         {/* Days of the month */}
         {days.map(d => {
-          const isSelected = d.date === activeDate;
-          const hasIncome = d.incomeTotal > 0;
-          const hasExpense = d.expenseTotal > 0;
+          const isSelected = d.date === pinnedDate;
 
           return (
             <div
               key={d.date}
               className={`cal-cell ${d.isToday ? 'today-cell' : ''} ${isSelected ? 'selected-cell' : ''}`}
-              onClick={() => onSelectDay(d)}
+              onClick={() => onPinDate(d.date)}
+              onDoubleClick={() => onOpenModal(d)}
+              title="Click to view details in the rundown above, double-click for modal"
             >
               {/* Day Number and End-of-Day Balance */}
               <div className="cal-cell-head">
@@ -989,19 +1089,21 @@ function MonthCalendarGrid({ days, mainCurrency, activeDate, onSelectDay }: Mont
 function WeekOrRangeCalendarList({
   days,
   mainCurrency,
-  activeDate,
-  onSelectDay,
+  pinnedDate,
+  onPinDate,
+  onOpenModal,
 }: MonthGridProps) {
   return (
     <div className="week-cards-grid">
       {days.map(d => {
-        const isSelected = d.date === activeDate;
+        const isSelected = d.date === pinnedDate;
 
         return (
           <div
             key={d.date}
             className={`week-day-card ${d.isToday ? 'today-card' : ''} ${isSelected ? 'selected-card' : ''}`}
-            onClick={() => onSelectDay(d)}
+            onClick={() => onPinDate(d.date)}
+            onDoubleClick={() => onOpenModal(d)}
           >
             <div className="week-card-head">
               <div>
