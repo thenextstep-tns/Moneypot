@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
-import { freqLabel, money, occurrences, perMonth, toPayment, today } from '../schedule';
+import { dayLabel, freqLabel, money, occurrences, perMonth, toPayment, today } from '../schedule';
 import { calcAllAccountBalances } from '../balances';
 import type { Kind, Plan } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
@@ -18,6 +18,7 @@ export function Plans() {
   const { plans, categories, stashes, settings } = useData();
   const [edit, setEdit] = useState<Plan | Kind | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [showOneOffs, setShowOneOffs] = useState(false);
   const cat = (id: string) => categories.find(c => c.id === id);
   const isShared = (p: Plan) => {
     const c = cat(p.categoryId);
@@ -35,13 +36,33 @@ export function Plans() {
           </h1>
           <p className="muted">Tell us what usually comes in and goes out. We'll remind you when it's due.</p>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            className={`chip ${showOneOffs ? 'on' : ''}`}
+            style={{ fontWeight: 600, padding: '8px 14px', fontSize: 13 }}
+            onClick={() => setShowOneOffs(!showOneOffs)}
+            title="Toggle showing one-off planned payments"
+          >
+            {showOneOffs ? '✓ Showing one-off plans' : '+ Show one-off plans'}
+          </button>
+        </div>
       </header>
       {GROUPS.map(([kind, title, hint]) => {
-        const list = plans.filter(p => p.kind === kind && p.freq && ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq));
-        const monthly = list.reduce((s, p) => s + perMonth(p), 0);
+        const list = plans.filter(p => {
+          if (p.kind !== kind) return false;
+          if (p.freq === 'once') return showOneOffs;
+          return ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq);
+        });
+        const monthly = list.filter(p => p.freq !== 'once').reduce((s, p) => s + perMonth(p), 0);
+        const oneOffTotal = list.filter(p => p.freq === 'once').reduce((s, p) => s + p.amount, 0);
         return (
           <section key={kind}>
-            <h2>{title} {monthly > 0 && <span className="muted">· ≈ {money(monthly, settings.currency)} / month</span>}</h2>
+            <h2>
+              {title}
+              {monthly > 0 && <span className="muted"> · ≈ {money(monthly, settings.currency)} / month</span>}
+              {showOneOffs && oneOffTotal > 0 && <span className="muted"> · +{money(oneOffTotal, settings.currency)} one-off</span>}
+            </h2>
             {list.length === 0 && <p className="muted">{hint}</p>}
             {list.map(p => (
               <button key={p.id} className="item click" style={{ ['--c' as string]: cat(p.categoryId)?.color }} onClick={() => setEdit(p)}>
@@ -49,10 +70,17 @@ export function Plans() {
                 <div className="grow">
                   <div className="title">
                     {p.name}
+                    {p.freq === 'once' && (
+                      <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>
+                        One-off · {dayLabel(p.startDate)}
+                      </span>
+                    )}
                     {p.subcategory && <span className="tag subcat-badge">{p.subcategory}</span>}
                     {isShared(p) && <span className="tag shared-tag">👥 Shared</span>}
                   </div>
-                  <div className="sub">{freqLabel(p)} · {cat(p.categoryId)?.name}</div>
+                  <div className="sub">
+                    {p.freq === 'once' ? `Due ${dayLabel(p.startDate)}` : freqLabel(p)} · {cat(p.categoryId)?.name}
+                  </div>
                   {p.note && <div className="note">📝 {p.note}</div>}
                 </div>
                 <div className={`amt ${kind === 'income' ? 'in' : ''}`}>{money(p.amount, p.currency)}</div>
@@ -62,7 +90,7 @@ export function Plans() {
           </section>
         );
       })}
-      {plans.filter(p => p.freq && ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq)).length === 0 && (
+      {plans.filter(p => showOneOffs || ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq)).length === 0 && (
         <Empty emoji="🧭" title="Start with your income" text="Then add rent and the bills you always pay." />
       )}
       {edit && <PlanForm plan={typeof edit === 'string' ? undefined : edit} kind={typeof edit === 'string' ? edit : undefined} onClose={() => setEdit(null)} />}
@@ -102,8 +130,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
   };
 
   const submit = () => {
-    const finalFreq = p.freq === 'once' ? 'monthly' : p.freq;
-    const final = { ...p, freq: finalFreq, categoryId, name: p.name.trim() };
+    const final = { ...p, categoryId, name: p.name.trim() };
     save('plans', final);
     onClose();
   };

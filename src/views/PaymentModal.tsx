@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
-import { today } from '../schedule';
+import { dayLabel, today } from '../schedule';
 import { calcAllAccountBalances, checkAccountFunds } from '../balances';
-import type { Payment, QuickTemplate } from '../types';
+import type { Payment, Plan, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Field, Modal } from '../ui';
 import { EmojiPicker } from '../emojis';
 
@@ -59,29 +59,52 @@ export function OneOffPaymentModal({
     ? checkAccountFunds(accountId, Number(amount) || 0, currency, accounts, balances)
     : null;
 
+  const isFuture = date > today();
+
   const handleSave = (addQuickTemplate: boolean) => {
     if (!valid) return;
     const numAmount = Number(amount);
-    const payId = `pay_${uid()}`;
-    const planId = `oneoff_${uid()}`;
 
-    // 1. Record the confirmed one-off payment
-    const payment: Payment = {
-      id: payId,
-      planId,
-      dueDate: date,
-      date,
-      amount: numAmount,
-      currency,
-      accountId: accountId || undefined,
-      name: name.trim(),
-      kind: 'expense',
-      categoryId,
-      subcategory: subcategory || undefined,
-      note: note.trim() || undefined,
-      status: 'confirmed',
-    };
-    save('payments', payment);
+    if (isFuture) {
+      // 1. Record as a planned one-off payment so it does NOT affect balances immediately,
+      // but is properly tracked in the budget plan and surfaces on the Today view when due
+      const newPlan: Plan = {
+        id: `oneoff_${uid()}`,
+        name: name.trim(),
+        kind: 'expense',
+        categoryId,
+        subcategory: subcategory || undefined,
+        accountId: accountId || undefined,
+        amount: numAmount,
+        currency,
+        freq: 'once',
+        every: 1,
+        startDate: date,
+        note: note.trim() || undefined,
+      };
+      save('plans', newPlan);
+    } else {
+      // 1. Record the confirmed one-off payment for today or past
+      const payId = `pay_${uid()}`;
+      const planId = `oneoff_${uid()}`;
+
+      const payment: Payment = {
+        id: payId,
+        planId,
+        dueDate: date,
+        date,
+        amount: numAmount,
+        currency,
+        accountId: accountId || undefined,
+        name: name.trim(),
+        kind: 'expense',
+        categoryId,
+        subcategory: subcategory || undefined,
+        note: note.trim() || undefined,
+        status: 'confirmed',
+      };
+      save('payments', payment);
+    }
 
     // 2. Optionally create a 1-tap quick template
     if (addQuickTemplate) {
@@ -104,7 +127,18 @@ export function OneOffPaymentModal({
   };
 
   return (
-    <Modal title={template ? `Log quick payment: ${template.name}` : 'What did you spend on?'} onClose={onClose}>
+    <Modal
+      title={
+        template
+          ? isFuture
+            ? `Plan quick payment: ${template.name}`
+            : `Log quick payment: ${template.name}`
+          : isFuture
+          ? 'Plan upcoming payment'
+          : 'What did you spend on?'
+      }
+      onClose={onClose}
+    >
       <Field label="What is it?">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
@@ -156,6 +190,27 @@ export function OneOffPaymentModal({
       <Field label="When">
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
       </Field>
+
+      {isFuture && (
+        <div
+          className="preview"
+          style={{
+            background: '#EFF6FF',
+            color: '#1E40AF',
+            borderColor: '#BFDBFE',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            margin: '-6px 0 14px',
+          }}
+        >
+          <span>📅</span>
+          <span>
+            <b>Future date:</b> This will be scheduled as a <b>planned one-off payment</b> for {dayLabel(date)}. It won't deduct from accounts until approved on that day.
+          </span>
+        </div>
+      )}
 
       <Field label="Which pot?">
         <div className="chips">
@@ -256,16 +311,16 @@ export function OneOffPaymentModal({
           disabled={!valid}
           onClick={() => handleSave(false)}
         >
-          ✓ Save
+          {isFuture ? `📅 Plan for ${dayLabel(date)}` : '✓ Save'}
         </button>
         <button
           type="button"
           className="btn btn-save-template"
           disabled={!valid}
           onClick={() => handleSave(true)}
-          title="Save this payment and keep it as a 1-tap quick payment"
+          title={isFuture ? 'Plan this payment and save it as a reusable quick template' : 'Save this payment and keep it as a 1-tap quick payment'}
         >
-          ★ Save + Add Quick Payment
+          {isFuture ? '★ Plan + Add Quick Payment' : '★ Save + Add Quick Payment'}
         </button>
       </div>
     </Modal>
