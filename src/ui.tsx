@@ -1,10 +1,18 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Account, Payment, Stash } from './types';
 import { dayLabel, money, today } from './schedule';
 import { uid, useData } from './store';
 import { calcAccountBalance } from './balances';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
   return (
     <div className="backdrop" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>

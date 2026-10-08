@@ -130,6 +130,21 @@ main { flex: 1; min-width: 0; }
   .page {
     padding: 18px 16px 105px;
   }
+  .backdrop {
+    padding: 12px 10px calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 1000;
+  }
+  .modal {
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 28px);
+    max-height: calc(100dvh - 28px);
+    padding: 20px 16px calc(36px + env(safe-area-inset-bottom, 0px));
+    border-radius: 20px;
+    gap: 12px;
+  }
+  .modal > *:last-child {
+    margin-bottom: 8px;
+  }
 }
 
 /* buttons */
@@ -264,16 +279,31 @@ main { flex: 1; min-width: 0; }
 .stash-amt b { font-size: 20px; }
 
 /* forms / modal */
-.backdrop { position: fixed; inset: 0; background: rgba(20,20,20,.35); display: grid; place-items: center; z-index: 10; padding: 16px; animation: fade .15s; }
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 16px;
+  animation: fade .15s;
+  overscroll-behavior: contain;
+}
 .modal {
   background: var(--card);
   border-radius: 22px;
-  padding: 22px;
+  padding: 22px 22px calc(24px + env(safe-area-inset-bottom, 0px));
   width: 100%;
   max-width: min(440px, calc(100vw - 24px));
-  max-height: 92vh;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-x: hidden;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -552,6 +582,7 @@ input[type="date"] {
   display: flex;
   gap: 10px;
   margin-top: 14px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 .btn-save-template {
