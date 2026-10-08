@@ -16,14 +16,30 @@ export async function hashAccessCode(code: string): Promise<string> {
   return hashArr.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Verify if an entered code matches the stored code hash */
-export async function verifyAccessCode(enteredCode: string, codeHash: string, maskedCode?: string): Promise<boolean> {
-  const cleanEntered = enteredCode.trim().toUpperCase().replace(/\s+/g, '');
-  if (maskedCode && cleanEntered === maskedCode.trim().toUpperCase().replace(/\s+/g, '')) {
-    return true;
+/** Verify if an entered code matches the stored code hash and optional email pairing */
+export async function verifyAccessCode(
+  enteredCode: string,
+  codeHash: string,
+  maskedCode?: string,
+  enteredEmail?: string,
+  inviteeEmail?: string
+): Promise<boolean> {
+  const cleanEntered = enteredCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cleanMasked = (maskedCode ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  const codeMatches = (cleanMasked && cleanEntered === cleanMasked);
+  if (!codeMatches) {
+    const enteredHash = await hashAccessCode(cleanEntered);
+    if (enteredHash !== codeHash) return false;
   }
-  const enteredHash = await hashAccessCode(cleanEntered);
-  return enteredHash === codeHash;
+
+  if (inviteeEmail && enteredEmail) {
+    if (enteredEmail.trim().toLowerCase() !== inviteeEmail.trim().toLowerCase()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /** Construct a mailto: link for the inviter to send the email containing the masked access code */

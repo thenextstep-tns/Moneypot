@@ -289,14 +289,44 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
         } catch {}
       }
 
-      if (!found) {
-        setMsg('Invite code not found or already used. Please double-check with the sender.');
+      // Validate candidate email is provided
+      const candidateEmail = (user?.email || email).trim().toLowerCase();
+      if (!candidateEmail) {
+        setMsg('Please provide your email address to verify this invite code.');
         setStatus('error');
         setLoading(false);
         return;
       }
 
-      const acceptedEmail = email.trim().toLowerCase() || user?.email?.toLowerCase() || 'collaborator';
+      const genericError = 'Invite code not found, already used, or not valid for this email address. Please double-check with the sender.';
+
+      if (!found) {
+        setMsg(genericError);
+        setStatus('error');
+        setLoading(false);
+        return;
+      }
+
+      // 1. One-time use validation
+      if (found.status === 'accepted') {
+        setMsg(genericError);
+        setStatus('error');
+        setLoading(false);
+        return;
+      }
+
+      // 2. Strict email pairing validation (generic error to prevent email enumeration)
+      if (found.inviteeEmail) {
+        const expectedEmail = found.inviteeEmail.trim().toLowerCase();
+        if (candidateEmail !== expectedEmail) {
+          setMsg(genericError);
+          setStatus('error');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const acceptedEmail = candidateEmail;
       const now = Date.now();
       const updatedInvite: ShareInvite = {
         ...found,
@@ -309,7 +339,7 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
       // Save accepted status in current user store
       save('invites', updatedInvite);
 
-      // Update root invites doc and owner's invites doc
+      // Invalidate/consume code in root invites doc and owner's invites doc
       if (db) {
         try {
           await setDoc(doc(db, 'invites', stripped), updatedInvite, { merge: true });
@@ -412,12 +442,17 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
             Enter the one-off masked access code received from your collaborator in your email.
           </p>
 
-          {!user?.email && (
-            <Field label="Your email address" hint="🔒 Without autofill for security">
+          {user?.email ? (
+            <div style={{ fontSize: 13, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E40AF', padding: '10px 14px', borderRadius: 12 }}>
+              🔒 Signed in as: <b>{user.email}</b><br />
+              <span style={{ fontSize: 11, color: '#2563EB' }}>Codes are paired to specific email addresses and can only be used once.</span>
+            </div>
+          ) : (
+            <Field label="Your email address" hint="🔒 Must match the exact email address the invite was sent to">
               <input
                 type="email"
                 value={email}
-                placeholder="your.email@example.com"
+                placeholder="partner@example.com"
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck="false"
@@ -445,7 +480,12 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
             </div>
           )}
 
-          <button type="button" className="btn primary wide" disabled={!code || loading} onClick={submit}>
+          <button
+            type="button"
+            className="btn primary wide"
+            disabled={!code || (!user?.email && !email) || loading}
+            onClick={submit}
+          >
             {loading ? 'Verifying code...' : '✓ Confirm and accept'}
           </button>
         </div>
