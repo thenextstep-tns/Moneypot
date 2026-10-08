@@ -235,7 +235,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         <AccountCardsSelect
           accounts={accounts}
           value={accountId}
-          onChange={id => setAccountId(id ?? '')}
+          onChange={id => setAccountId(id)}
           balances={balances}
         />
       </Field>

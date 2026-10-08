@@ -341,7 +341,7 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
         <AccountCardsSelect
           accounts={accounts}
           value={accountId}
-          onChange={id => setAccountId(id ?? '')}
+          onChange={id => setAccountId(id)}
         />
       </Field>
 

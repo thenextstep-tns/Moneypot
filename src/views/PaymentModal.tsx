@@ -37,9 +37,23 @@ export function OneOffPaymentModal({
   const [subcategory, setSubcategory] = useState<string | undefined>(template?.subcategory);
   const [accountId, setAccountId] = useState(template?.accountId ?? accounts[0]?.id ?? '');
   const [note, setNote] = useState(template?.note ?? '');
+  const [addingSub, setAddingSub] = useState(false);
+  const [newSubVal, setNewSubVal] = useState('');
 
   const selCat = categories.find(c => c.id === categoryId);
-  const valid = name.trim().length > 0 && Number(amount) > 0 && !!categoryId;
+  const valid = name.trim().length > 0 && Number(amount) > 0 && !!categoryId && !!accountId;
+
+  const handleQuickAddSub = () => {
+    const v = newSubVal.trim();
+    if (!v || !selCat) return;
+    const currentSubs = selCat.subcategories ?? [];
+    if (!currentSubs.includes(v)) {
+      save('categories', { ...selCat, subcategories: [...currentSubs, v] });
+    }
+    setSubcategory(v);
+    setNewSubVal('');
+    setAddingSub(false);
+  };
 
   const funds = accountId
     ? checkAccountFunds(accountId, Number(amount) || 0, currency, accounts, balances)
@@ -162,9 +176,9 @@ export function OneOffPaymentModal({
         </div>
       </Field>
 
-      {selCat?.subcategories && selCat.subcategories.length > 0 && (
+      {selCat && (
         <Field label="Subcategory (optional)">
-          <div className="chips">
+          <div className="chips" style={{ alignItems: 'center' }}>
             <button
               type="button"
               className={!subcategory ? 'chip on' : 'chip'}
@@ -172,7 +186,7 @@ export function OneOffPaymentModal({
             >
               General
             </button>
-            {selCat.subcategories.map(s => (
+            {(selCat.subcategories ?? []).map(s => (
               <button
                 type="button"
                 key={s}
@@ -182,6 +196,32 @@ export function OneOffPaymentModal({
                 {s}
               </button>
             ))}
+            {addingSub ? (
+              <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                <input
+                  autoFocus
+                  style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
+                  placeholder="New name…"
+                  value={newSubVal}
+                  onChange={e => setNewSubVal(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
+                  }}
+                />
+                <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
+                <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="chip"
+                style={{ borderStyle: 'dashed' }}
+                onClick={() => setAddingSub(true)}
+              >
+                + Add subcategory
+              </button>
+            )}
           </div>
         </Field>
       )}
@@ -190,7 +230,7 @@ export function OneOffPaymentModal({
         <AccountCardsSelect
           accounts={accounts}
           value={accountId}
-          onChange={id => setAccountId(id ?? '')}
+          onChange={id => setAccountId(id)}
           balances={balances}
         />
       </Field>
@@ -253,9 +293,23 @@ export function TemplateModal({
   const [subcategory, setSubcategory] = useState<string | undefined>(template?.subcategory);
   const [accountId, setAccountId] = useState(template?.accountId ?? accounts[0]?.id ?? '');
   const [note, setNote] = useState(template?.note ?? '');
+  const [addingSub, setAddingSub] = useState(false);
+  const [newSubVal, setNewSubVal] = useState('');
 
   const selCat = categories.find(c => c.id === categoryId);
-  const valid = name.trim().length > 0 && Number(amount) > 0;
+  const valid = name.trim().length > 0 && Number(amount) > 0 && !!accountId;
+
+  const handleQuickAddSub = () => {
+    const v = newSubVal.trim();
+    if (!v || !selCat) return;
+    const currentSubs = selCat.subcategories ?? [];
+    if (!currentSubs.includes(v)) {
+      save('categories', { ...selCat, subcategories: [...currentSubs, v] });
+    }
+    setSubcategory(v);
+    setNewSubVal('');
+    setAddingSub(false);
+  };
 
   const submit = () => {
     if (!valid) return;
@@ -323,9 +377,9 @@ export function TemplateModal({
         </div>
       </Field>
 
-      {selCat?.subcategories && selCat.subcategories.length > 0 && (
+      {selCat && (
         <Field label="Subcategory (optional)">
-          <div className="chips">
+          <div className="chips" style={{ alignItems: 'center' }}>
             <button
               type="button"
               className={!subcategory ? 'chip on' : 'chip'}
@@ -333,7 +387,7 @@ export function TemplateModal({
             >
               General
             </button>
-            {selCat.subcategories.map(s => (
+            {(selCat.subcategories ?? []).map(s => (
               <button
                 type="button"
                 key={s}
@@ -343,16 +397,41 @@ export function TemplateModal({
                 {s}
               </button>
             ))}
+            {addingSub ? (
+              <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                <input
+                  autoFocus
+                  style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
+                  placeholder="New name…"
+                  value={newSubVal}
+                  onChange={e => setNewSubVal(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
+                  }}
+                />
+                <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
+                <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="chip"
+                style={{ borderStyle: 'dashed' }}
+                onClick={() => setAddingSub(true)}
+              >
+                + Add subcategory
+              </button>
+            )}
           </div>
         </Field>
       )}
 
-      <Field label="Paid from (optional default)">
+      <Field label="Paid from (default account)">
         <AccountCardsSelect
           accounts={accounts}
           value={accountId}
-          onChange={id => setAccountId(id ?? '')}
-          noneLabel="Ask each time"
+          onChange={id => setAccountId(id)}
         />
       </Field>
 

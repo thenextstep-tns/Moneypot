@@ -6,7 +6,7 @@ import { EmojiPicker } from '../emojis';
 import { SharingModal } from './SharingModal';
 
 export function CategoryModal({ category, defaultKind = 'expense', onClose }: { category?: Category; defaultKind?: Kind; onClose: () => void }) {
-  const { save, remove, plans } = useData();
+  const { save, remove, plans, payments, templates } = useData();
   const [showSharing, setShowSharing] = useState(false);
   const [c, setC] = useState<Category>(category ?? {
     id: uid(),
@@ -17,7 +17,7 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
     subcategories: [],
   });
   const [newSub, setNewSub] = useState('');
-
+  const [editingSub, setEditingSub] = useState<{ original: string; current: string } | null>(null);
 
   const set = (patch: Partial<Category>) => setC(x => ({ ...x, ...patch }));
 
@@ -33,6 +33,32 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
 
   const removeSub = (sub: string) => {
     set({ subcategories: (c.subcategories ?? []).filter(s => s !== sub) });
+    if (editingSub?.original === sub) setEditingSub(null);
+  };
+
+  const saveEditedSub = () => {
+    if (!editingSub) return;
+    const original = editingSub.original;
+    const updated = editingSub.current.trim();
+    if (!updated) return;
+    if (original !== updated) {
+      set({
+        subcategories: (c.subcategories ?? []).map(s => (s === original ? updated : s)),
+      });
+      // Cascade rename across plans, payments, and templates
+      if (category) {
+        plans
+          .filter(p => p.categoryId === category.id && p.subcategory === original)
+          .forEach(p => save('plans', { ...p, subcategory: updated }));
+        payments
+          .filter(p => p.categoryId === category.id && p.subcategory === original)
+          .forEach(p => save('payments', { ...p, subcategory: updated }));
+        templates
+          .filter(t => t.categoryId === category.id && t.subcategory === original)
+          .forEach(t => save('templates', { ...t, subcategory: updated }));
+      }
+    }
+    setEditingSub(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -87,15 +113,56 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
           />
           <button type="button" className="btn" onClick={addSub}>+ Add</button>
         </div>
-        <div className="chips" style={{ marginTop: 8 }}>
-          {(c.subcategories ?? []).map(s => (
-            <span key={s} className="chip subcat-chip">
-              {s}
-              <button type="button" className="subcat-del" onClick={() => removeSub(s)}>✕</button>
-            </span>
-          ))}
+
+        <div className="subcat-list">
+          {(c.subcategories ?? []).map(s => {
+            const isEditing = editingSub?.original === s;
+            if (isEditing) {
+              return (
+                <div key={s} className="subcat-item-row editing">
+                  <input
+                    autoFocus
+                    className="subcat-edit-input"
+                    value={editingSub.current}
+                    onChange={e => setEditingSub({ ...editingSub, current: e.target.value })}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); saveEditedSub(); }
+                      if (e.key === 'Escape') { e.preventDefault(); setEditingSub(null); }
+                    }}
+                  />
+                  <div className="subcat-actions">
+                    <button type="button" className="subcat-action-btn ok" title="Save name" onClick={saveEditedSub}>✓ Save</button>
+                    <button type="button" className="subcat-action-btn" title="Cancel" onClick={() => setEditingSub(null)}>✕</button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={s} className="subcat-item-row">
+                <span className="subcat-name-label">{s}</span>
+                <div className="subcat-actions">
+                  <button
+                    type="button"
+                    className="subcat-action-btn"
+                    title={`Edit "${s}"`}
+                    onClick={() => setEditingSub({ original: s, current: s })}
+                  >
+                    ✎ Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="subcat-action-btn danger"
+                    title={`Delete "${s}"`}
+                    onClick={() => removeSub(s)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
           {(!c.subcategories || c.subcategories.length === 0) && (
-            <small className="muted">No subcategories yet. Add some above!</small>
+            <small className="muted" style={{ padding: '8px 4px' }}>No subcategories yet. Type above to add some!</small>
           )}
         </div>
       </Field>

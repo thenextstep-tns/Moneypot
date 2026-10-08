@@ -13,14 +13,19 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
     emojis: ['🏠', '🍎', '🛒', '☕', '🍕', '🚇', '🚗', '💊', '📺', '🎉', '💻', '📱', '💼', '✈️', '🏋️', '🐶', '🪴', '🎁', '👕', '📚', '🎯', '🐷', '🌱', '📈'],
   },
   {
+    name: 'Money & Finance',
+    icon: '💰',
+    emojis: ['💰', '💵', '💶', '💷', '🪙', '💳', '🏦', '🏧', '📈', '📉', '📊', '🏷️', '🧾', '💸', '💎', '👛', '👜', '🧮', '⚖️', '🔐'],
+  },
+  {
     name: 'Food & Drinks',
     icon: '🍎',
     emojis: ['🍎', '🥑', '🍕', '🍔', '🍣', '🥗', '☕', '🍵', '🍺', '🍷', '🥪', '🥐', '🍜', '🥩', '🛒', '🍩', '🍦', '🌮', '🍛', '🍰', '🍪', '🍫', '🧃', '🍾'],
   },
   {
-    name: 'Home & Living',
+    name: 'Bills & Living',
     icon: '🏠',
-    emojis: ['🏠', '🏡', '🏢', '🔑', '🛋️', '💡', '🚿', '🧹', '📦', '🛠️', '🔌', '🚪', '🪟', '🪴', '🛏️', '🧺', '🧼', '🪑', '🕯️', '🧯'],
+    emojis: ['🏠', '🏡', '🏢', '🔑', '💡', '💧', '⚡', '🔥', '🛋️', '🚿', '🧹', '📦', '🛠️', '🔌', '🚪', '🪟', '🪴', '🛏️', '🧺', '🧼', '🪑', '🕯️', '🧯'],
   },
   {
     name: 'Travel & Commute',
@@ -38,9 +43,14 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
     emojis: ['🎉', '📺', '🎮', '🎧', '🎬', '🍿', '🎨', '📚', '🎸', '⚽', '🏖️', '🎟️', '🎲', '🎣', '🎳', '⛺', '🎢', '🎤', '🎹', '🏀'],
   },
   {
+    name: 'Sports & Fitness',
+    icon: '🏋️',
+    emojis: ['🏋️', '⚽', '🏀', '🎾', '🏐', '🏃', '🏊', '🚴', '🧘', '🧗', '🥊', '⛳', '🥋', '🛹', '🎿', '🏸'],
+  },
+  {
     name: 'Work & Tech',
     icon: '💼',
-    emojis: ['💼', '💻', '📱', '🖥️', '⌨️', '⌚', '📷', '🖨️', '🎓', '📄', '🪙', '💳', '💰', '📊', '📎', '🖋️', '📁', '🗂️'],
+    emojis: ['💼', '💻', '📱', '🖥️', '⌨️', '⌚', '📷', '🖨️', '🎓', '📄', '🪙', '💳', '📊', '📎', '🖋️', '📁', '🗂️'],
   },
   {
     name: 'Shopping & Style',
@@ -48,9 +58,14 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
     emojis: ['🛍️', '👕', '👗', '👟', '💍', '💄', '🎁', '🕶️', '🎒', '👒', '👠', '🩳', '🧥', '🧦', '👜', '💎'],
   },
   {
+    name: 'Pets & Family',
+    icon: '🐾',
+    emojis: ['🐾', '🐱', '🐶', '🐕', '🐈', '🦜', '🐠', '🐹', '🐰', '👶', '🧒', '👧', '👦', '🧑‍🤝‍🧑', '🍼'],
+  },
+  {
     name: 'Goals & Life',
     icon: '🎯',
-    emojis: ['🎯', '🐷', '🛟', '📈', '💎', '🏆', '🌟', '🚀', '👶', '🐾', '🐱', '🐶', '🍼', '🏰', '💍', '✨'],
+    emojis: ['🎯', '🐷', '🛟', '📈', '💎', '🏆', '🌟', '🚀', '🏰', '💍', '✨', '🎓', '🌱', '☀️'],
   },
 ];
 
@@ -76,17 +91,17 @@ export function EmojiPicker({
 
   return (
     <div className="emoji-picker-box">
-      {/* Group tabs */}
-      <div className="emoji-group-tabs">
+      {/* Category selector in clear text — wrapping cleanly without horizontal scroll */}
+      <div className="emoji-category-pills">
         {EMOJI_GROUPS.map(g => (
           <button
             key={g.name}
             type="button"
-            className={`emoji-group-tab ${activeGroup === g.name ? 'active' : ''}`}
-            title={g.name}
+            className={`emoji-cat-pill ${activeGroup === g.name ? 'active' : ''}`}
             onClick={() => setActiveGroup(g.name)}
           >
-            <span>{g.icon}</span>
+            <span className="emoji-cat-icon">{g.icon}</span>
+            <span className="emoji-cat-text">{g.name}</span>
           </button>
         ))}
       </div>

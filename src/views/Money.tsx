@@ -3,7 +3,7 @@ import { uid, useData } from '../store';
 import { money, today } from '../schedule';
 import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
-import { AccountCardsSelect, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
+import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
 import { calcAccountBalance } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
@@ -88,7 +88,6 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           accounts={accounts}
           value={s.accountId}
           onChange={id => set({ accountId: id })}
-          noneLabel="No specific account"
         />
       </Field>
       <button className="btn primary wide" disabled={!s.name || !s.target} onClick={submit}>{stash ? 'Save' : 'Create stash'}</button>
@@ -150,27 +149,6 @@ export function Accounts() {
       {transferring && <TransferModal onClose={() => setTransferring(false)} />}
       {helpOpen && <ScreenHelpModal screenKey="accounts" onClose={() => setHelpOpen(false)} />}
     </div>
-  );
-}
-
-
-function AccountForm({ acc, onClose }: { acc?: Account; onClose: () => void }) {
-  const { settings, save, remove } = useData();
-  const [a, setA] = useState<Account>(acc ?? { id: uid(), name: '', type: 'card', currency: settings.currency, startBalance: 0, color: '#6C8EF5' });
-  const set = (p: Partial<Account>) => setA(x => ({ ...x, ...p }));
-  return (
-    <Modal title={acc ? 'Edit account' : 'New account'} onClose={onClose}>
-      <Seg value={a.type} onChange={t => set({ type: t })} options={Object.entries(ICONS).map(([k, v]) => [k as Account['type'], `${v} ${k}`])} />
-      <Field label="Name"><input autoFocus value={a.name} placeholder="My Visa card" onChange={e => set({ name: e.target.value })} /></Field>
-      <Field label="Bank / service (optional)"><input value={a.institution ?? ''} placeholder="Revolut, Payoneer, Alipay…" onChange={e => set({ institution: e.target.value || undefined })} /></Field>
-      <div className="row">
-        <Field label="Money there now"><input type="number" value={a.startBalance || ''} onChange={e => set({ startBalance: +e.target.value })} /></Field>
-        <Field label="Currency"><CurrencySelect value={a.currency} onChange={v => set({ currency: v })} /></Field>
-      </div>
-      <Field label="Colour"><input type="color" value={a.color} onChange={e => set({ color: e.target.value })} /></Field>
-      <button className="btn primary wide" disabled={!a.name} onClick={() => { save('accounts', a); onClose(); }}>{acc ? 'Save' : 'Add account'}</button>
-      {acc && <button className="btn ghost wide danger" onClick={() => { remove('accounts', acc.id); onClose(); }}>Delete</button>}
-    </Modal>
   );
 }
 

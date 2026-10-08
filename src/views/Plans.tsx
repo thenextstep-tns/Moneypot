@@ -37,7 +37,7 @@ export function Plans() {
         </div>
       </header>
       {GROUPS.map(([kind, title, hint]) => {
-        const list = plans.filter(p => p.kind === kind && p.freq !== 'once');
+        const list = plans.filter(p => p.kind === kind && p.freq && ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq));
         const monthly = list.reduce((s, p) => s + perMonth(p), 0);
         return (
           <section key={kind}>
@@ -62,7 +62,9 @@ export function Plans() {
           </section>
         );
       })}
-      {plans.filter(p => p.freq !== 'once').length === 0 && <Empty emoji="🧭" title="Start with your income" text="Then add rent and the bills you always pay." />}
+      {plans.filter(p => p.freq && ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq)).length === 0 && (
+        <Empty emoji="🧭" title="Start with your income" text="Then add rent and the bills you always pay." />
+      )}
       {edit && <PlanForm plan={typeof edit === 'string' ? undefined : edit} kind={typeof edit === 'string' ? edit : undefined} onClose={() => setEdit(null)} />}
       {helpOpen && <ScreenHelpModal screenKey="plan" onClose={() => setHelpOpen(false)} />}
     </div>
@@ -76,12 +78,28 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
 
   const [p, setP] = useState<Plan>(plan ?? {
     id: uid(), name: '', kind: kind ?? 'expense', categoryId: '', amount: 0, currency: settings.currency,
-    accountId: accounts[0]?.id, freq: 'monthly', every: 1, startDate: today(),
+    accountId: accounts[0]?.id || '', freq: 'monthly', every: 1, startDate: today(),
   });
+  const [addingSub, setAddingSub] = useState(false);
+  const [newSubVal, setNewSubVal] = useState('');
+
   const set = (patch: Partial<Plan>) => setP(x => ({ ...x, ...patch }));
   const cats = categories.filter(c => c.kind === p.kind);
   const categoryId = p.categoryId || cats[0]?.id || '';
-  const valid = p.name.trim() && p.amount > 0;
+  const valid = p.name.trim() && p.amount > 0 && !!p.accountId;
+
+  const handleQuickAddSub = () => {
+    const v = newSubVal.trim();
+    const currentCat = categories.find(c => c.id === categoryId);
+    if (!v || !currentCat) return;
+    const currentSubs = currentCat.subcategories ?? [];
+    if (!currentSubs.includes(v)) {
+      save('categories', { ...currentCat, subcategories: [...currentSubs, v] });
+    }
+    set({ subcategory: v });
+    setNewSubVal('');
+    setAddingSub(false);
+  };
 
   const submit = () => {
     const finalFreq = p.freq === 'once' ? 'monthly' : p.freq;
@@ -104,9 +122,9 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
           {cats.map(c => <button type="button" key={c.id} className={c.id === categoryId ? 'chip on' : 'chip'} onClick={() => set({ categoryId: c.id, subcategory: undefined })}>{c.emoji} {c.name}</button>)}
         </div>
       </Field>
-      {categories.find(c => c.id === categoryId)?.subcategories && (categories.find(c => c.id === categoryId)!.subcategories!.length > 0) && (
+      {categories.find(c => c.id === categoryId) && (
         <Field label="Subcategory (optional)">
-          <div className="chips">
+          <div className="chips" style={{ alignItems: 'center' }}>
             <button
               type="button"
               className={!p.subcategory ? 'chip on' : 'chip'}
@@ -114,7 +132,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
             >
               General
             </button>
-            {categories.find(c => c.id === categoryId)!.subcategories!.map(s => (
+            {(categories.find(c => c.id === categoryId)?.subcategories ?? []).map(s => (
               <button
                 key={s}
                 type="button"
@@ -124,6 +142,32 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                 {s}
               </button>
             ))}
+            {addingSub ? (
+              <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                <input
+                  autoFocus
+                  style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
+                  placeholder="New name…"
+                  value={newSubVal}
+                  onChange={e => setNewSubVal(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
+                  }}
+                />
+                <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
+                <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="chip"
+                style={{ borderStyle: 'dashed' }}
+                onClick={() => setAddingSub(true)}
+              >
+                + Add subcategory
+              </button>
+            )}
           </div>
         </Field>
       )}
