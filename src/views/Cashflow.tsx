@@ -129,21 +129,27 @@ export function Cashflow() {
     const endBal = days[days.length - 1].totalBalance;
     let income = 0;
     let expense = 0;
+    let saving = 0;
     let minBal = days[0].totalBalance;
     let maxBal = days[0].totalBalance;
 
     for (const d of days) {
       income += d.incomeTotal;
       expense += d.expenseTotal;
+      saving += (d.savingTotal ?? 0);
       if (d.totalBalance < minBal) minBal = d.totalBalance;
       if (d.totalBalance > maxBal) maxBal = d.totalBalance;
     }
+    const endStashed = days[days.length - 1]?.totalStashed ?? 0;
     return {
       startBal,
       endBal,
-      net: income - expense,
+      endStashed,
+      net: income - (expense + saving),
       income,
-      expense,
+      expense: expense + saving,
+      onlyExpense: expense,
+      saving,
       minBal,
       maxBal,
     };
@@ -411,6 +417,12 @@ export function Cashflow() {
               <span className="legend-dot-red" />
               <span className="legend-name">Activity / Payments</span>
             </div>
+            {days.some(d => (d.totalStashed ?? 0) > 0) && (
+              <div className="legend-item" title="Money put away into stashes (reserved from spending)">
+                <span className="legend-color-dot" style={{ background: '#94A3B8', border: '1px dashed #64748B' }} />
+                <span className="legend-name">🔒 Stashed (Reserved)</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -531,7 +543,7 @@ function CashflowSvgChart({
 
   // Auto-scale vertical bounds
   const minBalRaw = Math.min(0, ...days.map(d => d.totalBalance));
-  const maxBalRaw = Math.max(10, ...days.map(d => d.totalBalance));
+  const maxBalRaw = Math.max(10, ...days.map(d => d.totalBalance + (d.totalStashed ?? 0)));
 
   // Determine tick range with headroom
   const rangeSpan = Math.max(100, maxBalRaw - minBalRaw);
@@ -587,6 +599,23 @@ function CashflowSvgChart({
     });
   }, [days, accounts, yMin, yTotalSpan]);
 
+  const hasStashed = useMemo(() => days.some(d => (d.totalStashed ?? 0) > 0), [days]);
+
+  // Stashed area layer (greyed out / striped on top of available cash)
+  const stashedArea = useMemo(() => {
+    if (!hasStashed) return null;
+    const topPoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.stashedY1).toFixed(1)}`);
+    const bottomPoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.stashedY0).toFixed(1)}`).reverse();
+    const pathData = `M ${topPoints.join(' L ')} L ${bottomPoints.join(' L ')} Z`;
+    return { pathData };
+  }, [days, hasStashed, yMin, yTotalSpan]);
+
+  const totalWithStashedLinePath = useMemo(() => {
+    if (!hasStashed) return null;
+    const points = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.stashedY1).toFixed(1)}`);
+    return `M ${points.join(' L ')}`;
+  }, [days, hasStashed, yMin, yTotalSpan]);
+
   // Total balance line path
   const totalLinePoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.totalBalance).toFixed(1)}`);
   const totalLinePath = `M ${totalLinePoints.join(' L ')}`;
@@ -611,6 +640,9 @@ function CashflowSvgChart({
             <stop offset="0%" stopColor="#1E293B" />
             <stop offset="100%" stopColor="#0F172A" />
           </linearGradient>
+          <pattern id="stashedHatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="8" stroke="#64748B" strokeWidth="1.2" strokeOpacity="0.4" />
+          </pattern>
           <filter id="shadowGlow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.15" />
           </filter>
@@ -668,6 +700,24 @@ function CashflowSvgChart({
           />
         ))}
 
+        {/* Greyed-out Stashed / Reserved Area Layer */}
+        {stashedArea && (
+          <g className="stashed-chart-layer">
+            <path
+              d={stashedArea.pathData}
+              fill="#94A3B8"
+              fillOpacity="0.22"
+              stroke="#64748B"
+              strokeWidth="1"
+              strokeDasharray="4 3"
+            />
+            <path
+              d={stashedArea.pathData}
+              fill="url(#stashedHatch)"
+            />
+          </g>
+        )}
+
         {/* Total Balance Curve */}
         <path
           d={totalLinePath}
@@ -677,6 +727,20 @@ function CashflowSvgChart({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+
+        {/* Total Funds Curve with Stashed (Dashed muted slate) */}
+        {totalWithStashedLinePath && (
+          <path
+            d={totalWithStashedLinePath}
+            fill="none"
+            stroke="#64748B"
+            strokeWidth="1.8"
+            strokeDasharray="4 4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.85"
+          />
+        )}
 
         {/* Vertical Day Grid lines & X-axis Date Labels */}
         {days.map((d, i) => {
@@ -800,9 +864,9 @@ function CashflowSvgChart({
       {/* Persistent Info Card under the graph */}
       {activeDayObj && (
         <div className="graph-active-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 4 }}>
+          <div className="day-card-header">
+            <div className="day-card-title-group">
+              <div className="day-card-nav-buttons">
                 <button
                   type="button"
                   className="btn ghost icon"
@@ -823,13 +887,13 @@ function CashflowSvgChart({
                 </button>
               </div>
 
-              <div>
-                <b style={{ fontSize: 15, marginRight: 8 }}>{activeDayObj.fullLabel}</b>
+              <div className="day-card-title-labels">
+                <b style={{ fontSize: 15, marginRight: 6 }}>{activeDayObj.fullLabel}</b>
                 {activeDayObj.isToday && <span className="tag ok-badge">Today</span>}
                 {activeDayObj.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected</span>}
                 {hoveredDate && hoveredDate !== pinnedDate ? (
                   <span className="tag" style={{ background: '#FEF3C7', color: '#92400E' }}>
-                    👁️ Hovering (Click to pin)
+                    👁️ Hovering
                   </span>
                 ) : (
                   <span className="tag" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>
@@ -839,32 +903,38 @@ function CashflowSvgChart({
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: 10.5, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
-                  END OF DAY TOTAL
-                </span>
-                <b style={{ fontSize: 16, color: activeDayObj.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-                  {money(activeDayObj.totalBalance, mainCurrency)}
-                </b>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: 10.5, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
-                  DAY NET CHANGE
-                </span>
-                <b style={{ fontSize: 16, color: activeDayObj.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
-                  {activeDayObj.netChange >= 0 ? `+${money(activeDayObj.netChange, mainCurrency)}` : money(activeDayObj.netChange, mainCurrency)}
-                </b>
-              </div>
-              <button
-                type="button"
-                className="btn ghost"
-                style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--line)' }}
-                onClick={() => onOpenModal(activeDayObj)}
-              >
-                🔍 Details Modal
-              </button>
+            <button
+              type="button"
+              className="btn ghost"
+              style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--line)', whiteSpace: 'nowrap' }}
+              onClick={() => onOpenModal(activeDayObj)}
+            >
+              🔍 Details Modal
+            </button>
+          </div>
+
+          {/* Clean Metric Badges Strip */}
+          <div className="day-card-metrics-strip">
+            <div className="day-metric-box">
+              <span className="metric-label">AVAILABLE CASH</span>
+              <b className="metric-val" style={{ color: activeDayObj.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+                {money(activeDayObj.totalBalance, mainCurrency)}
+              </b>
             </div>
+            <div className="day-metric-box">
+              <span className="metric-label">DAY NET CHANGE</span>
+              <b className="metric-val" style={{ color: activeDayObj.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
+                {activeDayObj.netChange >= 0 ? `+${money(activeDayObj.netChange, mainCurrency)}` : money(activeDayObj.netChange, mainCurrency)}
+              </b>
+            </div>
+            {activeDayObj.totalStashed > 0 && (
+              <div className="day-metric-box stashed-metric">
+                <span className="metric-label">🔒 STASHED (RESERVED)</span>
+                <b className="metric-val" style={{ color: '#475569' }}>
+                  {money(activeDayObj.totalStashed, mainCurrency)}
+                </b>
+              </div>
+            )}
           </div>
 
           {/* Account breakdown row */}
@@ -872,7 +942,12 @@ function CashflowSvgChart({
             {activeDayObj.accounts.map(ab => (
               <span key={ab.accountId} className="chip">
                 <span className="dot" style={{ background: ab.accountColor }} />
-                {ab.accountName}: <b>{money(ab.balanceOriginal, ab.currency)}</b>
+                <span>{ab.accountName}: <b>{money(ab.balanceOriginal, ab.currency)}</b></span>
+                {ab.stashedOriginal > 0 && (
+                  <span style={{ color: 'var(--mute)', fontSize: 11, marginLeft: 2 }}>
+                    (🔒 {money(ab.stashedOriginal, ab.currency)})
+                  </span>
+                )}
               </span>
             ))}
           </div>
@@ -883,32 +958,42 @@ function CashflowSvgChart({
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)' }}>
                 {activeDayObj.items.length} TRANSACTIONS & SCHEDULED BILLS ON THIS DAY:
               </span>
-              <div className="preview-items-list" style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="preview-items-list" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {activeDayObj.items.map(it => (
                   <div
                     key={it.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: '#FFF',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: 8,
-                      padding: '6px 10px',
-                      fontSize: 13,
-                    }}
+                    className="cashflow-active-item"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>{it.emoji}</span>
-                      <span style={{ fontWeight: 600 }}>{it.name}</span>
-                      {it.category && <span className="tag" style={{ background: '#F1F5F9', color: '#475569' }}>{it.category}</span>}
-                      {it.accountName && <span className="muted" style={{ fontSize: 12 }}>({it.accountName})</span>}
-                      <span className="muted" style={{ fontSize: 11 }}>
-                        {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled'}
-                      </span>
+                    <div className="item-main">
+                      <span className="item-emoji">{it.emoji}</span>
+                      <div className="item-info">
+                        <div className="item-title-row">
+                          <span className="item-title">{it.name}</span>
+                          {it.kind === 'saving' && (
+                            <span className="tag" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
+                              🌱 Stashed
+                            </span>
+                          )}
+                        </div>
+                        <div className="item-sub">
+                          {it.category && <span className="tag" style={{ background: '#F1F5F9', color: '#475569', fontSize: 11, padding: '1px 5px' }}>{it.category}</span>}
+                          {it.accountName && <span>({it.accountName})</span>}
+                          <span>• {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled'}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontWeight: 700, color: it.kind === 'income' ? '#16A34A' : it.kind === 'expense' ? '#DC2626' : 'var(--ink)' }}>
-                      {it.kind === 'income' ? '+' : it.kind === 'expense' ? '-' : ''}
+                    <div
+                      className="item-amount"
+                      style={{
+                        color:
+                          it.kind === 'income'
+                            ? '#16A34A'
+                            : it.kind === 'saving'
+                            ? '#0D9488'
+                            : '#DC2626',
+                      }}
+                    >
+                      {it.kind === 'income' ? '+' : it.kind === 'saving' ? '-' : it.kind === 'expense' ? '-' : ''}
                       {money(it.amount, it.currency)}
                     </div>
                   </div>
@@ -1231,12 +1316,12 @@ function DayDetailModal({
         </div>
 
         {/* Day End Total Balance & Net */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, background: '#F8FAFC', padding: 14, borderRadius: 12, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: day.totalStashed > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10, background: '#F8FAFC', padding: 14, borderRadius: 12, marginBottom: 16 }}>
           <div>
             <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
-              DAY-END TOTAL
+              AVAILABLE CASH
             </span>
-            <b style={{ fontSize: 20, color: day.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+            <b style={{ fontSize: 18, color: day.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
               {money(day.totalBalance, mainCurrency)}
             </b>
           </div>
@@ -1244,10 +1329,20 @@ function DayDetailModal({
             <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
               NET CASHFLOW
             </span>
-            <b style={{ fontSize: 20, color: day.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
+            <b style={{ fontSize: 18, color: day.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
               {day.netChange >= 0 ? `+${money(day.netChange, mainCurrency)}` : money(day.netChange, mainCurrency)}
             </b>
           </div>
+          {day.totalStashed > 0 && (
+            <div>
+              <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
+                🔒 STASHED
+              </span>
+              <b style={{ fontSize: 18, color: '#475569' }}>
+                {money(day.totalStashed, mainCurrency)}
+              </b>
+            </div>
+          )}
         </div>
 
         {/* Account Balances on this day */}
@@ -1270,7 +1365,14 @@ function DayDetailModal({
                   borderLeft: `4px solid ${a.accountColor}`,
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{a.accountName}</div>
+                <div>
+                  <span style={{ fontWeight: 600 }}>{a.accountName}</span>
+                  {a.stashedOriginal > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--mute)', fontWeight: 400, marginLeft: 6 }}>
+                      (🔒 {money(a.stashedOriginal, a.currency)} stashed)
+                    </span>
+                  )}
+                </div>
                 <div style={{ textAlign: 'right' }}>
                   <b>{money(a.balanceOriginal, a.currency)}</b>
                   {a.currency !== mainCurrency && (
@@ -1312,7 +1414,14 @@ function DayDetailModal({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 20 }}>{it.emoji}</span>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{it.name}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{it.name}</span>
+                        {it.kind === 'saving' && (
+                          <span className="tag" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
+                            🌱 Stashed
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: 12, color: 'var(--mute)' }}>
                         {it.accountName ? `${it.accountName} · ` : ''}
                         {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled pending'}
@@ -1323,10 +1432,15 @@ function DayDetailModal({
                     <b
                       style={{
                         fontSize: 15,
-                        color: it.kind === 'income' ? '#16A34A' : it.kind === 'expense' ? '#DC2626' : 'var(--ink)',
+                        color:
+                          it.kind === 'income'
+                            ? '#16A34A'
+                            : it.kind === 'saving'
+                            ? '#0D9488'
+                            : '#DC2626',
                       }}
                     >
-                      {it.kind === 'income' ? '+' : it.kind === 'expense' ? '-' : ''}
+                      {it.kind === 'income' ? '+' : '-'}
                       {money(it.amount, it.currency)}
                     </b>
                     {it.currency !== mainCurrency && (

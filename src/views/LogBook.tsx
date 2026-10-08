@@ -306,7 +306,7 @@ export function LogBook() {
 
 /** Modal to edit a logged payment */
 function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
-  const { accounts, categories, plans, save, remove } = useData();
+  const { accounts, categories, plans, stashes, save, remove } = useData();
   const [name, setName] = useState(payment.name ?? '');
   const [amount, setAmount] = useState(payment.amount);
   const [currency, setCurrency] = useState(payment.currency);
@@ -356,36 +356,43 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
         />
       </Field>
 
-      <Field label="Pot">
-        <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
-          <option value="">—</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-        </select>
-      </Field>
+      {payment.kind === 'saving' || payment.stashId ? (
+        <div className="preview" style={{ background: '#F0FDF4', color: '#166534', borderColor: '#BBF7D0', margin: '4px 0 10px' }}>
+          🌱 Saving into stash: <b>{stashes.find(s => s.id === payment.stashId)?.name || name}</b>
+        </div>
+      ) : (
+        <>
+          <Field label="Pot">
+            <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
+              <option value="">—</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+            </select>
+          </Field>
 
-
-      {curCat?.subcategories && curCat.subcategories.length > 0 && (
-        <Field label="Subcategory (optional)">
-          <div className="chips">
-            <button
-              type="button"
-              className={!subcategory ? 'chip on' : 'chip'}
-              onClick={() => setSubcategory(undefined)}
-            >
-              General
-            </button>
-            {curCat.subcategories.map(s => (
-              <button
-                key={s}
-                type="button"
-                className={subcategory === s ? 'chip on' : 'chip'}
-                onClick={() => setSubcategory(s)}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </Field>
+          {curCat?.subcategories && curCat.subcategories.length > 0 && (
+            <Field label="Subcategory (optional)">
+              <div className="chips">
+                <button
+                  type="button"
+                  className={!subcategory ? 'chip on' : 'chip'}
+                  onClick={() => setSubcategory(undefined)}
+                >
+                  General
+                </button>
+                {curCat.subcategories.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={subcategory === s ? 'chip on' : 'chip'}
+                    onClick={() => setSubcategory(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+        </>
       )}
 
       <Field label="Date">

@@ -319,12 +319,6 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         )}
       </Field>
 
-      <Field label="Pot">
-        <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
-          {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-        </select>
-      </Field>
-
       {isFuture && selAcc && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>⚠️</span>
@@ -343,28 +337,42 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         </div>
       )}
 
-      {currentCat?.subcategories && currentCat.subcategories.length > 0 && (
-        <Field label="Subcategory (optional)">
-          <div className="chips">
-            <button
-              type="button"
-              className={!subcategory ? 'chip on' : 'chip'}
-              onClick={() => setSubcategory(undefined)}
-            >
-              General
-            </button>
-            {currentCat.subcategories.map(s => (
-              <button
-                key={s}
-                type="button"
-                className={subcategory === s ? 'chip on' : 'chip'}
-                onClick={() => setSubcategory(s)}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </Field>
+      {o.kind === 'saving' ? (
+        <div className="preview" style={{ background: '#F0FDF4', color: '#166534', borderColor: '#BBF7D0', margin: '4px 0 10px' }}>
+          🌱 Saving into stash: <b>{stashes.find(s => s.id === o.stashId)?.name || o.name}</b>
+        </div>
+      ) : (
+        <>
+          <Field label="Pot">
+            <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
+              {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+            </select>
+          </Field>
+
+          {currentCat?.subcategories && currentCat.subcategories.length > 0 && (
+            <Field label="Subcategory (optional)">
+              <div className="chips">
+                <button
+                  type="button"
+                  className={!subcategory ? 'chip on' : 'chip'}
+                  onClick={() => setSubcategory(undefined)}
+                >
+                  General
+                </button>
+                {currentCat.subcategories.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={subcategory === s ? 'chip on' : 'chip'}
+                    onClick={() => setSubcategory(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+        </>
       )}
       <Field label="Comment (optional)">
         <textarea rows={2} value={note} placeholder={mode === 'later' ? 'Why later? e.g. waiting for the invoice' : 'What exactly was it? e.g. bought a new kettle too'} onChange={e => setNote(e.target.value)} />

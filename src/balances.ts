@@ -18,7 +18,6 @@ export function calcAccountBalance(
     const stashId = p.stashId ?? plan?.stashId;
     const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
     if (p.accountId === a.id) b += kind === 'income' ? amt : -amt;
-    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) b += amt;
   }
   for (const t of transfers) {
     if (t.status === 'cancelled') continue;
@@ -90,13 +89,6 @@ export function calcProjectedAccountBalance(
         projected += amtInAcc;
       } else {
         projected -= amtInAcc;
-      }
-    }
-    // If saving into a stash linked to this account:
-    if (o.kind === 'saving' && o.stashId) {
-      const stash = stashes.find(s => s.id === o.stashId);
-      if (stash?.accountId === account.id) {
-        projected += amtInAcc;
       }
     }
   }
@@ -304,19 +296,6 @@ export function calcMonthStartingBalances(
         if (o.kind === 'income') unassignedNet += amtInTarget;
         else unassignedNet -= amtInTarget;
       }
-
-      // If saving into an account-linked stash, the destination account receives the money
-      if (o.kind === 'saving' && o.stashId) {
-        const stash = stashes.find(s => s.id === o.stashId);
-        if (stash?.accountId) {
-          const stashAcc = accounts.find(a => a.id === stash.accountId);
-          if (stashAcc) {
-            const amtInAcc = convert(o.amount, o.currency, stashAcc.currency);
-            const curr = accBals.get(stashAcc.id) ?? 0;
-            accBals.set(stashAcc.id, curr + amtInAcc);
-          }
-        }
-      }
     }
 
     let projectedTotal = 0;
@@ -352,17 +331,6 @@ export function calcMonthStartingBalances(
           accBals.set(acc.id, curr - p.amount);
         } else {
           accBals.set(acc.id, curr + p.amount);
-        }
-      }
-    }
-
-    if (kind === 'saving' && stashId) {
-      const stash = stashes.find(s => s.id === stashId);
-      if (stash?.accountId) {
-        const stashAcc = accounts.find(a => a.id === stash.accountId);
-        if (stashAcc) {
-          const curr = accBals.get(stashAcc.id) ?? 0;
-          accBals.set(stashAcc.id, curr - p.amount);
         }
       }
     }

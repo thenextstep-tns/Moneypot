@@ -81,7 +81,7 @@ export function RecurrenceEditor({ p, set }: { p: Plan; set: (x: Partial<Plan>) 
             </>
           )}
 
-          <div className="row">
+          <div className="row dates-row">
             <Field label="Starting"><input type="date" value={p.startDate} onChange={e => set({ startDate: e.target.value })} /></Field>
             <Field label="Until (optional)"><input type="date" value={p.endDate ?? ''} onChange={e => set({ endDate: e.target.value || undefined })} /></Field>
           </div>

@@ -113,9 +113,21 @@ export function Stashes() {
 }
 
 function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
-  const { user, accounts, settings, payments, plans, save, remove } = useData();
+  const { user, accounts, categories, settings, payments, plans, save, remove } = useData();
+  const savingCats = categories.filter(c => c.kind === 'saving');
+  const defaultCatId = savingCats[0]?.id || 'savings';
   const [showSharing, setShowSharing] = useState(false);
-  const [s, setS] = useState<Stash>(stash ?? { id: uid(), name: '', emoji: '🎯', target: 0, currency: settings.currency, startAmount: 0, accountId: accounts.find(a => a.type === 'savings')?.id });
+  const [s, setS] = useState<Stash>(stash ?? {
+    id: uid(),
+    name: '',
+    emoji: '🎯',
+    target: 0,
+    currency: settings.currency,
+    startAmount: 0,
+    accountId: accounts.find(a => a.type === 'savings')?.id,
+    categoryId: defaultCatId,
+    subcategory: '',
+  });
   const [monthly, setMonthly] = useState(0);
   const set = (p: Partial<Stash>) => setS(x => ({ ...x, ...p }));
 
@@ -146,8 +158,26 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   }, [stash, payments, plans, user]);
 
   const submit = () => {
-    save('stashes', s);
-    if (monthly > 0) save('plans', { id: uid(), name: s.name, kind: 'saving', categoryId: 'savings', stashId: s.id, amount: monthly, currency: s.currency, freq: 'monthly', every: 1, startDate: today(), accountId: accounts[0]?.id });
+    const finalCatId = s.categoryId || defaultCatId;
+    const finalSubcat = s.subcategory || s.name.trim();
+    const finalStash = { ...s, categoryId: finalCatId, subcategory: finalSubcat };
+    save('stashes', finalStash);
+    if (monthly > 0) {
+      save('plans', {
+        id: uid(),
+        name: s.name,
+        kind: 'saving',
+        categoryId: finalCatId,
+        subcategory: finalSubcat,
+        stashId: s.id,
+        amount: monthly,
+        currency: s.currency,
+        freq: 'monthly',
+        every: 1,
+        startDate: today(),
+        accountId: accounts[0]?.id,
+      });
+    }
     onClose();
   };
   return (
@@ -168,6 +198,17 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           value={s.accountId}
           onChange={id => set({ accountId: id })}
         />
+      </Field>
+      <Field label="Associated Pot" hint="Default category for payments into this stash">
+        <select
+          value={s.categoryId || defaultCatId}
+          onChange={e => set({ categoryId: e.target.value })}
+        >
+          {savingCats.map(c => (
+            <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+          ))}
+          {savingCats.length === 0 && <option value="savings">🌱 Savings & Stashes</option>}
+        </select>
       </Field>
       <div className="note" style={{ margin: '8px 0 14px' }}>
         💡 Stashes track money strictly by summing what has been put away (starting amount + confirmed payments). The linked account is just a reference of where it is physically held.

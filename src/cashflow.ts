@@ -26,8 +26,10 @@ export interface AccountDayBalance {
   accountName: string;
   accountColor: string;
   currency: string;
-  balanceOriginal: number;
+  balanceOriginal: number; // Available liquid balance
   balanceInMain: number;
+  stashedOriginal: number; // Stashed / reserved funds associated with this account
+  stashedInMain: number;
   y0: number; // Bottom of stacked area in main currency
   y1: number; // Top of stacked area in main currency
 }
@@ -43,10 +45,14 @@ export interface DayCashflow {
   isFuture: boolean;
   incomeTotal: number;
   expenseTotal: number;
+  savingTotal: number;
   netChange: number;
   items: CashflowItem[];
   accounts: AccountDayBalance[];
-  totalBalance: number;
+  totalBalance: number; // Available liquid balance
+  totalStashed: number; // Total stashed / reserved funds
+  stashedY0: number;
+  stashedY1: number;
 }
 
 /** Generate a continuous array of YYYY-MM-DD strings from `from` to `to` */
@@ -100,11 +106,9 @@ export function calculateCashflowRange(
   const getPaymentDelta = (p: Payment, a: Account): number => {
     const plan = plans.find(x => x.id === p.planId);
     const kind = p.kind ?? plan?.kind ?? 'expense';
-    const stashId = p.stashId ?? plan?.stashId;
     const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
     let d = 0;
     if (p.accountId === a.id) d += kind === 'income' ? amt : -amt;
-    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) d += amt;
     return d;
   };
 
@@ -119,11 +123,9 @@ export function calculateCashflowRange(
   // Helper: compute delta for an account from a future occurrence
   const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
     const kind = o.plan.kind ?? 'expense';
-    const stashId = o.plan.stashId;
     const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
     let d = 0;
     if (o.accountId === a.id) d += kind === 'income' ? amt : -amt;
-    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) d += amt;
     return d;
   };
 
@@ -174,7 +176,7 @@ export function calculateCashflowRange(
           accountColor: acc?.color,
           category: cat?.name,
           subcategory: p.subcategory || plan?.subcategory,
-          emoji: isCorrection ? '⚖️' : cat?.emoji ?? (kind === 'income' ? '💰' : '💸'),
+          emoji: isCorrection ? '⚖️' : (kind === 'saving' ? (stashes.find(s => s.id === (p.stashId ?? plan?.stashId))?.emoji ?? '🌱') : cat?.emoji ?? (kind === 'income' ? '💰' : '💸')),
           isShared: plan?.isShared,
           isCorrection,
         });
@@ -225,20 +227,22 @@ export function calculateCashflowRange(
           accountColor: acc?.color,
           category: cat?.name,
           subcategory: o.plan.subcategory,
-          emoji: cat?.emoji ?? (o.plan.kind === 'income' ? '💰' : '💸'),
+          emoji: o.plan.kind === 'saving' ? (stashes.find(s => s.id === o.plan.stashId)?.emoji ?? '🌱') : cat?.emoji ?? (o.plan.kind === 'income' ? '💰' : '💸'),
           isShared: o.plan.isShared,
         });
       }
     }
 
-    // Calculate income total and expense total for this day
+    // Calculate income total, expense total, and saving total for this day
     let incomeTotal = 0;
     let expenseTotal = 0;
+    let savingTotal = 0;
     for (const it of items) {
       if (it.kind === 'income') incomeTotal += it.amountInMain;
       else if (it.kind === 'expense') expenseTotal += it.amountInMain;
+      else if (it.kind === 'saving') savingTotal += it.amountInMain;
     }
-    const netChange = incomeTotal - expenseTotal;
+    const netChange = incomeTotal - (expenseTotal + savingTotal);
 
     // Calculate account balances at the end of this day
     const accountDayBals: AccountDayBalance[] = [];
@@ -265,11 +269,41 @@ export function calculateCashflowRange(
         }
       }
 
+      // Calculate stashed money associated with this account up to this date
+      let stashedForAcc = 0;
+      for (const s of stashes) {
+        if (s.accountId === a.id && s.startAmount > 0) {
+          stashedForAcc += s.currency === a.currency ? s.startAmount : convert(s.startAmount, s.currency, a.currency);
+        }
+      }
+      for (const p of confirmedPayments) {
+        if (p.date <= date && p.kind === 'saving') {
+          const s = stashes.find(x => x.id === (p.stashId ?? plans.find(pl => pl.id === p.planId)?.stashId));
+          const targetAccId = s?.accountId || p.accountId;
+          if (targetAccId === a.id) {
+            stashedForAcc += p.currency === a.currency ? p.amount : convert(p.amount, p.currency, a.currency);
+          }
+        }
+      }
+      if (date > t) {
+        for (const o of futureOccurrences) {
+          if (o.dueDate <= date && o.kind === 'saving') {
+            const s = stashes.find(x => x.id === o.stashId);
+            const targetAccId = s?.accountId || o.accountId;
+            if (targetAccId === a.id) {
+              stashedForAcc += o.currency === a.currency ? o.amount : convert(o.amount, o.currency, a.currency);
+            }
+          }
+        }
+      }
+
       const balInMain = convert(b, a.currency, mainCurrency);
       const positiveVal = Math.max(0, balInMain);
       const y0 = cumulativeY;
       const y1 = cumulativeY + positiveVal;
       cumulativeY += positiveVal;
+
+      const stashedInMain = convert(stashedForAcc, a.currency, mainCurrency);
 
       accountDayBals.push({
         accountId: a.id,
@@ -278,12 +312,17 @@ export function calculateCashflowRange(
         currency: a.currency,
         balanceOriginal: b,
         balanceInMain: balInMain,
+        stashedOriginal: stashedForAcc,
+        stashedInMain,
         y0,
         y1,
       });
     }
 
     const totalBalance = accountDayBals.reduce((sum, ab) => sum + ab.balanceInMain, 0);
+    const totalStashed = accountDayBals.reduce((sum, ab) => sum + ab.stashedInMain, 0);
+    const stashedY0 = cumulativeY;
+    const stashedY1 = cumulativeY + totalStashed;
 
     result.push({
       date,
@@ -296,10 +335,14 @@ export function calculateCashflowRange(
       isFuture,
       incomeTotal,
       expenseTotal,
+      savingTotal,
       netChange,
       items,
       accounts: accountDayBals,
       totalBalance,
+      totalStashed,
+      stashedY0,
+      stashedY1,
     });
   }
 

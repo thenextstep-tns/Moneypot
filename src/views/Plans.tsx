@@ -130,8 +130,12 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
     : null;
 
   const set = (patch: Partial<Plan>) => setP(x => ({ ...x, ...patch }));
+  const currentStashId = p.stashId || (p.kind === 'saving' ? stashes[0]?.id : undefined);
+  const activeStash = stashes.find(s => s.id === currentStashId);
   const cats = categories.filter(c => c.kind === p.kind);
-  const categoryId = p.categoryId || cats[0]?.id || '';
+  const categoryId = p.kind === 'saving'
+    ? (activeStash?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings')
+    : (p.categoryId || cats[0]?.id || '');
   const valid = p.name.trim() && p.amount > 0 && !!p.accountId;
 
   const handleQuickAddSub = () => {
@@ -148,80 +152,152 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
   };
 
   const submit = () => {
-    const final = { ...p, categoryId, name: p.name.trim() };
+    let finalCatId = categoryId;
+    let finalSub = p.subcategory;
+    let finalStashId = p.stashId;
+    if (p.kind === 'saving') {
+      finalStashId = currentStashId;
+      finalCatId = activeStash?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings';
+      finalSub = activeStash?.subcategory || activeStash?.name;
+    }
+    const final = {
+      ...p,
+      stashId: finalStashId,
+      categoryId: finalCatId,
+      subcategory: finalSub,
+      name: p.name.trim(),
+    };
     save('plans', final);
     onClose();
   };
 
   return (
     <Modal title={plan ? 'Edit plan' : 'Add to your plan'} onClose={onClose}>
-      <Seg value={p.kind} onChange={k => set({ kind: k, categoryId: '' })} options={[['income', '💰 In'], ['expense', '💸 Out'], ['saving', '🌱 Save']]} />
-      <Field label="What is it?"><input autoFocus value={p.name} placeholder={p.kind === 'income' ? 'Salary' : 'Rent, Groceries, Netflix…'} onChange={e => set({ name: e.target.value })} /></Field>
+      <Seg
+        value={p.kind}
+        onChange={k => {
+          if (k === 'saving') {
+            const defStash = stashes[0];
+            set({
+              kind: k,
+              stashId: defStash?.id,
+              categoryId: defStash?.categoryId || 'savings',
+              subcategory: defStash?.subcategory || defStash?.name,
+              name: p.name || defStash?.name || '',
+            });
+          } else {
+            set({ kind: k, categoryId: '', stashId: undefined });
+          }
+        }}
+        options={[['income', '💰 In'], ['expense', '💸 Out'], ['saving', '🌱 Save']]}
+      />
+      <Field label="What is it?">
+        <input
+          autoFocus
+          value={p.name}
+          placeholder={p.kind === 'income' ? 'Salary' : p.kind === 'saving' ? 'Safety cushion' : 'Rent, Groceries, Netflix…'}
+          onChange={e => set({ name: e.target.value })}
+        />
+      </Field>
       <div className="row">
         <Field label="How much?"><input type="number" inputMode="decimal" value={p.amount || ''} onChange={e => set({ amount: +e.target.value })} /></Field>
         <Field label="Currency"><CurrencySelect value={p.currency} onChange={v => set({ currency: v })} /></Field>
       </div>
       <RecurrenceEditor p={p} set={set} />
-      <Field label="Which pot?">
-        <div className="chips">
-          {cats.map(c => <button type="button" key={c.id} className={c.id === categoryId ? 'chip on' : 'chip'} onClick={() => set({ categoryId: c.id, subcategory: undefined })}>{c.emoji} {c.name}</button>)}
-        </div>
-      </Field>
-      {categories.find(c => c.id === categoryId) && (
-        <Field label="Subcategory (optional)">
-          <div className="chips" style={{ alignItems: 'center' }}>
-            <button
-              type="button"
-              className={!p.subcategory ? 'chip on' : 'chip'}
-              onClick={() => set({ subcategory: undefined })}
-            >
-              General
-            </button>
-            {(categories.find(c => c.id === categoryId)?.subcategories ?? []).map(s => (
-              <button
-                key={s}
-                type="button"
-                className={p.subcategory === s ? 'chip on' : 'chip'}
-                onClick={() => set({ subcategory: s })}
-              >
-                {s}
-              </button>
-            ))}
-            {addingSub ? (
-              <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                <input
-                  autoFocus
-                  style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
-                  placeholder="New name…"
-                  value={newSubVal}
-                  onChange={e => setNewSubVal(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
-                    if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
-                  }}
-                />
-                <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
-                <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="chip"
-                style={{ borderStyle: 'dashed' }}
-                onClick={() => setAddingSub(true)}
-              >
-                + Add subcategory
-              </button>
-            )}
-          </div>
-        </Field>
-      )}
-      {p.kind === 'saving' && (
+
+      {/* For stashes, omit pot and subcategory pickers - directly select stash */}
+      {p.kind === 'saving' ? (
         <Field label="Into which stash?">
-          <select value={p.stashId ?? ''} onChange={e => set({ stashId: e.target.value || undefined })}>
-            <option value="">—</option>{stashes.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-          </select>
+          {stashes.length > 0 ? (
+            <select
+              value={currentStashId ?? ''}
+              onChange={e => {
+                const sid = e.target.value;
+                const chosen = stashes.find(s => s.id === sid);
+                const sCat = chosen?.categoryId || categories.find(c => c.kind === 'saving')?.id || 'savings';
+                const sSub = chosen?.subcategory || chosen?.name;
+                set({
+                  stashId: sid,
+                  categoryId: sCat,
+                  subcategory: sSub,
+                  name: p.name.trim() ? p.name : (chosen?.name ?? ''),
+                });
+              }}
+            >
+              {stashes.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+            </select>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              ⚠️ No stashes found. Create one in the Stashes tab.
+            </p>
+          )}
         </Field>
+      ) : (
+        <>
+          <Field label="Which pot?">
+            <div className="chips">
+              {cats.map(c => (
+                <button
+                  type="button"
+                  key={c.id}
+                  className={c.id === categoryId ? 'chip on' : 'chip'}
+                  onClick={() => set({ categoryId: c.id, subcategory: undefined })}
+                >
+                  {c.emoji} {c.name}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {categories.find(c => c.id === categoryId) && (
+            <Field label="Subcategory (optional)">
+              <div className="chips" style={{ alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className={!p.subcategory ? 'chip on' : 'chip'}
+                  onClick={() => set({ subcategory: undefined })}
+                >
+                  General
+                </button>
+                {(categories.find(c => c.id === categoryId)?.subcategories ?? []).map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={p.subcategory === s ? 'chip on' : 'chip'}
+                    onClick={() => set({ subcategory: s })}
+                  >
+                    {s}
+                  </button>
+                ))}
+                {addingSub ? (
+                  <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                    <input
+                      autoFocus
+                      style={{ width: 130, padding: '4px 8px', fontSize: 13, borderRadius: 8 }}
+                      placeholder="New name…"
+                      value={newSubVal}
+                      onChange={e => setNewSubVal(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleQuickAddSub(); }
+                        if (e.key === 'Escape') { e.preventDefault(); setAddingSub(false); }
+                      }}
+                    />
+                    <button type="button" className="btn ok" style={{ padding: '4px 8px', fontSize: 12 }} onClick={handleQuickAddSub}>✓</button>
+                    <button type="button" className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setAddingSub(false)}>✕</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="chip"
+                    style={{ borderStyle: 'dashed' }}
+                    onClick={() => setAddingSub(true)}
+                  >
+                    + Add subcategory
+                  </button>
+                )}
+              </div>
+            </Field>
+          )}
+        </>
       )}
       <Field label={p.kind === 'income' ? 'Arrives to' : 'Paid from'}>
         <AccountCardsSelect
