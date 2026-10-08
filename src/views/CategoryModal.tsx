@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { uid, useData } from '../store';
 import type { Category, Kind } from '../types';
 import { Field, Modal, Seg } from '../ui';
+import { EmojiPicker } from '../emojis';
 import { SharingModal } from './SharingModal';
-
-const EMOJIS = ['🏠', '🍎', '🚌', '💊', '📺', '🎉', '✈️', '📚', '💼', '🛍️', '☕', '🎮', '💡', '🐾', '💈', '🏋️', '📈', '🌱', '📦', '🎯'];
 
 export function CategoryModal({ category, defaultKind = 'expense', onClose }: { category?: Category; defaultKind?: Kind; onClose: () => void }) {
   const { save, remove, plans } = useData();
@@ -69,18 +68,7 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
       </Field>
 
       <Field label="Icon">
-        <div className="chips">
-          {EMOJIS.map(e => (
-            <button
-              key={e}
-              type="button"
-              className={c.emoji === e ? 'chip on' : 'chip'}
-              onClick={() => set({ emoji: e })}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
+        <EmojiPicker value={c.emoji} onChange={emoji => set({ emoji })} />
       </Field>
 
       <div className="row">

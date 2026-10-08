@@ -7,23 +7,22 @@ const toggle = (arr: number[], v: number) =>
 
 /** Flexible schedule picker with a live "next dates" preview */
 export function RecurrenceEditor({ p, set }: { p: Plan; set: (x: Partial<Plan>) => void }) {
-  const unit = { once: '', daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' }[p.freq];
+  const currentFreq = p.freq === 'once' ? 'monthly' : p.freq;
+  const unit = { daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' }[currentFreq];
   const wd = weekdaysOf(p), md = monthDaysOf(p);
   const t = today();
-  const next = dueDates(p, t > p.startDate ? t : p.startDate, addDays(t, 800)).slice(0, 4);
+  const next = dueDates({ ...p, freq: currentFreq }, t > p.startDate ? t : p.startDate, addDays(t, 800)).slice(0, 4);
 
   return (
     <>
       <Field label="How often?">
-        <Seg value={p.freq} onChange={f => set({ freq: f })}
-          options={[['once', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']]} />
+        <Seg value={currentFreq} onChange={f => set({ freq: f })}
+          options={[['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']]} />
       </Field>
 
-      {p.freq !== 'once' && (
-        <div className="inline">
-          Every <input className="num" type="number" min={1} value={p.every} onChange={e => set({ every: Math.max(1, +e.target.value) })} /> {unit}{p.every > 1 ? 's' : ''}
-        </div>
-      )}
+      <div className="inline">
+        Every <input className="num" type="number" min={1} value={p.every} onChange={e => set({ every: Math.max(1, +e.target.value) })} /> {unit}{p.every > 1 ? 's' : ''}
+      </div>
 
       {p.freq === 'weekly' && (
         <Field label="On these days">

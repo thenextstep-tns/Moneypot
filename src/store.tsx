@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
-import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEMO } from './defaults';
-import type { Account, Category, Payment, Plan, Settings, ShareInvite, Stash, Transfer } from './types';
+import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_TEMPLATES, DEMO } from './defaults';
+import type { Account, Category, Payment, Plan, QuickTemplate, Settings, ShareInvite, Stash, Transfer } from './types';
 
-export const COLLS = ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites'] as const;
+export const COLLS = ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites', 'templates'] as const;
 export type Coll = typeof COLLS[number];
 
 export interface CurrentUser {
@@ -21,6 +21,7 @@ interface Data {
   payments: Payment[];
   transfers: Transfer[];
   invites: ShareInvite[];
+  templates: QuickTemplate[];
   settings: Settings;
 }
 
@@ -39,6 +40,7 @@ const empty: Data = {
   payments: [],
   transfers: [],
   invites: [],
+  templates: [],
   settings: { currency: 'EUR' },
 };
 
@@ -56,17 +58,19 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
   useEffect(() => {
     if (!userId || !db) {
       const saved = localStorage.getItem(LS);
-      setData(saved ? JSON.parse(saved) : { ...empty, categories: DEFAULT_CATEGORIES, ...DEMO });
+      const parsed = saved ? JSON.parse(saved) : null;
+      setData(parsed ? { ...empty, ...parsed, templates: parsed.templates?.length ? parsed.templates : DEFAULT_TEMPLATES } : { ...empty, categories: DEFAULT_CATEGORIES, ...DEMO });
       return;
     }
     const base = doc(db, 'users', userId);
-    // first login → seed boilerplate categories + cash account
+    // first login → seed boilerplate categories + cash account + quick templates
     getDoc(base).then(async s => {
       if (s.exists()) return;
       const b = writeBatch(db!);
       b.set(base, { currency: 'EUR', createdAt: Date.now() });
       DEFAULT_CATEGORIES.forEach(c => b.set(doc(base, 'categories', c.id), { ...c, ownerId: userId }));
       DEFAULT_ACCOUNTS.forEach(a => b.set(doc(base, 'accounts', a.id), { ...a, ownerId: userId }));
+      DEFAULT_TEMPLATES.forEach(t => b.set(doc(base, 'templates', t.id), { ...t, ownerId: userId }));
       await b.commit();
     });
     const unsubs = COLLS.map(c => onSnapshot(collection(base, c), snap =>

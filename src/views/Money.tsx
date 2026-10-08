@@ -4,6 +4,7 @@ import { money, today } from '../schedule';
 import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { AccountCardsSelect, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
+import { EmojiPicker } from '../emojis';
 import { calcAccountBalance } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { SharingModal } from './SharingModal';
@@ -72,7 +73,9 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   };
   return (
     <Modal title={stash ? 'Edit stash' : 'New stash'} onClose={onClose}>
-      <div className="chips">{['🎯', '🛟', '🏖️', '🏠', '🚗', '💻', '🎓', '💍', '📈'].map(e => <button key={e} className={s.emoji === e ? 'chip on' : 'chip'} onClick={() => set({ emoji: e })}>{e}</button>)}</div>
+      <Field label="Icon">
+        <EmojiPicker value={s.emoji} onChange={emoji => set({ emoji })} />
+      </Field>
       <Field label="What are you saving for?"><input autoFocus value={s.name} placeholder="Safety cushion" onChange={e => set({ name: e.target.value })} /></Field>
       <div className="row">
         <Field label="Goal"><input type="number" value={s.target || ''} onChange={e => set({ target: +e.target.value })} /></Field>

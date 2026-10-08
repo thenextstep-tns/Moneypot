@@ -118,7 +118,21 @@ export interface Transfer extends Owned {
 
 export interface Settings { currency: string }
 
+/** A quick one-off payment template with pre-filled category, subcategory, account, amount and individual icon */
+export interface QuickTemplate extends Owned {
+  name: string;
+  emoji: string;
+  amount: number;
+  currency: string;
+  categoryId: string;
+  subcategory?: string;
+  accountId?: string;
+  note?: string;
+  kind?: Kind;
+}
+
 /** Computed, never stored */
+
 export interface Occurrence {
   key: string;
   plan: Plan;

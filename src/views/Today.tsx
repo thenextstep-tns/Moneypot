@@ -2,16 +2,17 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
 import { calcAllAccountBalances, checkAccountFunds } from '../balances';
-import type { Occurrence, Payment } from '../types';
+import type { Occurrence, Payment, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
-import { PlanForm } from './Plans';
+import { OneOffPaymentModal, TemplateModal } from './PaymentModal';
 import { ScreenHelpModal } from './ScreenHelpModal';
 
 /** MAIN FLOW #1 — confirm / edit / postpone / skip what's due */
 export function Today() {
-  const { user, plans, payments, transfers, stashes, categories, accounts, save, remove } = useData();
+  const { user, plans, payments, transfers, stashes, categories, accounts, templates, save, remove } = useData();
   const [act, setAct] = useState<{ o: Occurrence; mode: 'confirm' | 'later' } | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [oneOffModal, setOneOffModal] = useState<{ open: boolean; template?: QuickTemplate } | null>(null);
+  const [templateModal, setTemplateModal] = useState<QuickTemplate | 'new' | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const t = today();
   const occ = useMemo(() => occurrences(plans, payments, addDays(t, -60), addDays(t, 7)), [plans, payments, t]);
@@ -104,9 +105,60 @@ export function Today() {
           </h1>
           <p className="muted">{due.length + missed.length ? `You have ${due.length + missed.length} thing${due.length + missed.length > 1 ? 's' : ''} to check.` : 'Nothing to check right now.'}</p>
         </div>
-        <button className="btn primary" onClick={() => setAdding(true)}>+ I spent money</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => setTemplateModal('new')} title="Create a reusable payment template">
+            + Payment template
+          </button>
+          <button className="btn primary" onClick={() => setOneOffModal({ open: true })}>
+            + I spent money
+          </button>
+        </div>
       </header>
 
+      {templates && templates.length > 0 && (
+        <section className="quick-templates-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>Quick payments <span className="muted">· 1-tap logging</span></h2>
+            <button
+              type="button"
+              className="btn ghost"
+              style={{ fontSize: 12, padding: '3px 8px' }}
+              onClick={() => setTemplateModal('new')}
+            >
+              + Add template
+            </button>
+          </div>
+          <div className="quick-templates-scroll">
+            {templates.map(t => (
+              <div key={t.id} className="quick-template-card">
+                <button
+                  type="button"
+                  className="quick-template-main-btn"
+                  onClick={() => setOneOffModal({ open: true, template: t })}
+                  title={`Tap to log ${t.name} (${money(t.amount, t.currency)})`}
+                >
+                  <span className="quick-template-emoji">{t.emoji}</span>
+                  <div className="quick-template-info">
+                    <div className="quick-template-name">{t.name}</div>
+                    <div className="quick-template-sub">
+                      <b>{money(t.amount, t.currency)}</b>
+                      {t.subcategory ? ` · ${t.subcategory}` : ''}
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="quick-template-edit-btn"
+                  title={`Edit "${t.name}" template`}
+                  onClick={() => setTemplateModal(t)}
+                >
+                  ✎
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {missed.length > 0 && <section><h2>Did these happen? <span className="muted">· earlier</span></h2>{missed.map(o => <Card key={o.key} o={o} />)}</section>}
       <section>
@@ -129,7 +181,18 @@ export function Today() {
       )}
 
       {act && <ActModal {...act} onClose={() => setAct(null)} onSave={(s, p) => { write(act.o, s, p); setAct(null); }} />}
-      {adding && <PlanForm quick onClose={() => setAdding(false)} />}
+      {oneOffModal?.open && (
+        <OneOffPaymentModal
+          template={oneOffModal.template}
+          onClose={() => setOneOffModal(null)}
+        />
+      )}
+      {templateModal && (
+        <TemplateModal
+          template={templateModal === 'new' ? undefined : templateModal}
+          onClose={() => setTemplateModal(null)}
+        />
+      )}
       {helpOpen && <ScreenHelpModal screenKey="today" onClose={() => setHelpOpen(false)} />}
     </div>
   );

@@ -192,3 +192,199 @@ main { flex: 1; min-width: 0; }
 /* Shared tag */
 .shared-tag { background: #F3E8FF; color: #7E22CE; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
 
+/* Emoji Picker */
+.emoji-picker-box {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.emoji-group-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.emoji-group-tab {
+  font-size: 16px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: all .15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emoji-group-tab:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+.emoji-group-tab.active {
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.emoji-grid-select {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.emoji-chip-btn {
+  font-size: 20px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.emoji-chip-btn:hover {
+  background: #EAF4EE;
+  border-color: var(--brand);
+  transform: scale(1.1);
+}
+.emoji-chip-btn.active {
+  background: #E3F2E8;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(47, 163, 107, 0.2);
+}
+.emoji-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.emoji-custom-input {
+  width: 90px;
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+/* Quick Payment Templates */
+.quick-templates-section {
+  margin-top: 20px;
+  margin-bottom: 24px;
+}
+.quick-templates-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: thin;
+}
+.quick-template-card {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  transition: all .15s ease;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.quick-template-card:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(47, 163, 107, 0.12);
+}
+.quick-template-main-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 12px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  text-align: left;
+}
+.quick-template-emoji {
+  font-size: 24px;
+  line-height: 1;
+}
+.quick-template-info {
+  display: flex;
+  flex-direction: column;
+}
+.quick-template-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.quick-template-sub {
+  font-size: 11px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.quick-template-sub b {
+  color: var(--brand);
+}
+.quick-template-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: var(--mute);
+  cursor: pointer;
+  border-left: 1px solid var(--line);
+  font-size: 12px;
+  background: none;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  transition: all .1s ease;
+}
+.quick-template-edit-btn:hover {
+  color: var(--ink);
+  background: var(--bg);
+}
+
+/* Dual Save Buttons */
+.save-actions-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.btn-save-template {
+  background: #F3E8FF;
+  color: #6B21A8;
+  border: 1.5px solid #D8B4FE;
+  font-weight: 600;
+  flex: 1.2;
+  text-align: center;
+  justify-content: center;
+  padding: 11px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-save-template:hover:not(:disabled) {
+  background: #E9D5FF;
+  border-color: #C084FC;
+}
+.btn-save-template:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-save-primary {
+  flex: 1;
+  text-align: center;
+  justify-content: center;
+}
+

@@ -1,5 +1,13 @@
-import type { Account, Category, Plan, Stash, Transfer } from './types';
+import type { Account, Category, Plan, QuickTemplate, Stash, Transfer } from './types';
 import { shiftMonth, thisMonth } from './schedule';
+
+export const DEFAULT_TEMPLATES: QuickTemplate[] = [
+  { id: 't_coffee', name: 'Coffee & Treat', emoji: '☕', amount: 3.5, currency: 'EUR', categoryId: 'food', subcategory: 'Boredom treats' },
+  { id: 't_lunch', name: 'Lunch', emoji: '🥗', amount: 12, currency: 'EUR', categoryId: 'food', subcategory: 'Food at work' },
+  { id: 't_groceries', name: 'Supermarket', emoji: '🛒', amount: 35, currency: 'EUR', categoryId: 'food', subcategory: 'Groceries' },
+  { id: 't_metro', name: 'Public Transport', emoji: '🚇', amount: 2.4, currency: 'EUR', categoryId: 'transport', subcategory: 'Public transport' },
+];
+
 
 export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'home', name: 'Life & Bills', emoji: '🏠', color: '#6C8EF5', kind: 'expense', subcategories: ['Flat rent', 'Mobile phone', 'Household chemicals', 'Clothes', 'Pharmacy', 'Mental & physical health', 'Work expenses', 'Treat myself', 'Insurance'] },
@@ -68,4 +76,6 @@ export const DEMO = {
     P('cushion', 'Safety cushion', 'saving', 'savings', 200, 'monthly', '02', 'card', { stashId: 'cushion' }),
     P('holiday', 'Summer holiday', 'saving', 'savings', 100, 'monthly', '02', 'card', { stashId: 'holiday' }),
   ],
+  templates: DEFAULT_TEMPLATES,
 };
+

@@ -12,7 +12,7 @@ service cloud.firestore {
         allow read, delete: if isOwner(uid);
         // every document must be stamped with its owner — no cross-user data, safe for collectionGroup queries
         allow create, update: if isOwner(uid)
-          && coll in ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites']
+          && coll in ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites', 'templates']
           && request.resource.data.ownerId == uid
           && request.resource.data.id == id;
 

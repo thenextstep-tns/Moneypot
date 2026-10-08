@@ -37,7 +37,7 @@ export function Plans() {
         </div>
       </header>
       {GROUPS.map(([kind, title, hint]) => {
-        const list = plans.filter(p => p.kind === kind);
+        const list = plans.filter(p => p.kind === kind && p.freq !== 'once');
         const monthly = list.reduce((s, p) => s + perMonth(p), 0);
         return (
           <section key={kind}>
@@ -62,22 +62,21 @@ export function Plans() {
           </section>
         );
       })}
-      {plans.length === 0 && <Empty emoji="🧭" title="Start with your income" text="Then add rent and the bills you always pay." />}
+      {plans.filter(p => p.freq !== 'once').length === 0 && <Empty emoji="🧭" title="Start with your income" text="Then add rent and the bills you always pay." />}
       {edit && <PlanForm plan={typeof edit === 'string' ? undefined : edit} kind={typeof edit === 'string' ? edit : undefined} onClose={() => setEdit(null)} />}
       {helpOpen && <ScreenHelpModal screenKey="plan" onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
 
-
-/** quick = "I spent money": one-off expense that's confirmed immediately */
-export function PlanForm({ plan, kind, quick, onClose }: { plan?: Plan; kind?: Kind; quick?: boolean; onClose: () => void }) {
+/** Recurring income & expense form */
+export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; onClose: () => void }) {
   const { categories, accounts, stashes, settings, payments, transfers, plans, save, remove } = useData();
   const balances = useMemo(() => calcAllAccountBalances(accounts, payments, transfers, plans, stashes), [accounts, payments, transfers, plans, stashes]);
 
   const [p, setP] = useState<Plan>(plan ?? {
     id: uid(), name: '', kind: kind ?? 'expense', categoryId: '', amount: 0, currency: settings.currency,
-    accountId: accounts[0]?.id, freq: quick ? 'once' : 'monthly', every: 1, startDate: today(),
+    accountId: accounts[0]?.id, freq: 'monthly', every: 1, startDate: today(),
   });
   const set = (patch: Partial<Plan>) => setP(x => ({ ...x, ...patch }));
   const cats = categories.filter(c => c.kind === p.kind);
@@ -85,23 +84,21 @@ export function PlanForm({ plan, kind, quick, onClose }: { plan?: Plan; kind?: K
   const valid = p.name.trim() && p.amount > 0;
 
   const submit = () => {
-    const final = { ...p, categoryId, name: p.name.trim() };
+    const finalFreq = p.freq === 'once' ? 'monthly' : p.freq;
+    const final = { ...p, freq: finalFreq, categoryId, name: p.name.trim() };
     save('plans', final);
-    if (quick) { const o = occurrences([final], [], final.startDate, final.startDate)[0]; save('payments', toPayment(o, 'confirmed', { note: final.note })); }
     onClose();
   };
 
   return (
-    <Modal title={quick ? 'What did you spend on?' : plan ? 'Edit' : 'Add to your plan'} onClose={onClose}>
-      {!quick && <Seg value={p.kind} onChange={k => set({ kind: k, categoryId: '' })} options={[['income', '💰 In'], ['expense', '💸 Out'], ['saving', '🌱 Save']]} />}
+    <Modal title={plan ? 'Edit plan' : 'Add to your plan'} onClose={onClose}>
+      <Seg value={p.kind} onChange={k => set({ kind: k, categoryId: '' })} options={[['income', '💰 In'], ['expense', '💸 Out'], ['saving', '🌱 Save']]} />
       <Field label="What is it?"><input autoFocus value={p.name} placeholder={p.kind === 'income' ? 'Salary' : 'Rent, Groceries, Netflix…'} onChange={e => set({ name: e.target.value })} /></Field>
       <div className="row">
         <Field label="How much?"><input type="number" inputMode="decimal" value={p.amount || ''} onChange={e => set({ amount: +e.target.value })} /></Field>
         <Field label="Currency"><CurrencySelect value={p.currency} onChange={v => set({ currency: v })} /></Field>
       </div>
-      {quick
-        ? <Field label="When"><input type="date" value={p.startDate} onChange={e => set({ startDate: e.target.value })} /></Field>
-        : <RecurrenceEditor p={p} set={set} />}
+      <RecurrenceEditor p={p} set={set} />
       <Field label="Which pot?">
         <div className="chips">
           {cats.map(c => <button type="button" key={c.id} className={c.id === categoryId ? 'chip on' : 'chip'} onClick={() => set({ categoryId: c.id, subcategory: undefined })}>{c.emoji} {c.name}</button>)}
@@ -147,9 +144,9 @@ export function PlanForm({ plan, kind, quick, onClose }: { plan?: Plan; kind?: K
       </Field>
 
       <Field label="Notes (optional)">
-        <textarea rows={2} value={p.note ?? ''} placeholder={quick ? 'What was it?' : 'What does it include? e.g. electricity + water'} onChange={e => set({ note: e.target.value || undefined })} />
+        <textarea rows={2} value={p.note ?? ''} placeholder="What does it include? e.g. electricity + water" onChange={e => set({ note: e.target.value || undefined })} />
       </Field>
-      <button className="btn primary wide" disabled={!valid} onClick={submit}>{quick ? '✓ Save' : plan ? 'Save changes' : 'Add'}</button>
+      <button className="btn primary wide" disabled={!valid} onClick={submit}>{plan ? 'Save changes' : 'Add to plan'}</button>
       {plan && <button className="btn ghost wide danger" onClick={() => { remove('plans', plan.id); onClose(); }}>Delete (past payments are kept)</button>}
     </Modal>
   );
