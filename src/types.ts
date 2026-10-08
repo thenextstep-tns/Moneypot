@@ -23,6 +23,7 @@ export interface Category extends Owned {
   color: string;
   kind: Kind;
   hints?: string[];             // example sub-items shown to the user
+  subcategories?: string[];     // user-defined subcategories for this pot
 }
 
 /** A recurring (or one-off) money movement the user expects */
@@ -30,6 +31,7 @@ export interface Plan extends Owned {
   name: string;                 // "Rent", "Salary", "Netflix"
   kind: Kind;
   categoryId: string;
+  subcategory?: string;         // e.g. "Groceries", "Flat rent"
   stashId?: string;             // for kind === 'saving'
   amount: number;
   currency: string;
@@ -73,6 +75,7 @@ export interface Payment extends Owned {
   name?: string;
   kind?: Kind;
   categoryId?: string;
+  subcategory?: string;
   stashId?: string;
   note?: string;                // comment added when confirming / postponing
 }
@@ -93,6 +96,7 @@ export interface Occurrence {
   name: string;
   kind: Kind;
   categoryId: string;
+  subcategory?: string;
   stashId?: string;
   note?: string;
   planNote?: string;

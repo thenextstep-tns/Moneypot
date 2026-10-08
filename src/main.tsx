@@ -25,7 +25,10 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
   return (
     <div className="shell">
       <nav className="nav">
-        <div className="logo">🫙 Pots</div>
+        <div className="logo">
+          <img src="./logo.png" alt="Moneypot" className="brand-logo" />
+          <span>Moneypot</span>
+        </div>
         {TABS.map(([id, icon, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}><span>{icon}</span>{label}</button>
         ))}
@@ -46,8 +49,8 @@ function Login({ onDemo }: { onDemo: () => void }) {
   return (
     <div className="login">
       <div className="login-card">
-        <div className="big">🫙</div>
-        <h1>Pots</h1>
+        <img src="./logo.png" alt="Moneypot" className="login-brand-logo" />
+        <h1>Moneypot</h1>
         <p>Know where your money goes — without spreadsheets or jargon. Just tap “paid” when you pay.</p>
         {isConfigured && <button className="btn wide google" onClick={() => loginGoogle().catch(e => setErr(e.message))}>Continue with Google</button>}
         {discordEnabled && <button className="btn wide discord" onClick={loginDiscord}>Continue with Discord</button>}
@@ -69,7 +72,7 @@ function App() {
   }, []);
   const setMode = (d: boolean) => { d ? localStorage.setItem('pots-mode', 'demo') : localStorage.removeItem('pots-mode'); setDemo(d); };
 
-  if (user === undefined) return <div className="login"><div className="big">🫙</div></div>;
+  if (user === undefined) return <div className="login"><img src="./logo.png" alt="Moneypot" className="login-brand-logo pulse" /></div>;
   if (!user && !demo) return <Login onDemo={() => setMode(true)} />;
   return (
     <DataProvider uid={user && !demo ? user.uid : null} key={user?.uid ?? 'demo'}>

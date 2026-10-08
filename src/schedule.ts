@@ -95,7 +95,7 @@ export function perMonth(p: Plan): number {
 /** A plan stand-in for payments whose plan was deleted — history is preserved via the payment snapshot */
 const ghost = (p: Payment): Plan => ({
   id: p.planId, name: p.name ?? 'Removed item', kind: p.kind ?? 'expense', categoryId: p.categoryId ?? 'other',
-  stashId: p.stashId, amount: p.amount, currency: p.currency, freq: 'once', every: 1, startDate: p.dueDate,
+  subcategory: p.subcategory, stashId: p.stashId, amount: p.amount, currency: p.currency, freq: 'once', every: 1, startDate: p.dueDate,
 });
 
 /** Expand plans into concrete occurrences in [from, to], applying confirmations / postponements / cancellations */
@@ -116,6 +116,7 @@ export function occurrences(plans: Plan[], payments: Payment[], from: string, to
     name: p?.name ?? plan.name,
     kind: p?.kind ?? plan.kind,
     categoryId: p?.categoryId ?? plan.categoryId,
+    subcategory: p?.subcategory ?? plan.subcategory,
     stashId: p?.stashId ?? plan.stashId,
     note: p?.note,
     planNote: plan.note,
@@ -137,7 +138,7 @@ export function occurrences(plans: Plan[], payments: Payment[], from: string, to
 /** Build a self-contained payment record (snapshots name/kind/pot/stash so history never shifts) */
 export const toPayment = (o: Occurrence, status: Payment['status'], patch: Partial<Payment> = {}): Payment => ({
   id: o.key, planId: o.plan.id, dueDate: o.dueDate, date: o.date, amount: o.amount, currency: o.currency,
-  accountId: o.accountId, name: o.name, kind: o.kind, categoryId: o.categoryId, stashId: o.stashId, note: o.note,
+  accountId: o.accountId, name: o.name, kind: o.kind, categoryId: o.categoryId, subcategory: o.subcategory, stashId: o.stashId, note: o.note,
   ...patch, status,
 });
 

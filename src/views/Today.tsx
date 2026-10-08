@@ -31,8 +31,12 @@ export function Today() {
       <div className="item" style={{ ['--c' as string]: c?.color }}>
         <div className="emoji">{c?.emoji ?? '•'}</div>
         <div className="grow">
-          <div className="title">{o.name}{o.postponed && <span className="tag">moved</span>}</div>
-          <div className="sub">{dayLabel(o.date)} · {acc(o.accountId)?.name ?? 'No account'}</div>
+          <div className="title">
+            {o.name}
+            {o.subcategory && <span className="tag subcat-badge">{o.subcategory}</span>}
+            {o.postponed && <span className="tag">moved</span>}
+          </div>
+          <div className="sub">{dayLabel(o.date)} · {c?.name ?? 'Pot'}{o.subcategory ? ` › ${o.subcategory}` : ''} · {acc(o.accountId)?.name ?? 'No account'}</div>
           {(o.planNote || o.note) && <div className="note">📝 {[o.planNote, o.note].filter(Boolean).join(' — ')}</div>}
         </div>
         <div className={`amt ${inc ? 'in' : ''}`}>{inc ? '+' : ''}{money(o.amount, o.currency)}</div>
@@ -86,9 +90,11 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const [currency, setCurrency] = useState(o.currency);
   const [accountId, setAccountId] = useState(o.accountId ?? '');
   const [categoryId, setCategoryId] = useState(o.categoryId);
+  const [subcategory, setSubcategory] = useState(o.subcategory);
   const [note, setNote] = useState(o.note ?? '');
   const [date, setDate] = useState(mode === 'later' ? addDays(t, 1) : (o.date > t ? t : o.date));
-  const patch: Partial<Payment> = { amount: +amount, currency, accountId: accountId || undefined, date, categoryId, note: note.trim() || undefined };
+  const patch: Partial<Payment> = { amount: +amount, currency, accountId: accountId || undefined, date, categoryId, subcategory, note: note.trim() || undefined };
+  const currentCat = categories.find(c => c.id === categoryId);
 
   return (
     <Modal title={mode === 'later' ? `Move "${o.name}" to…` : `Confirm "${o.name}"`} onClose={onClose}>
@@ -111,11 +117,34 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           </select>
         </Field>
         <Field label="Pot">
-          <select value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+          <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
             {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
           </select>
         </Field>
       </div>
+      {currentCat?.subcategories && currentCat.subcategories.length > 0 && (
+        <Field label="Subcategory (optional)">
+          <div className="chips">
+            <button
+              type="button"
+              className={!subcategory ? 'chip on' : 'chip'}
+              onClick={() => setSubcategory(undefined)}
+            >
+              General
+            </button>
+            {currentCat.subcategories.map(s => (
+              <button
+                key={s}
+                type="button"
+                className={subcategory === s ? 'chip on' : 'chip'}
+                onClick={() => setSubcategory(s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
       <Field label="Comment (optional)">
         <textarea rows={2} value={note} placeholder={mode === 'later' ? 'Why later? e.g. waiting for the invoice' : 'What exactly was it? e.g. bought a new kettle too'} onChange={e => setNote(e.target.value)} />
       </Field>

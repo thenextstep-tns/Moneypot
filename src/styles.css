@@ -30,7 +30,8 @@ input[type=color] { padding: 2px; height: 42px; }
 /* layout */
 .shell { display: flex; min-height: 100vh; }
 .nav { width: 220px; padding: 24px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
-.logo { font-weight: 800; font-size: 20px; padding: 0 12px 20px; }
+.logo { font-weight: 800; font-size: 20px; padding: 0 12px 20px; display: flex; align-items: center; gap: 10px; }
+.brand-logo { width: 34px; height: 34px; object-fit: contain; }
 .nav > button { display: flex; gap: 12px; align-items: center; padding: 11px 12px; border-radius: 12px; font-weight: 600; color: var(--mute); }
 .nav > button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .nav > button span { font-size: 18px; }
@@ -128,8 +129,24 @@ main { flex: 1; min-width: 0; }
 
 .login { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 30% 20%, #E3F4EA, var(--bg) 60%); }
 .login-card { background: var(--card); padding: 36px 28px; border-radius: 26px; box-shadow: var(--shadow); max-width: 380px; width: 100%; text-align: center; display: flex; flex-direction: column; gap: 10px; }
-.login-card h1 { font-size: 32px; }
+.login-card h1 { font-size: 32px; margin: 0; }
 .login-card p { color: var(--mute); margin: 0 0 14px; }
+.login-brand-logo { width: 84px; height: 84px; object-fit: contain; margin: 0 auto 6px; }
+.pulse { animation: pulse 1.6s infinite ease-in-out; }
+
+.subcat-badge { background: #EBF3FE; color: #2B6CB0; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
+.subcat-input-row { display: flex; gap: 8px; }
+.subcat-input-row input { flex: 1; }
+.subcat-input-row button { flex: 0 0 auto; }
+.subcat-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; background: #EEF2F6; }
+.subcat-del { background: none; border: 0; cursor: pointer; color: var(--mute); font-size: 12px; padding: 0 2px; }
+.subcat-del:hover { color: var(--bad); }
+.subcat-summary { margin-bottom: 12px; }
+.subcat-pill { font-size: 12px; background: #F1F3F5; padding: 4px 10px; }
+.subcat-pill b { color: var(--ink); margin-left: 4px; }
+.icon-btn { font-size: 14px; padding: 4px 8px; border-radius: 8px; cursor: pointer; }
+.pot-details { width: 100%; border-top: 1px solid var(--line); padding-top: 12px; }
 
 @keyframes fade { from { opacity: 0 } }
 @keyframes pop { from { transform: translateY(12px) scale(.98); opacity: 0 } }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: .85; } }

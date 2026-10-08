@@ -29,7 +29,14 @@ export function Plans() {
             {list.map(p => (
               <button key={p.id} className="item click" style={{ ['--c' as string]: cat(p.categoryId)?.color }} onClick={() => setEdit(p)}>
                 <div className="emoji">{cat(p.categoryId)?.emoji}</div>
-                <div className="grow"><div className="title">{p.name}</div><div className="sub">{freqLabel(p)} · {cat(p.categoryId)?.name}</div>{p.note && <div className="note">📝 {p.note}</div>}</div>
+                <div className="grow">
+                  <div className="title">
+                    {p.name}
+                    {p.subcategory && <span className="tag subcat-badge">{p.subcategory}</span>}
+                  </div>
+                  <div className="sub">{freqLabel(p)} · {cat(p.categoryId)?.name}</div>
+                  {p.note && <div className="note">📝 {p.note}</div>}
+                </div>
                 <div className={`amt ${kind === 'income' ? 'in' : ''}`}>{money(p.amount, p.currency)}</div>
               </button>
             ))}
@@ -75,9 +82,32 @@ export function PlanForm({ plan, kind, quick, onClose }: { plan?: Plan; kind?: K
         : <RecurrenceEditor p={p} set={set} />}
       <Field label="Which pot?">
         <div className="chips">
-          {cats.map(c => <button type="button" key={c.id} className={c.id === categoryId ? 'chip on' : 'chip'} onClick={() => set({ categoryId: c.id })}>{c.emoji} {c.name}</button>)}
+          {cats.map(c => <button type="button" key={c.id} className={c.id === categoryId ? 'chip on' : 'chip'} onClick={() => set({ categoryId: c.id, subcategory: undefined })}>{c.emoji} {c.name}</button>)}
         </div>
       </Field>
+      {categories.find(c => c.id === categoryId)?.subcategories && (categories.find(c => c.id === categoryId)!.subcategories!.length > 0) && (
+        <Field label="Subcategory (optional)">
+          <div className="chips">
+            <button
+              type="button"
+              className={!p.subcategory ? 'chip on' : 'chip'}
+              onClick={() => set({ subcategory: undefined })}
+            >
+              General
+            </button>
+            {categories.find(c => c.id === categoryId)!.subcategories!.map(s => (
+              <button
+                key={s}
+                type="button"
+                className={p.subcategory === s ? 'chip on' : 'chip'}
+                onClick={() => set({ subcategory: s })}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
       {p.kind === 'saving' && (
         <Field label="Into which stash?">
           <select value={p.stashId ?? ''} onChange={e => set({ stashId: e.target.value || undefined })}>

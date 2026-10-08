@@ -2,18 +2,17 @@ import type { Account, Category, Plan, Stash } from './types';
 import { shiftMonth, thisMonth } from './schedule';
 
 export const DEFAULT_CATEGORIES: Category[] = [
-  { id: 'home', name: 'Home & Bills', emoji: '🏠', color: '#6C8EF5', kind: 'expense', hints: ['Rent', 'Utilities', 'Phone & internet', 'Household stuff', 'Insurance'] },
-  { id: 'food', name: 'Food', emoji: '🍎', color: '#F2885B', kind: 'expense', hints: ['Groceries', 'Eating out', 'Delivery', 'Snacks & treats', 'Pet food'] },
-  { id: 'transport', name: 'Getting around', emoji: '🚌', color: '#3FB5A6', kind: 'expense', hints: ['Public transport', 'Fuel', 'Taxi', 'Car'] },
-  { id: 'health', name: 'Health & Care', emoji: '💊', color: '#E5739A', kind: 'expense', hints: ['Pharmacy', 'Doctor', 'Sport', 'Personal care'] },
-  { id: 'subs', name: 'Subscriptions', emoji: '📺', color: '#9B7BEA', kind: 'expense', hints: ['Streaming', 'Music', 'Cloud storage', 'Apps'] },
-  { id: 'fun', name: 'Fun & Treats', emoji: '🎉', color: '#EDB536', kind: 'expense', hints: ['Hobbies', 'Going out', 'Clothes', 'Gifts'] },
-  { id: 'travel', name: 'Travel', emoji: '✈️', color: '#4FA3E0', kind: 'expense', hints: ['Tickets', 'Stays', 'Travel cash'] },
-  { id: 'learning', name: 'Learning', emoji: '📚', color: '#78B159', kind: 'expense', hints: ['Courses', 'Books'] },
-  { id: 'other', name: 'Other', emoji: '📦', color: '#9AA0A6', kind: 'expense' },
-  { id: 'savings', name: 'Savings', emoji: '🌱', color: '#2FA36B', kind: 'saving', hints: ['Safety cushion', 'Investing', 'Big purchase'] },
-  { id: 'salary', name: 'Salary', emoji: '💼', color: '#2E9E6B', kind: 'income' },
-  { id: 'extra', name: 'Extra income', emoji: '🧩', color: '#43B581', kind: 'income', hints: ['Freelance', 'Dividends', 'Gifts', 'Rent received'] },
+  { id: 'home', name: 'Life & Bills', emoji: '🏠', color: '#6C8EF5', kind: 'expense', subcategories: ['Flat rent', 'Mobile phone', 'Household chemicals', 'Clothes', 'Pharmacy', 'Mental & physical health', 'Work expenses', 'Treat myself', 'Insurance'] },
+  { id: 'food', name: 'Food', emoji: '🍎', color: '#F2885B', kind: 'expense', subcategories: ['Groceries', 'Food at work', 'Eating out', 'Deliveries', 'Boredom treats', 'Pet food'] },
+  { id: 'transport', name: 'Travel & Transport', emoji: '✈️', color: '#3FB5A6', kind: 'expense', subcategories: ['Public transport', 'Fuel & taxi', 'Tickets', 'Travel cash', 'Travel equipment'] },
+  { id: 'health', name: 'Health & Care', emoji: '💊', color: '#E5739A', kind: 'expense', subcategories: ['Pharmacy', 'Doctor', 'Sport & gym', 'Self care'] },
+  { id: 'subs', name: 'Subscriptions', emoji: '📺', color: '#9B7BEA', kind: 'expense', subcategories: ['ChatGPT Plus', 'Hosting & servers', 'Music', 'Cloud storage', 'Streaming services'] },
+  { id: 'fun', name: 'Fun & Treats', emoji: '🎉', color: '#EDB536', kind: 'expense', subcategories: ['Going out', 'Hobbies', 'Clothes', 'Gifts', 'Treats'] },
+  { id: 'investments', name: 'Investments', emoji: '📈', color: '#4FA3E0', kind: 'saving', subcategories: ['Portfolio / shares', 'Next Step', 'Courses', 'Safety Stash', 'Crypto'] },
+  { id: 'savings', name: 'Savings & Stashes', emoji: '🌱', color: '#2FA36B', kind: 'saving', subcategories: ['Safety cushion', 'Vacation', 'Big purchase', 'Stash top-up'] },
+  { id: 'salary', name: 'Salary & Work', emoji: '💼', color: '#2E9E6B', kind: 'income', subcategories: ['Primary paycheck', 'Bonuses', 'Freelance / contract'] },
+  { id: 'extra', name: 'Extra income', emoji: '🧩', color: '#43B581', kind: 'income', subcategories: ['BuyMeaCoffee', 'Dividends / interest', 'Gifts', 'Rent received', 'Corrections'] },
+  { id: 'other', name: 'Other', emoji: '📦', color: '#9AA0A6', kind: 'expense', subcategories: ['Miscellaneous', 'Unplanned'] },
 ];
 
 export const DEFAULT_ACCOUNTS: Account[] = [
