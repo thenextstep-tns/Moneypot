@@ -22,29 +22,65 @@ export const DEFAULT_RATES: Record<string, number> = {
 };
 
 let liveRates: Record<string, number> = { ...DEFAULT_RATES };
+let lastUpdatedTime: number | null = null;
+const listeners = new Set<() => void>();
 
-// Fetch live rates once in background if online (cached locally)
-if (typeof window !== 'undefined') {
+function notifyFxChange() {
+  for (const fn of listeners) fn();
+}
+
+export function subscribeFx(fn: () => void) {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+}
+
+export async function fetchLiveRates(force = false): Promise<Record<string, number>> {
+  if (typeof window === 'undefined') return liveRates;
   const cached = localStorage.getItem('pots-fx-rates');
   const cachedTime = localStorage.getItem('pots-fx-time');
   const ONE_DAY = 24 * 60 * 60 * 1000;
 
-  if (cached && cachedTime && Date.now() - Number(cachedTime) < ONE_DAY) {
-    try { liveRates = { ...DEFAULT_RATES, ...JSON.parse(cached) }; } catch {}
-  } else {
-    fetch('https://open.er-api.com/v6/latest/EUR')
-      .then(r => r.json())
-      .then(d => {
-        if (d?.rates) {
-          liveRates = { ...DEFAULT_RATES, ...d.rates };
-          localStorage.setItem('pots-fx-rates', JSON.stringify(liveRates));
-          localStorage.setItem('pots-fx-time', String(Date.now()));
-        }
-      })
-      .catch(() => {
-        // Fall back to DEFAULT_RATES silently
-      });
+  if (!force && cached && cachedTime && Date.now() - Number(cachedTime) < ONE_DAY) {
+    try {
+      liveRates = { ...DEFAULT_RATES, ...JSON.parse(cached) };
+      lastUpdatedTime = Number(cachedTime);
+      return liveRates;
+    } catch {}
   }
+
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/EUR');
+    const data = await res.json();
+    if (data?.rates) {
+      liveRates = { ...DEFAULT_RATES, ...data.rates };
+      lastUpdatedTime = Date.now();
+      localStorage.setItem('pots-fx-rates', JSON.stringify(liveRates));
+      localStorage.setItem('pots-fx-time', String(lastUpdatedTime));
+      notifyFxChange();
+    }
+  } catch {
+    // Fall back to cached or default
+    if (cached) {
+      try { liveRates = { ...DEFAULT_RATES, ...JSON.parse(cached) }; } catch {}
+    }
+  }
+  return liveRates;
+}
+
+// Initial fetch on module load
+if (typeof window !== 'undefined') {
+  fetchLiveRates().catch(() => {});
+}
+
+export function getFxInfo(): { lastUpdated: number | null; isLive: boolean } {
+  if (typeof window !== 'undefined' && !lastUpdatedTime) {
+    const t = localStorage.getItem('pots-fx-time');
+    if (t) lastUpdatedTime = Number(t);
+  }
+  return {
+    lastUpdated: lastUpdatedTime,
+    isLive: !!lastUpdatedTime,
+  };
 }
 
 /** Convert amount from one currency to another */
@@ -64,3 +100,4 @@ export function getRate(from: string, to: string): number {
   const rateTo = liveRates[to] ?? DEFAULT_RATES[to] ?? 1.0;
   return rateTo / rateFrom;
 }
+

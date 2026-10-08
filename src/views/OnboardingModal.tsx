@@ -33,8 +33,19 @@ const STEPS: Step[] = [
     ]
   },
   {
+    emoji: '📈',
+    badge: '2. Cashflow & Calendar',
+    title: 'Daily trajectory & payment calendar',
+    lead: 'See exactly how your total wealth moves day-by-day across all accounts.',
+    bullets: [
+      'Interactive stacked graph scales automatically and shows total balance.',
+      'Hover over payment dots to see instant income & expense callouts.',
+      'Underneath, see all your scheduled payments inside full calendar cells with daily balances.'
+    ]
+  },
+  {
     emoji: '🫙',
-    badge: '2. Pots Dashboard',
+    badge: '3. Pots Dashboard',
     title: 'Visual spending envelopes',
     lead: 'Group your spending into clear pots and see your true month-end cashflow.',
     bullets: [
@@ -45,7 +56,7 @@ const STEPS: Step[] = [
   },
   {
     emoji: '🗓️',
-    badge: '3. Plan',
+    badge: '4. Plan',
     title: 'Set it once, stay ahead',
     lead: 'Tell Moneypot about your recurring income and bills so you never miss a due date.',
     bullets: [
@@ -56,7 +67,7 @@ const STEPS: Step[] = [
   },
   {
     emoji: '💳',
-    badge: '4. Money & Stashes',
+    badge: '5. Money & Stashes',
     title: 'Where money lives & grows',
     lead: 'Track accounts in multiple currencies and save toward your goals.',
     bullets: [
@@ -67,7 +78,7 @@ const STEPS: Step[] = [
   },
   {
     emoji: '📜',
-    badge: '5. Log Book',
+    badge: '6. Log Book',
     title: 'Complete peace of mind',
     lead: 'Every transaction is recorded here with instant one-click revert.',
     bullets: [
@@ -78,7 +89,7 @@ const STEPS: Step[] = [
   },
   {
     emoji: '👥',
-    badge: '6. Shared Pots & Stashes',
+    badge: '7. Shared Pots & Stashes',
     title: 'Collaborate with friends or family',
     lead: 'Share a grocery pot, rent pot, or savings stash via verified email invites.',
     bullets: [

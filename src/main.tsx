@@ -4,6 +4,7 @@ import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth, discordEnabled, finishDiscordLogin, isConfigured, loginDiscord, loginGoogle, logout } from './firebase';
 import { DataProvider, resetDemo, useData } from './store';
 import { Today } from './views/Today';
+import { Cashflow } from './views/Cashflow';
 import { Pots } from './views/Pots';
 import { Plans } from './views/Plans';
 import { Accounts, Stashes } from './views/Money';
@@ -15,6 +16,7 @@ import './styles.css';
 
 const TABS = [
   ['today', '✅', 'Today', Today],
+  ['cashflow', '📈', 'Cashflow', Cashflow],
   ['pots', '🫙', 'Pots', Pots],
   ['plan', '🗓️', 'Plan', Plans],
   ['logbook', '📜', 'Log Book', LogBook],

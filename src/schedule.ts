@@ -9,6 +9,25 @@ export const thisMonth = () => today().slice(0, 7);
 export const shiftMonth = (ym: string, n: number) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
 export const monthRange = (ym: string): [string, string] => { const [y, m] = ym.split('-').map(Number); return [`${ym}-01`, toISO(new Date(y, m, 0))]; };
 export const monthLabel = (ym: string) => parse(`${ym}-01`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+export function weekRange(s: string): [string, string] {
+  const d = parse(s);
+  const day = d.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return [toISO(monday), toISO(sunday)];
+}
+export const shiftWeek = (s: string, n: number) => addDays(s, n * 7);
+export function weekLabel(s: string): string {
+  const [monStr, sunStr] = weekRange(s);
+  const mon = parse(monStr);
+  const sun = parse(sunStr);
+  return `${mon.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${sun.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+}
+
 export const dayLabel = (s: string) => {
   const t = today();
   if (s === t) return 'Today';

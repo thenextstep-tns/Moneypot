@@ -512,4 +512,550 @@ main { flex: 1; min-width: 0; }
   background: #fff;
 }
 
+/* ==========================================================================
+   Cashflow & Payment Calendar Styles
+   ========================================================================== */
+
+.page.wide {
+  max-width: 1040px;
+}
+
+.cashflow-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cashflow-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.fx-badge {
+  background: #E0F2FE;
+  color: #0369A1;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.fx-status-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.cashflow-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.segmented-control {
+  display: inline-flex;
+  background: #E2E8F0;
+  padding: 3px;
+  border-radius: 12px;
+  gap: 3px;
+}
+
+.segmented-control button {
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  background: transparent;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+
+.segmented-control button.active {
+  background: #FFFFFF;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.cashflow-nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.period-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.period-nav .today-jump {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+.range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.range-inputs label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-inputs input[type="date"] {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+/* KPI Cards */
+.cashflow-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.kpi-card {
+  background: var(--card);
+  padding: 14px 16px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+
+.kpi-value {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+/* Panels */
+.card-panel {
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.graph-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.graph-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.legend-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.legend-dot-red {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #EF4444;
+  box-shadow: 0 0 0 2px #fff, 0 0 4px rgba(239, 68, 68, 0.4);
+}
+
+/* SVG Chart */
+.svg-chart-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.cashflow-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.graph-active-card {
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+
+.day-account-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.day-account-chips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #1E293B;
+}
+
+.day-account-chips .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.active-items-preview {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #E2E8F0;
+}
+
+.preview-items-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.item-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.item-pill.income {
+  background: #DCFCE7;
+  color: #15803D;
+}
+
+.item-pill.expense {
+  background: #FEE2E2;
+  color: #B91C1C;
+}
+
+.item-pill.transfer {
+  background: #E0F2FE;
+  color: #0369A1;
+}
+
+/* Month Calendar Grid */
+.calendar-panel-header {
+  margin-bottom: 14px;
+}
+
+.cal-weekday-headers {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cal-weekday-header {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mute);
+  padding: 4px 0;
+}
+
+.cal-cells-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.cal-cell {
+  min-height: 96px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: transform .08s ease, border-color .12s ease;
+}
+
+.cal-cell:hover {
+  border-color: #94A3B8;
+  transform: translateY(-1px);
+}
+
+.cal-cell.today-cell {
+  border-color: #22C55E;
+  background: #F0FDF4;
+}
+
+.cal-cell.selected-cell {
+  border-color: #0F172A;
+  box-shadow: 0 0 0 2px #0F172A;
+}
+
+.cal-cell.empty-cell {
+  min-height: 96px;
+  background: transparent;
+  border: 1px dashed #E2E8F0;
+  cursor: default;
+}
+
+.cal-cell-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.cal-day-num {
+  font-weight: 700;
+  font-size: 13px;
+  color: #334155;
+}
+
+.cal-day-num.today-num {
+  background: #22C55E;
+  color: #FFFFFF;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+}
+
+.cal-cell-bal {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mute);
+}
+
+.cal-cell-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.cal-item-badge {
+  font-size: 10.5px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.cal-item-badge.income {
+  background: #DCFCE7;
+  color: #15803D;
+}
+
+.cal-item-badge.expense {
+  background: #FEE2E2;
+  color: #B91C1C;
+}
+
+.cal-item-badge.transfer {
+  background: #E0F2FE;
+  color: #0369A1;
+}
+
+.cal-item-badge .badge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.cal-item-badge .badge-amt {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cal-more-badge {
+  font-size: 10px;
+  color: var(--mute);
+  font-weight: 600;
+  padding: 1px 4px;
+}
+
+/* Week View */
+.week-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.week-day-card {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 14px;
+  cursor: pointer;
+  transition: transform .08s ease, border-color .12s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.week-day-card:hover {
+  border-color: #94A3B8;
+  transform: translateY(-1px);
+}
+
+.week-day-card.today-card {
+  border-color: #22C55E;
+  background: #F0FDF4;
+}
+
+.week-day-card.selected-card {
+  border-color: #0F172A;
+  box-shadow: 0 0 0 2px #0F172A;
+}
+
+.week-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.week-card-net {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 8px;
+  background: #F8FAFC;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.week-card-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.week-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid #F1F5F9;
+}
+
+.week-item-row.income {
+  background: #DCFCE7;
+  color: #15803D;
+  border-color: #BBF7D0;
+}
+
+.week-item-row.expense {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border-color: #FECACA;
+}
+
+.week-item-row.transfer {
+  background: #E0F2FE;
+  color: #0369A1;
+  border-color: #BAE6FD;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .cashflow-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .cal-cell {
+    min-height: 70px;
+    padding: 4px;
+  }
+  .cal-item-badge .badge-name {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .cashflow-kpis {
+    grid-template-columns: 1fr;
+  }
+  .segmented-control {
+    width: 100%;
+  }
+  .segmented-control button {
+    flex: 1;
+  }
+  .cashflow-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cashflow-nav-controls {
+    justify-content: center;
+  }
+  .cal-cell {
+    min-height: 55px;
+  }
+  .cal-cell-bal {
+    display: none;
+  }
+}
+
+
 
