@@ -2,26 +2,55 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisMonth } from '../schedule';
 import { convert } from '../fx';
+import { calcAllAccountBalances, calcTotalLiquidBalance, findAccountShortfalls } from '../balances';
 import type { Category, Occurrence } from '../types';
 import { Bar, Empty } from '../ui';
 import { CategoryModal } from './CategoryModal';
+import { TransferModal } from './Money';
 
 const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + convert(o.amount, o.currency, targetCur), 0);
 
 /** MAIN FLOW #2 — monthly pots: planned vs done vs still needed */
 export function Pots() {
-  const { plans, payments, categories, settings } = useData();
+  const { plans, payments, transfers, stashes, accounts, categories, settings } = useData();
   const [ym, setYm] = useState(thisMonth());
   const [open, setOpen] = useState<string | null>(null);
   const [editingCat, setEditingCat] = useState<Category | 'new' | null>(null);
+  const [showTransfer, setShowTransfer] = useState(false);
   const cur = settings.currency;
 
   const occ = useMemo(() => occurrences(plans, payments, ...monthRange(ym)).filter(o => o.status !== 'cancelled'), [plans, payments, ym]);
 
+  const balances = useMemo(
+    () => calcAllAccountBalances(accounts, payments, transfers, plans, stashes),
+    [accounts, payments, transfers, plans, stashes]
+  );
+  const totalLiquid = useMemo(
+    () => calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, cur),
+    [accounts, payments, transfers, plans, stashes, cur]
+  );
+
+  const shortfalls = useMemo(
+    () => findAccountShortfalls(accounts, occ, balances),
+    [accounts, occ, balances]
+  );
+
   const income = occ.filter(o => o.kind === 'income');
   const outgoing = occ.filter(o => o.kind !== 'income');
-  const inPlan = sum(income, cur), outPlan = sum(outgoing, cur);
-  const free = inPlan - outPlan;
+
+  const inPlan = sum(income, cur);
+  const inDone = sum(income.filter(o => o.status === 'confirmed'), cur);
+  const inPending = sum(income.filter(o => o.status === 'pending'), cur);
+
+  const outPlan = sum(outgoing, cur);
+  const outDone = sum(outgoing.filter(o => o.status === 'confirmed'), cur);
+  const outPending = sum(outgoing.filter(o => o.status === 'pending'), cur);
+
+  const flowNet = inPlan - outPlan;
+  // Month-end outlook: current funds in accounts + pending income - pending expenses
+  const projectedMonthEnd = totalLiquid + inPending - outPending;
+  const isShortfall = projectedMonthEnd < 0;
+  const isCoveredByBalance = !isShortfall && flowNet < 0;
 
   const activePots = categories
     .filter(c => c.kind !== 'income')
@@ -46,13 +75,70 @@ export function Pots() {
       </header>
 
       <div className="summary">
-        <div><span>Coming in</span><b className="in">{money(inPlan, cur)}</b><small>{money(sum(income.filter(o => o.status === 'confirmed'), cur), cur)} received</small></div>
-        <div><span>Going out</span><b>{money(outPlan, cur)}</b><small>{money(sum(outgoing.filter(o => o.status === 'confirmed'), cur), cur)} done</small></div>
-        <div className={free >= 0 ? 'good' : 'badbox'}>
-          <span>{free >= 0 ? 'Free to use' : 'Short by'}</span><b>{money(Math.abs(free), cur)}</b>
-          <small>{free >= 0 ? 'not planned for anything yet' : 'plans are bigger than income'}</small>
+        <div>
+          <span>In accounts now</span>
+          <b>{money(totalLiquid, cur)}</b>
+          <small>{accounts.length} account{accounts.length === 1 ? '' : 's'} connected</small>
+        </div>
+        <div>
+          <span>Coming in</span>
+          <b className="in">{money(inPlan, cur)}</b>
+          <small>{money(inDone, cur)} received{inPending > 0 ? ` · ${money(inPending, cur)} pending` : ''}</small>
+        </div>
+        <div>
+          <span>Going out</span>
+          <b>{money(outPlan, cur)}</b>
+          <small>{money(outDone, cur)} done{outPending > 0 ? ` · ${money(outPending, cur)} left` : ''}</small>
+        </div>
+        <div className={isShortfall ? 'badbox' : 'good'}>
+          <span>
+            {isShortfall
+              ? 'Short by'
+              : isCoveredByBalance
+              ? 'Covered by balance'
+              : 'Left over at end'}
+          </span>
+          <b>{money(isShortfall ? Math.abs(projectedMonthEnd) : projectedMonthEnd, cur)}</b>
+          <small>
+            {isShortfall
+              ? "Accounts + pending income won't cover plans"
+              : isCoveredByBalance
+              ? `Plans exceed income by ${money(Math.abs(flowNet), cur)}, fully covered`
+              : `+${money(flowNet, cur)} net surplus this month`}
+          </small>
         </div>
       </div>
+
+      {shortfalls.length > 0 && (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {shortfalls.map(s => (
+            <div
+              key={s.accountId}
+              className="item"
+              style={{ background: '#FFFBEB', borderLeft: '4px solid #F59E0B', margin: 0, padding: '12px 16px' }}
+            >
+              <div className="emoji" style={{ background: '#FEF3C7', fontSize: 18 }}>⚠️</div>
+              <div className="grow">
+                <div className="title" style={{ color: '#92400E', fontSize: 14 }}>
+                  Low balance alert: {s.accountName}
+                </div>
+                <div className="sub" style={{ color: '#B45309', fontSize: 13 }}>
+                  Available: <b>{money(s.currentBalance, s.accountCurrency)}</b> · Scheduled to pay this month: <b>{money(s.scheduledOutgoing, s.accountCurrency)}</b> (short by {money(s.shortBy, s.accountCurrency)})
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                style={{ borderColor: '#F59E0B', color: '#92400E', fontWeight: 600, background: '#FEF3C7' }}
+                onClick={() => setShowTransfer(true)}
+              >
+                ⇄ Move money
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
 
       {activePots.length === 0 && (
         <Empty
@@ -108,7 +194,12 @@ export function Pots() {
           onClose={() => setEditingCat(null)}
         />
       )}
+
+      {showTransfer && (
+        <TransferModal onClose={() => setShowTransfer(false)} />
+      )}
     </div>
+
   );
 }
 

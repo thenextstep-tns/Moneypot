@@ -7,30 +7,9 @@ import { Bar, CurrencySelect, Empty, Field, Modal, Seg } from '../ui';
 
 const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cash: '💵', wallet: '👛', savings: '🐷' };
 
-/** Calculate live balance of an account considering payments and transfers */
-export function calcAccountBalance(
-  a: Account,
-  payments: Payment[],
-  transfers: Transfer[] = [],
-  plans: Plan[] = [],
-  stashes: Stash[] = []
-): number {
-  let b = a.startBalance;
-  for (const p of payments) {
-    if (p.status !== 'confirmed') continue;
-    const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind, stashId = p.stashId ?? plan?.stashId;
-    if (!kind) continue;
-    if (p.accountId === a.id) b += kind === 'income' ? p.amount : -p.amount;
-    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) b += p.amount;
-  }
-  for (const t of transfers) {
-    if (t.status === 'cancelled') continue;
-    if (t.fromAccountId === a.id) b -= t.fromAmount;
-    if (t.toAccountId === a.id) b += t.toAmount;
-  }
-  return b;
-}
+import { calcAccountBalance } from '../balances';
+export { calcAccountBalance };
+
 
 /** Savings goals */
 export function Stashes() {
@@ -195,6 +174,7 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
 
   const fromBal = fromAcc ? calcAccountBalance(fromAcc, payments, transfers, plans, stashes) : 0;
   const toBal = toAcc ? calcAccountBalance(toAcc, payments, transfers, plans, stashes) : 0;
+  const isShort = !!fromAcc && fromAmount > 0 && fromAmount > fromBal;
 
   return (
     <Modal title={transfer ? 'Edit transfer' : 'Move money between accounts'} onClose={onClose}>
@@ -202,7 +182,7 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
         <select value={fromId} onChange={e => { setFromId(e.target.value); setUserEditedTo(false); }}>
           {accounts.map(a => (
             <option key={a.id} value={a.id} disabled={a.id === toId}>
-              {a.name} ({a.currency}) · Available: {money(fromBal, a.currency)}
+              {a.name} ({a.currency}) · Available: {money(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency)}
             </option>
           ))}
         </select>
@@ -212,7 +192,7 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
         <select value={toId} onChange={e => { setToId(e.target.value); setUserEditedTo(false); }}>
           {accounts.map(a => (
             <option key={a.id} value={a.id} disabled={a.id === fromId}>
-              {a.name} ({a.currency}) · Current: {money(toBal, a.currency)}
+              {a.name} ({a.currency}) · Current: {money(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency)}
             </option>
           ))}
         </select>
@@ -239,6 +219,15 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
         </Field>
       </div>
 
+      {isShort && (
+        <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>⚠️</span>
+          <span>
+            <strong>Insufficient funds in {fromAcc?.name}:</strong> Available balance is {money(fromBal, fromAcc?.currency)}, which is {money(fromAmount - fromBal, fromAcc?.currency)} short.
+          </span>
+        </div>
+      )}
+
       {fromAcc && toAcc && fromAcc.currency !== toAcc.currency && fromAmount > 0 && toAmount > 0 && (
         <div className="preview" style={{ fontSize: 13 }}>
           💱 Effective rate: 1 {fromAcc.currency} = {(toAmount / fromAmount).toFixed(4)} {toAcc.currency}
@@ -259,7 +248,7 @@ export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onCl
 
       <button
         className="btn primary wide"
-        disabled={!fromAcc || !toAcc || fromId === toId || fromAmount <= 0 || toAmount <= 0}
+        disabled={!fromAcc || !toAcc || fromId === toId || fromAmount <= 0 || toAmount <= 0 || isShort}
         onClick={submit}
       >
         {transfer ? 'Save changes' : '✓ Move money'}

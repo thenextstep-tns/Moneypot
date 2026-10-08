@@ -1,17 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
+import { calcAllAccountBalances, checkAccountFunds } from '../balances';
 import type { Occurrence, Payment } from '../types';
 import { CurrencySelect, Empty, Field, Modal } from '../ui';
 import { PlanForm } from './Plans';
 
 /** MAIN FLOW #1 — confirm / edit / postpone / skip what's due */
 export function Today() {
-  const { plans, payments, categories, accounts, save, remove } = useData();
+  const { plans, payments, transfers, stashes, categories, accounts, save, remove } = useData();
   const [act, setAct] = useState<{ o: Occurrence; mode: 'confirm' | 'later' } | null>(null);
   const [adding, setAdding] = useState(false);
   const t = today();
   const occ = useMemo(() => occurrences(plans, payments, addDays(t, -60), addDays(t, 7)), [plans, payments, t]);
+  const balances = useMemo(
+    () => calcAllAccountBalances(accounts, payments, transfers, plans, stashes),
+    [accounts, payments, transfers, plans, stashes]
+  );
   const cat = (id: string) => categories.find(c => c.id === id);
   const acc = (id?: string) => accounts.find(a => a.id === id);
 
@@ -27,6 +32,18 @@ export function Today() {
     const c = cat(o.categoryId);
     const inc = o.kind === 'income';
     const verb = inc ? 'Got it' : o.kind === 'saving' ? 'Put aside' : 'Paid';
+    const funds = (!inc && o.accountId)
+      ? checkAccountFunds(o.accountId, o.amount, o.currency, accounts, balances)
+      : null;
+
+    const handleConfirm = () => {
+      if (funds?.isShort) {
+        setAct({ o, mode: 'confirm' });
+        return;
+      }
+      write(o, 'confirmed');
+    };
+
     return (
       <div className="item" style={{ ['--c' as string]: c?.color }}>
         <div className="emoji">{c?.emoji ?? '•'}</div>
@@ -35,13 +52,18 @@ export function Today() {
             {o.name}
             {o.subcategory && <span className="tag subcat-badge">{o.subcategory}</span>}
             {o.postponed && <span className="tag">moved</span>}
+            {funds?.isShort && (
+              <span className="tag warn-badge" title={`Account has only ${money(funds.balance ?? 0, funds.accountCurrency)}`}>
+                ⚠️ Low balance ({money(funds.balance ?? 0, funds.accountCurrency)})
+              </span>
+            )}
           </div>
           <div className="sub">{dayLabel(o.date)} · {c?.name ?? 'Pot'}{o.subcategory ? ` › ${o.subcategory}` : ''} · {acc(o.accountId)?.name ?? 'No account'}</div>
           {(o.planNote || o.note) && <div className="note">📝 {[o.planNote, o.note].filter(Boolean).join(' — ')}</div>}
         </div>
         <div className={`amt ${inc ? 'in' : ''}`}>{inc ? '+' : ''}{money(o.amount, o.currency)}</div>
         <div className="actions">
-          <button className="btn ok" onClick={() => write(o, 'confirmed')}>✓ {verb}</button>
+          <button className="btn ok" onClick={handleConfirm}>✓ {verb}</button>
           <button className="btn" onClick={() => setAct({ o, mode: 'confirm' })} title="Different amount or account">✎ Edit</button>
           <button className="btn" onClick={() => setAct({ o, mode: 'later' })}>⏰ Later</button>
           <button className="btn ghost" onClick={() => write(o, 'cancelled')} title="Didn't happen">Skip</button>
@@ -49,6 +71,7 @@ export function Today() {
       </div>
     );
   };
+
 
   return (
     <div className="page">
@@ -84,7 +107,8 @@ export function Today() {
 }
 
 function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm' | 'later'; onClose: () => void; onSave: (s: 'confirmed' | 'postponed', p: Partial<Payment>) => void }) {
-  const { accounts, categories } = useData();
+  const { accounts, categories, payments, transfers, plans, stashes } = useData();
+  const balances = useMemo(() => calcAllAccountBalances(accounts, payments, transfers, plans, stashes), [accounts, payments, transfers, plans, stashes]);
   const t = today();
   const [amount, setAmount] = useState(o.amount);
   const [currency, setCurrency] = useState(o.currency);
@@ -95,6 +119,10 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const [date, setDate] = useState(mode === 'later' ? addDays(t, 1) : (o.date > t ? t : o.date));
   const patch: Partial<Payment> = { amount: +amount, currency, accountId: accountId || undefined, date, categoryId, subcategory, note: note.trim() || undefined };
   const currentCat = categories.find(c => c.id === categoryId);
+
+  const selFunds = o.kind !== 'income' && accountId
+    ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances)
+    : null;
 
   return (
     <Modal title={mode === 'later' ? `Move "${o.name}" to…` : `Confirm "${o.name}"`} onClose={onClose}>
@@ -113,7 +141,15 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       <div className="row even">
         <Field label={o.kind === 'income' ? 'Into account' : 'From account'}>
           <select value={accountId} onChange={e => setAccountId(e.target.value)}>
-            <option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <option value="">—</option>
+            {accounts.map(a => {
+              const b = balances.get(a.id) ?? 0;
+              return (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency}) · Available: {money(b, a.currency)}
+                </option>
+              );
+            })}
           </select>
         </Field>
         <Field label="Pot">
@@ -122,6 +158,16 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           </select>
         </Field>
       </div>
+
+      {selFunds?.isShort && (
+        <div className="preview" style={{ background: '#FFFBEB', color: '#92400E', borderColor: '#FDE68A', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>⚠️</span>
+          <span>
+            <strong>Low balance in {selFunds.accountName}:</strong> Has {money(selFunds.balance ?? 0, selFunds.accountCurrency)}, but this payment needs {money(selFunds.neededInAccCur, selFunds.accountCurrency)} (short by {money(selFunds.shortBy, selFunds.accountCurrency)}).
+          </span>
+        </div>
+      )}
+
       {currentCat?.subcategories && currentCat.subcategories.length > 0 && (
         <Field label="Subcategory (optional)">
           <div className="chips">
@@ -149,8 +195,9 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         <textarea rows={2} value={note} placeholder={mode === 'later' ? 'Why later? e.g. waiting for the invoice' : 'What exactly was it? e.g. bought a new kettle too'} onChange={e => setNote(e.target.value)} />
       </Field>
       <button className="btn primary wide" onClick={() => onSave(mode === 'later' ? 'postponed' : 'confirmed', patch)}>
-        {mode === 'later' ? '⏰ Move it' : '✓ Confirm'}
+        {mode === 'later' ? '⏰ Move it' : selFunds?.isShort ? '✓ Confirm anyway (Overdraft)' : '✓ Confirm'}
       </button>
     </Modal>
   );
 }
+
