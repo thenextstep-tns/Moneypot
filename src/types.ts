@@ -24,6 +24,8 @@ export interface Category extends Owned {
   kind: Kind;
   hints?: string[];             // example sub-items shown to the user
   subcategories?: string[];     // user-defined subcategories for this pot
+  sharedWith?: string[];        // emails of confirmed members
+  ownerEmail?: string;          // email of the creator
 }
 
 /** A recurring (or one-off) money movement the user expects */
@@ -37,6 +39,7 @@ export interface Plan extends Owned {
   currency: string;
   accountId?: string;
   note?: string;                // what it entails, e.g. "electricity + water"
+  isShared?: boolean;           // part of a shared pot or stash
   // recurrence
   freq: Freq;
   every: number;                // every N days/weeks/months/years
@@ -58,7 +61,25 @@ export interface Stash extends Owned {
   accountId?: string;           // where the money physically sits
   startAmount: number;
   deadline?: string;
+  sharedWith?: string[];        // emails of confirmed members
+  ownerEmail?: string;          // email of the creator
 }
+
+/** Invitation to share a pot or stash with an email and one-off masked access code */
+export interface ShareInvite extends Owned {
+  targetType: 'pot' | 'stash';
+  targetId: string;
+  targetName: string;
+  targetEmoji: string;
+  inviterEmail: string;
+  inviterName?: string;
+  inviteeEmail: string;
+  maskedCode: string;          // e.g. "MP-8492-31"
+  codeHash: string;            // hashed verification token
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: number;
+}
+
 
 /**
  * What actually happened to one occurrence of a plan. id = `${planId}_${dueDate}`.
@@ -78,6 +99,7 @@ export interface Payment extends Owned {
   subcategory?: string;
   stashId?: string;
   note?: string;                // comment added when confirming / postponing
+  isShared?: boolean;
 }
 
 /** Money movement between two accounts (with currency exchange support) */
@@ -114,4 +136,6 @@ export interface Occurrence {
   stashId?: string;
   note?: string;
   planNote?: string;
+  isShared?: boolean;
 }
+

@@ -4,9 +4,11 @@ import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisM
 import { convert } from '../fx';
 import { calcAllAccountBalances, calcTotalLiquidBalance, findAccountShortfalls } from '../balances';
 import type { Category, Occurrence } from '../types';
-import { Bar, Empty } from '../ui';
+import { Bar, Empty, HelpButton } from '../ui';
 import { CategoryModal } from './CategoryModal';
 import { TransferModal } from './Money';
+import { ScreenHelpModal } from './ScreenHelpModal';
+import { SharingModal } from './SharingModal';
 
 const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + convert(o.amount, o.currency, targetCur), 0);
 
@@ -17,6 +19,8 @@ export function Pots() {
   const [open, setOpen] = useState<string | null>(null);
   const [editingCat, setEditingCat] = useState<Category | 'new' | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [sharingItem, setSharingItem] = useState<Category | null>(null);
   const cur = settings.currency;
 
   const occ = useMemo(() => occurrences(plans, payments, ...monthRange(ym)).filter(o => o.status !== 'cancelled'), [plans, payments, ym]);
@@ -65,7 +69,10 @@ export function Pots() {
       <header className="page-head">
         <div className="month">
           <button className="icon" onClick={() => setYm(shiftMonth(ym, -1))}>‹</button>
-          <h1>{monthLabel(ym)}</h1>
+          <h1>
+            {monthLabel(ym)}
+            <HelpButton onClick={() => setHelpOpen(true)} title="How pots work" />
+          </h1>
           <button className="icon" onClick={() => setYm(shiftMonth(ym, 1))}>›</button>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -73,6 +80,7 @@ export function Pots() {
           <button className="btn primary" onClick={() => setEditingCat('new')}>+ New pot</button>
         </div>
       </header>
+
 
       <div className="summary">
         <div>
@@ -158,6 +166,7 @@ export function Pots() {
             open={open === c.id}
             toggle={() => setOpen(open === c.id ? null : c.id)}
             onEdit={() => setEditingCat(c)}
+            onShare={() => setSharingItem(c)}
           />
         ))}
       </div>
@@ -176,7 +185,10 @@ export function Pots() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span className="big" style={{ fontSize: 28 }}>{c.emoji}</span>
-                  <span className="pill">{c.kind === 'saving' ? 'Saving' : 'Expense'}</span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {c.sharedWith && c.sharedWith.length > 0 && <span className="tag shared-tag">👥 Shared</span>}
+                    <span className="pill">{c.kind === 'saving' ? 'Saving' : 'Expense'}</span>
+                  </div>
                 </div>
                 <div className="title" style={{ marginTop: 4 }}>{c.name}</div>
                 <div className="sub">
@@ -198,12 +210,20 @@ export function Pots() {
       {showTransfer && (
         <TransferModal onClose={() => setShowTransfer(false)} />
       )}
+
+      {helpOpen && (
+        <ScreenHelpModal screenKey="pots" onClose={() => setHelpOpen(false)} />
+      )}
+
+      {sharingItem && (
+        <SharingModal type="pot" item={sharingItem} onClose={() => setSharingItem(null)} />
+      )}
     </div>
 
   );
 }
 
-function Pot({ c, items, cur, open, toggle, onEdit }: { c: Category; items: Occurrence[]; cur: string; open: boolean; toggle: () => void; onEdit: () => void }) {
+function Pot({ c, items, cur, open, toggle, onEdit, onShare }: { c: Category; items: Occurrence[]; cur: string; open: boolean; toggle: () => void; onEdit: () => void; onShare: () => void }) {
   const planned = sum(items, cur);
   const doneItems = items.filter(o => o.status === 'confirmed');
   const left = items.filter(o => o.status === 'pending');
@@ -225,9 +245,22 @@ function Pot({ c, items, cur, open, toggle, onEdit }: { c: Category; items: Occu
       <div className="pot-head">
         <div className="emoji">{c.emoji}</div>
         <div className="grow">
-          <div className="title">{c.name}</div>
+          <div className="title">
+            {c.name}
+            {c.sharedWith && c.sharedWith.length > 0 && (
+              <span className="tag shared-tag">👥 Shared ({c.sharedWith.length})</span>
+            )}
+          </div>
           <div className="sub">{money(planned, cur)} this month</div>
         </div>
+        <button
+          type="button"
+          className="btn ghost icon-btn"
+          title="Share pot with collaborators"
+          onClick={e => { e.stopPropagation(); onShare(); }}
+        >
+          👥
+        </button>
         <button
           type="button"
           className="btn ghost icon-btn"
@@ -237,6 +270,7 @@ function Pot({ c, items, cur, open, toggle, onEdit }: { c: Category; items: Occu
           ✎
         </button>
         {full ? <span className="pill ok">Done ✓</span> : <span className="pill">{money(need, cur)} to go</span>}
+
       </div>
 
       <Bar done={done} total={planned} color={c.color} />

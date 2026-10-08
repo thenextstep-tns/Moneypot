@@ -3,14 +3,16 @@ import { useData } from '../store';
 import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
 import { calcAllAccountBalances, checkAccountFunds } from '../balances';
 import type { Occurrence, Payment } from '../types';
-import { CurrencySelect, Empty, Field, Modal } from '../ui';
+import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
 import { PlanForm } from './Plans';
+import { ScreenHelpModal } from './ScreenHelpModal';
 
 /** MAIN FLOW #1 — confirm / edit / postpone / skip what's due */
 export function Today() {
-  const { plans, payments, transfers, stashes, categories, accounts, save, remove } = useData();
+  const { user, plans, payments, transfers, stashes, categories, accounts, save, remove } = useData();
   const [act, setAct] = useState<{ o: Occurrence; mode: 'confirm' | 'later' } | null>(null);
   const [adding, setAdding] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const t = today();
   const occ = useMemo(() => occurrences(plans, payments, addDays(t, -60), addDays(t, 7)), [plans, payments, t]);
   const balances = useMemo(
@@ -19,6 +21,24 @@ export function Today() {
   );
   const cat = (id: string) => categories.find(c => c.id === id);
   const acc = (id?: string) => accounts.find(a => a.id === id);
+
+  const firstName = useMemo(() => {
+    if (user?.displayName) {
+      const parts = user.displayName.trim().split(/\s+/);
+      return parts[0];
+    }
+    if (user?.email) {
+      const namePart = user.email.split('@')[0].split('.')[0];
+      return namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    }
+    return '';
+  }, [user]);
+
+  const isSharedItem = (o: Occurrence) => {
+    const c = cat(o.categoryId);
+    const s = stashes.find(x => x.id === o.stashId);
+    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0));
+  };
 
   const pending = occ.filter(o => o.status === 'pending');
   const missed = pending.filter(o => o.date < t);
@@ -51,6 +71,7 @@ export function Today() {
           <div className="title">
             {o.name}
             {o.subcategory && <span className="tag subcat-badge">{o.subcategory}</span>}
+            {isSharedItem(o) && <span className="tag shared-tag">👥 Shared</span>}
             {o.postponed && <span className="tag">moved</span>}
             {funds?.isShort && (
               <span className="tag warn-badge" title={`Account has only ${money(funds.balance ?? 0, funds.accountCurrency)}`}>
@@ -76,9 +97,16 @@ export function Today() {
   return (
     <div className="page">
       <header className="page-head">
-        <div><h1>Hi there 👋</h1><p className="muted">{due.length + missed.length ? `You have ${due.length + missed.length} thing${due.length + missed.length > 1 ? 's' : ''} to check.` : 'Nothing to check right now.'}</p></div>
+        <div>
+          <h1>
+            Hi there{firstName ? `, ${firstName}` : ''} 👋
+            <HelpButton onClick={() => setHelpOpen(true)} title="How the Today view works" />
+          </h1>
+          <p className="muted">{due.length + missed.length ? `You have ${due.length + missed.length} thing${due.length + missed.length > 1 ? 's' : ''} to check.` : 'Nothing to check right now.'}</p>
+        </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ I spent money</button>
       </header>
+
 
       {missed.length > 0 && <section><h2>Did these happen? <span className="muted">· earlier</span></h2>{missed.map(o => <Card key={o.key} o={o} />)}</section>}
       <section>
@@ -102,6 +130,7 @@ export function Today() {
 
       {act && <ActModal {...act} onClose={() => setAct(null)} onSave={(s, p) => { write(act.o, s, p); setAct(null); }} />}
       {adding && <PlanForm quick onClose={() => setAdding(false)} />}
+      {helpOpen && <ScreenHelpModal screenKey="today" onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
@@ -138,26 +167,22 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         <Field label="How much"><input type="number" inputMode="decimal" value={amount} onChange={e => setAmount(+e.target.value)} /></Field>
         <Field label="Currency"><CurrencySelect value={currency} onChange={setCurrency} /></Field>
       </div>
-      <div className="row even">
-        <Field label={o.kind === 'income' ? 'Into account' : 'From account'}>
-          <select value={accountId} onChange={e => setAccountId(e.target.value)}>
-            <option value="">—</option>
-            {accounts.map(a => {
-              const b = balances.get(a.id) ?? 0;
-              return (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.currency}) · Available: {money(b, a.currency)}
-                </option>
-              );
-            })}
-          </select>
-        </Field>
-        <Field label="Pot">
-          <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
-            {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-          </select>
-        </Field>
-      </div>
+
+      <Field label={o.kind === 'income' ? 'Into account' : 'From account'}>
+        <AccountCardsSelect
+          accounts={accounts}
+          value={accountId}
+          onChange={id => setAccountId(id ?? '')}
+          balances={balances}
+        />
+      </Field>
+
+      <Field label="Pot">
+        <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
+          {categories.filter(c => c.kind === o.kind).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+        </select>
+      </Field>
+
 
       {selFunds?.isShort && (
         <div className="preview" style={{ background: '#FFFBEB', color: '#92400E', borderColor: '#FDE68A', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>

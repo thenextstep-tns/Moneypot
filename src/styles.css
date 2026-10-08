@@ -163,3 +163,32 @@ main { flex: 1; min-width: 0; }
 .strikethrough { text-decoration: line-through; opacity: .65; }
 .danger-tag { background: #FDECEC; color: var(--bad); }
 .log-amt-box { text-align: right; }
+
+/* Account cards selector */
+.account-cards-select { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; width: 100%; margin-top: 4px; }
+.account-select-card { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 2px solid transparent; border-radius: 12px; padding: 9px 12px; text-align: left; cursor: pointer; transition: all .15s ease; position: relative; }
+.account-select-card:hover { background: #EEF2F6; border-color: var(--line); }
+.account-select-card.selected { background: #E8F6EE; border-color: #2FA36B; box-shadow: 0 2px 6px rgba(47, 163, 107, 0.15); }
+.acc-card-icon { font-size: 18px; flex-shrink: 0; }
+.acc-card-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 0; }
+.acc-card-name { font-weight: 600; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-card-sub { font-size: 11px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-card-check { font-size: 14px; color: #2FA36B; font-weight: 800; flex-shrink: 0; }
+
+/* Onboarding */
+.onboarding-step { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+.onboarding-icon { font-size: 48px; margin-bottom: 4px; }
+.onboarding-bullets { list-style: none; margin: 12px 0 8px; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.onboarding-bullets li { display: flex; gap: 10px; font-size: 13px; line-height: 1.4; background: var(--bg); padding: 8px 12px; border-radius: 10px; }
+.onboarding-bullets li::before { content: "•"; color: var(--brand); font-weight: bold; }
+.onboarding-dots { display: flex; gap: 6px; justify-content: center; margin: 10px 0; }
+.onboarding-dot { width: 8px; height: 8px; border-radius: 99px; background: var(--line); border: 0; padding: 0; cursor: pointer; transition: all .2s; }
+.onboarding-dot.active { width: 22px; background: var(--brand); }
+
+/* Help icon button */
+.help-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg); border: 1px solid var(--line); color: var(--mute); font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; margin-left: 8px; vertical-align: middle; }
+.help-icon-btn:hover { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* Shared tag */
+.shared-tag { background: #F3E8FF; color: #7E22CE; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
+

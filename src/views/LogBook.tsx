@@ -2,8 +2,12 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, money } from '../schedule';
 import type { Payment, Transfer } from '../types';
-import { CurrencySelect, Empty, Field, Modal } from '../ui';
+import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
+
+
+
 import { TransferModal } from './Money';
+import { ScreenHelpModal } from './ScreenHelpModal';
 
 type FilterType = 'all' | 'expense' | 'income' | 'saving' | 'transfer' | 'cancelled';
 
@@ -26,6 +30,7 @@ interface LogItem {
   note?: string;
   payment?: Payment;
   transfer?: Transfer;
+  isShared?: boolean;
 }
 
 /** Complete transaction log book with search, filters, cancel (reverting money), and editing */
@@ -36,6 +41,7 @@ export function LogBook() {
   const [search, setSearch] = useState('');
   const [editPayment, setEditPayment] = useState<Payment | null>(null);
   const [editTransfer, setEditTransfer] = useState<Transfer | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const catMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
   const accMap = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts]);
@@ -50,6 +56,7 @@ export function LogBook() {
       const cat = catMap.get(p.categoryId ?? plan?.categoryId ?? '');
       const acc = accMap.get(p.accountId ?? plan?.accountId ?? '');
       const kind = p.kind ?? plan?.kind ?? 'expense';
+      const isShared = Boolean(cat?.sharedWith && cat.sharedWith.length > 0);
 
       list.push({
         id: p.id,
@@ -66,8 +73,10 @@ export function LogBook() {
         status: p.status,
         note: p.note,
         payment: p,
+        isShared,
       });
     }
+
 
     for (const t of transfers) {
       const fromAcc = accMap.get(t.fromAccountId);
@@ -139,10 +148,14 @@ export function LogBook() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>Log Book 📜</h1>
+          <h1>
+            Log Book 📜
+            <HelpButton onClick={() => setHelpOpen(true)} title="How the Log Book works" />
+          </h1>
           <p className="muted">All past operations. Cancel an operation anytime to restore the money back to the account.</p>
         </div>
       </header>
+
 
       {/* Filter and search bar */}
       <div className="log-controls">
@@ -203,7 +216,9 @@ export function LogBook() {
                 <div className="title">
                   {item.title}
                   {item.subcategory && <span className="tag subcat-badge">{item.subcategory}</span>}
+                  {item.isShared && <span className="tag shared-tag">👥 Shared</span>}
                   {isCancelled && <span className="tag danger-tag">Cancelled (Money restored)</span>}
+
                 </div>
                 <div className="sub">
                   {dayLabel(item.date)} · {isTransfer ? `${item.accountName} → ${item.toAccountName}` : `${item.potName ? `${item.potName} · ` : ''}${item.accountName}`}
@@ -269,9 +284,14 @@ export function LogBook() {
           onClose={() => setEditTransfer(null)}
         />
       )}
+
+      {helpOpen && (
+        <ScreenHelpModal screenKey="logbook" onClose={() => setHelpOpen(false)} />
+      )}
     </div>
   );
 }
+
 
 /** Modal to edit a logged payment */
 function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
@@ -317,20 +337,21 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
         </Field>
       </div>
 
-      <div className="row even">
-        <Field label="Account">
-          <select value={accountId} onChange={e => setAccountId(e.target.value)}>
-            <option value="">—</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-          </select>
-        </Field>
-        <Field label="Pot">
-          <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
-            <option value="">—</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-          </select>
-        </Field>
-      </div>
+      <Field label="Account">
+        <AccountCardsSelect
+          accounts={accounts}
+          value={accountId}
+          onChange={id => setAccountId(id ?? '')}
+        />
+      </Field>
+
+      <Field label="Pot">
+        <select value={categoryId} onChange={e => { setCategoryId(e.target.value); setSubcategory(undefined); }}>
+          <option value="">—</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+        </select>
+      </Field>
+
 
       {curCat?.subcategories && curCat.subcategories.length > 0 && (
         <Field label="Subcategory (optional)">

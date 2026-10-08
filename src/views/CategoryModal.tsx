@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { uid, useData } from '../store';
 import type { Category, Kind } from '../types';
 import { Field, Modal, Seg } from '../ui';
+import { SharingModal } from './SharingModal';
 
 const EMOJIS = ['🏠', '🍎', '🚌', '💊', '📺', '🎉', '✈️', '📚', '💼', '🛍️', '☕', '🎮', '💡', '🐾', '💈', '🏋️', '📈', '🌱', '📦', '🎯'];
 
 export function CategoryModal({ category, defaultKind = 'expense', onClose }: { category?: Category; defaultKind?: Kind; onClose: () => void }) {
   const { save, remove, plans } = useData();
+  const [showSharing, setShowSharing] = useState(false);
   const [c, setC] = useState<Category>(category ?? {
     id: uid(),
     name: '',
@@ -16,6 +18,7 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
     subcategories: [],
   });
   const [newSub, setNewSub] = useState('');
+
 
   const set = (patch: Partial<Category>) => setC(x => ({ ...x, ...patch }));
 
@@ -115,6 +118,18 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
 
       {category && (
         <button
+          type="button"
+          className="btn dashed wide"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          onClick={() => setShowSharing(true)}
+        >
+          <span>👥</span>
+          <span>Share pot with others {c.sharedWith?.length ? `(${c.sharedWith.length})` : ''}</span>
+        </button>
+      )}
+
+      {category && (
+        <button
           className="btn ghost wide danger"
           onClick={() => {
             if (hasPlans && !confirm(`This pot is used by planned expenses. Delete anyway?`)) return;
@@ -125,6 +140,11 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
           Delete pot
         </button>
       )}
+
+      {showSharing && (
+        <SharingModal type="pot" item={c} onClose={() => setShowSharing(false)} />
+      )}
     </Modal>
   );
 }
+

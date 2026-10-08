@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
 import { freqLabel, money, occurrences, perMonth, toPayment, today } from '../schedule';
+import { calcAllAccountBalances } from '../balances';
 import type { Kind, Plan } from '../types';
-import { CurrencySelect, Empty, Field, Modal, Seg } from '../ui';
+import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { RecurrenceEditor } from './Recurrence';
+import { ScreenHelpModal } from './ScreenHelpModal';
 
 const GROUPS: [Kind, string, string][] = [
   ['income', 'Money coming in', 'Salary, freelance, anything you receive'],
@@ -13,12 +15,27 @@ const GROUPS: [Kind, string, string][] = [
 
 /** Setup: income & expenses with their regularity */
 export function Plans() {
-  const { plans, categories, settings } = useData();
+  const { plans, categories, stashes, settings } = useData();
   const [edit, setEdit] = useState<Plan | Kind | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const cat = (id: string) => categories.find(c => c.id === id);
+  const isShared = (p: Plan) => {
+    const c = cat(p.categoryId);
+    const s = stashes.find(x => x.id === p.stashId);
+    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0));
+  };
+
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Your plan</h1><p className="muted">Tell us what usually comes in and goes out. We'll remind you when it's due.</p></div></header>
+      <header className="page-head">
+        <div>
+          <h1>
+            Your plan
+            <HelpButton onClick={() => setHelpOpen(true)} title="How planning works" />
+          </h1>
+          <p className="muted">Tell us what usually comes in and goes out. We'll remind you when it's due.</p>
+        </div>
+      </header>
       {GROUPS.map(([kind, title, hint]) => {
         const list = plans.filter(p => p.kind === kind);
         const monthly = list.reduce((s, p) => s + perMonth(p), 0);
@@ -33,6 +50,7 @@ export function Plans() {
                   <div className="title">
                     {p.name}
                     {p.subcategory && <span className="tag subcat-badge">{p.subcategory}</span>}
+                    {isShared(p) && <span className="tag shared-tag">👥 Shared</span>}
                   </div>
                   <div className="sub">{freqLabel(p)} · {cat(p.categoryId)?.name}</div>
                   {p.note && <div className="note">📝 {p.note}</div>}
@@ -46,13 +64,17 @@ export function Plans() {
       })}
       {plans.length === 0 && <Empty emoji="🧭" title="Start with your income" text="Then add rent and the bills you always pay." />}
       {edit && <PlanForm plan={typeof edit === 'string' ? undefined : edit} kind={typeof edit === 'string' ? edit : undefined} onClose={() => setEdit(null)} />}
+      {helpOpen && <ScreenHelpModal screenKey="plan" onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
 
+
 /** quick = "I spent money": one-off expense that's confirmed immediately */
 export function PlanForm({ plan, kind, quick, onClose }: { plan?: Plan; kind?: Kind; quick?: boolean; onClose: () => void }) {
-  const { categories, accounts, stashes, settings, save, remove } = useData();
+  const { categories, accounts, stashes, settings, payments, transfers, plans, save, remove } = useData();
+  const balances = useMemo(() => calcAllAccountBalances(accounts, payments, transfers, plans, stashes), [accounts, payments, transfers, plans, stashes]);
+
   const [p, setP] = useState<Plan>(plan ?? {
     id: uid(), name: '', kind: kind ?? 'expense', categoryId: '', amount: 0, currency: settings.currency,
     accountId: accounts[0]?.id, freq: quick ? 'once' : 'monthly', every: 1, startDate: today(),
@@ -116,10 +138,14 @@ export function PlanForm({ plan, kind, quick, onClose }: { plan?: Plan; kind?: K
         </Field>
       )}
       <Field label={p.kind === 'income' ? 'Arrives to' : 'Paid from'}>
-        <select value={p.accountId ?? ''} onChange={e => set({ accountId: e.target.value || undefined })}>
-          <option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        <AccountCardsSelect
+          accounts={accounts}
+          value={p.accountId}
+          onChange={id => set({ accountId: id })}
+          balances={balances}
+        />
       </Field>
+
       <Field label="Notes (optional)">
         <textarea rows={2} value={p.note ?? ''} placeholder={quick ? 'What was it?' : 'What does it include? e.g. electricity + water'} onChange={e => set({ note: e.target.value || undefined })} />
       </Field>

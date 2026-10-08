@@ -2,26 +2,55 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
 import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEMO } from './defaults';
-import type { Account, Category, Payment, Plan, Settings, Stash, Transfer } from './types';
+import type { Account, Category, Payment, Plan, Settings, ShareInvite, Stash, Transfer } from './types';
 
-export const COLLS = ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers'] as const;
+export const COLLS = ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites'] as const;
 export type Coll = typeof COLLS[number];
-interface Data { accounts: Account[]; categories: Category[]; plans: Plan[]; stashes: Stash[]; payments: Payment[]; transfers: Transfer[]; settings: Settings }
+
+export interface CurrentUser {
+  uid?: string;
+  displayName?: string | null;
+  email?: string | null;
+}
+
+interface Data {
+  accounts: Account[];
+  categories: Category[];
+  plans: Plan[];
+  stashes: Stash[];
+  payments: Payment[];
+  transfers: Transfer[];
+  invites: ShareInvite[];
+  settings: Settings;
+}
+
 interface Ctx extends Data {
+  user: CurrentUser | null;
   save: <C extends Coll>(c: C, o: Data[C][number]) => void;
   remove: (c: Coll, id: string) => void;
   setSettings: (s: Settings) => void;
 }
 
-const empty: Data = { accounts: [], categories: [], plans: [], stashes: [], payments: [], transfers: [], settings: { currency: 'EUR' } };
+const empty: Data = {
+  accounts: [],
+  categories: [],
+  plans: [],
+  stashes: [],
+  payments: [],
+  transfers: [],
+  invites: [],
+  settings: { currency: 'EUR' },
+};
+
 const DataCtx = createContext<Ctx>(null!);
 export const useData = () => useContext(DataCtx);
 export const uid = () => crypto.randomUUID().slice(0, 12);
 
 const LS = 'pots-demo';
 
-/** uid === null → local demo mode (localStorage). Otherwise Firestore under users/{uid}. */
-export function DataProvider({ uid: userId, children }: { uid: string | null; children: ReactNode }) {
+/** User authenticated → Firestore under users/{uid}. Otherwise local demo mode (localStorage). */
+export function DataProvider({ user, children }: { user: CurrentUser | null; children: ReactNode }) {
+  const userId = user?.uid ?? null;
   const [data, setData] = useState<Data>(empty);
 
   useEffect(() => {
@@ -52,6 +81,7 @@ export function DataProvider({ uid: userId, children }: { uid: string | null; ch
   const local = !userId || !db;
   const ctx: Ctx = {
     ...data,
+    user,
     save: (c, raw) => {
       const o = { ...raw, ownerId: userId ?? 'local' };
       if (local) setData(d => ({ ...d, [c]: [...(d[c] as { id: string }[]).filter(x => x.id !== o.id), o] }));

@@ -3,25 +3,34 @@ import { uid, useData } from '../store';
 import { money, today } from '../schedule';
 import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
-import { Bar, CurrencySelect, Empty, Field, Modal, Seg } from '../ui';
-
-const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cash: '💵', wallet: '👛', savings: '🐷' };
-
+import { AccountCardsSelect, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { calcAccountBalance } from '../balances';
+import { ScreenHelpModal } from './ScreenHelpModal';
+import { SharingModal } from './SharingModal';
+
 export { calcAccountBalance };
 
+const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cash: '💵', wallet: '👛', savings: '🐷' };
 
 /** Savings goals */
 export function Stashes() {
   const { stashes, plans, payments } = useData();
   const [edit, setEdit] = useState<Stash | 'new' | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const saved = (s: Stash) => s.startAmount + payments
     .filter(p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id)
     .reduce((a, p) => a + p.amount, 0);
+
   return (
     <div className="page">
       <header className="page-head">
-        <div><h1>Stashes</h1><p className="muted">Money you're putting aside for something.</p></div>
+        <div>
+          <h1>
+            Stashes
+            <HelpButton onClick={() => setHelpOpen(true)} title="How stashes work" />
+          </h1>
+          <p className="muted">Money you're putting aside for something.</p>
+        </div>
         <button className="btn primary" onClick={() => setEdit('new')}>+ New stash</button>
       </header>
       {stashes.length === 0 && <Empty emoji="🐷" title="No stashes yet" text="A safety cushion of 3 months of expenses is a great first goal." />}
@@ -31,7 +40,12 @@ export function Stashes() {
           return (
             <button key={s.id} className="card click" onClick={() => setEdit(s)}>
               <div className="big">{s.emoji}</div>
-              <div className="title">{s.name}</div>
+              <div className="title">
+                {s.name}
+                {s.sharedWith && s.sharedWith.length > 0 && (
+                  <span className="tag shared-tag">👥 Shared ({s.sharedWith.length})</span>
+                )}
+              </div>
               <div className="stash-amt"><b>{money(v, s.currency)}</b> <span className="muted">of {money(s.target, s.currency)}</span></div>
               <Bar done={v} total={s.target} color="#2FA36B" />
               <div className="sub">{v >= s.target ? '🎉 Goal reached!' : `${money(s.target - v, s.currency)} to go`}</div>
@@ -40,12 +54,14 @@ export function Stashes() {
         })}
       </div>
       {edit && <StashForm stash={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
+      {helpOpen && <ScreenHelpModal screenKey="stashes" onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
 
 function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   const { accounts, settings, save, remove } = useData();
+  const [showSharing, setShowSharing] = useState(false);
   const [s, setS] = useState<Stash>(stash ?? { id: uid(), name: '', emoji: '🎯', target: 0, currency: settings.currency, startAmount: 0, accountId: accounts.find(a => a.type === 'savings')?.id });
   const [monthly, setMonthly] = useState(0);
   const set = (p: Partial<Stash>) => setS(x => ({ ...x, ...p }));
@@ -65,26 +81,49 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       <Field label="Already have"><input type="number" value={s.startAmount || ''} onChange={e => set({ startAmount: +e.target.value })} /></Field>
       {!stash && <Field label="Put aside every month (optional)" hint="We'll remind you each month"><input type="number" value={monthly || ''} onChange={e => setMonthly(+e.target.value)} /></Field>}
       <Field label="Where is it kept?">
-        <select value={s.accountId ?? ''} onChange={e => set({ accountId: e.target.value || undefined })}>
-          <option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        <AccountCardsSelect
+          accounts={accounts}
+          value={s.accountId}
+          onChange={id => set({ accountId: id })}
+          noneLabel="No specific account"
+        />
       </Field>
       <button className="btn primary wide" disabled={!s.name || !s.target} onClick={submit}>{stash ? 'Save' : 'Create stash'}</button>
+      {stash && (
+        <button
+          type="button"
+          className="btn dashed wide"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          onClick={() => setShowSharing(true)}
+        >
+          <span>👥</span>
+          <span>Share stash with others {s.sharedWith?.length ? `(${s.sharedWith.length})` : ''}</span>
+        </button>
+      )}
       {stash && <button className="btn ghost wide danger" onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
+      {showSharing && <SharingModal type="stash" item={s} onClose={() => setShowSharing(false)} />}
     </Modal>
   );
 }
+
 
 /** Where money lives: cards, Payoneer, cash, savings accounts */
 export function Accounts() {
   const { accounts, plans, payments, stashes, transfers } = useData();
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   return (
     <div className="page">
       <header className="page-head">
-        <div><h1>Accounts</h1><p className="muted">Where your money lives.</p></div>
+        <div>
+          <h1>
+            Accounts
+            <HelpButton onClick={() => setHelpOpen(true)} title="How accounts work" />
+          </h1>
+          <p className="muted">Where your money lives.</p>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {accounts.length >= 2 && (
             <button className="btn ok" onClick={() => setTransferring(true)}>⇄ Move money</button>
@@ -106,9 +145,11 @@ export function Accounts() {
 
       {edit && <AccountForm acc={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
       {transferring && <TransferModal onClose={() => setTransferring(false)} />}
+      {helpOpen && <ScreenHelpModal screenKey="accounts" onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
+
 
 function AccountForm({ acc, onClose }: { acc?: Account; onClose: () => void }) {
   const { settings, save, remove } = useData();
