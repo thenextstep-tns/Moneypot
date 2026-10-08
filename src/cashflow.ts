@@ -35,6 +35,18 @@ export interface AccountDayBalance {
   y1: number; // Top of stacked area in main currency
 }
 
+export interface StashDayBalance {
+  stashId: string;
+  stashName: string;
+  stashEmoji: string;
+  currency: string;
+  target?: number;
+  balanceOriginal: number;
+  balanceInMain: number;
+  accountId?: string;
+  accountName?: string;
+}
+
 export interface DayCashflow {
   date: string; // YYYY-MM-DD
   dayLabel: string; // e.g. "08.10"
@@ -50,6 +62,7 @@ export interface DayCashflow {
   netChange: number;
   items: CashflowItem[];
   accounts: AccountDayBalance[];
+  stashes: StashDayBalance[];
   totalBalance: number; // Available liquid balance
   totalStashed: number; // Total stashed / reserved funds
   stashedY0: number;
@@ -293,6 +306,52 @@ export function calculateCashflowRange(
     }
     const netChange = incomeTotal - (expenseTotal + savingTotal);
 
+    // Calculate individual stash balances on this date
+    const stashDayBals: StashDayBalance[] = [];
+    const stashAmountByAcc = new Map<string, number>();
+
+    for (const s of stashes) {
+      let bStash = 0;
+      if (date > t) {
+        const proj = calcProjectedStashBalance(s, date, payments, transfers, plans, t);
+        bStash = proj.projected;
+      } else {
+        const pastPays = confirmedPayments.filter(p => p.date <= date);
+        const pastTrans = activeTransfers.filter(tr => tr.date <= date);
+        bStash = calcStashBalance(s, pastPays, pastTrans, plans);
+      }
+
+      // Track stashed amounts mapped to parent account (for stacked chart & account-level reserve tracking)
+      const parentAccId = s.accountId || accounts[0]?.id;
+      if (parentAccId) {
+        const parentAcc = accounts.find(a => a.id === parentAccId);
+        if (parentAcc) {
+          const amtInParent = s.currency === parentAcc.currency ? bStash : convert(bStash, s.currency, parentAcc.currency);
+          stashAmountByAcc.set(parentAccId, (stashAmountByAcc.get(parentAccId) ?? 0) + amtInParent);
+        }
+      }
+
+      // If accounts filter is active, only include stash in breakdown if its parent account is visible
+      if (s.accountId && !accounts.some(a => a.id === s.accountId)) {
+        continue;
+      }
+
+      const balInMain = convert(bStash, s.currency, mainCurrency);
+      const acc = s.accountId ? accounts.find(a => a.id === s.accountId) : undefined;
+
+      stashDayBals.push({
+        stashId: s.id,
+        stashName: s.name,
+        stashEmoji: s.emoji || '🌱',
+        currency: s.currency,
+        target: s.target,
+        balanceOriginal: bStash,
+        balanceInMain: balInMain,
+        accountId: s.accountId,
+        accountName: acc?.name,
+      });
+    }
+
     // Calculate account balances at the end of this day
     const accountDayBals: AccountDayBalance[] = [];
     let cumulativeY = 0;
@@ -318,23 +377,7 @@ export function calculateCashflowRange(
         }
       }
 
-      // Calculate stashed money associated with this account up to this date
-      let stashedForAcc = 0;
-      for (const s of stashes) {
-        const accId = s.accountId || accounts[0]?.id;
-        if (accId === a.id) {
-          if (date > t) {
-            const proj = calcProjectedStashBalance(s, date, payments, transfers, plans, t);
-            const amtInAcc = proj.projected;
-            stashedForAcc += s.currency === a.currency ? amtInAcc : convert(amtInAcc, s.currency, a.currency);
-          } else {
-            const pastPays = confirmedPayments.filter(p => p.date <= date);
-            const pastTrans = activeTransfers.filter(tr => tr.date <= date);
-            const bStash = calcStashBalance(s, pastPays, pastTrans, plans);
-            stashedForAcc += s.currency === a.currency ? bStash : convert(bStash, s.currency, a.currency);
-          }
-        }
-      }
+      const stashedForAcc = stashAmountByAcc.get(a.id) ?? 0;
 
       const balInMain = convert(b, a.currency, mainCurrency);
       const positiveVal = Math.max(0, balInMain);
@@ -378,6 +421,7 @@ export function calculateCashflowRange(
       netChange,
       items,
       accounts: accountDayBals,
+      stashes: stashDayBals,
       totalBalance,
       totalStashed,
       stashedY0,

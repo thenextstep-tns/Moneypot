@@ -1071,6 +1071,18 @@ input[type="date"] {
   box-sizing: border-box;
 }
 
+.day-account-chips .chip.stash-chip {
+  background: #F8FAFC;
+  border-color: #94A3B8;
+  border-style: dashed;
+  color: #334155;
+}
+
+.day-account-chips .chip.stash-chip:hover {
+  background: #F1F5F9;
+  border-color: #64748B;
+}
+
 .day-account-chips .dot {
   width: 8px;
   height: 8px;

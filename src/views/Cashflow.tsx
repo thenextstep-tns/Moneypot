@@ -944,11 +944,16 @@ function CashflowSvgChart({
               <span key={ab.accountId} className="chip">
                 <span className="dot" style={{ background: ab.accountColor }} />
                 <span>{ab.accountName}: <b>{money(ab.balanceOriginal, ab.currency)}</b></span>
-                {ab.stashedOriginal > 0 && (
-                  <span style={{ color: 'var(--mute)', fontSize: 11, marginLeft: 2 }}>
-                    (🔒 {money(ab.stashedOriginal, ab.currency)})
-                  </span>
-                )}
+              </span>
+            ))}
+            {activeDayObj.stashes?.map(sb => (
+              <span
+                key={sb.stashId}
+                className="chip stash-chip"
+                title={`Stash: ${sb.stashName}${sb.accountName ? ` (held in ${sb.accountName})` : ''}`}
+              >
+                <span style={{ fontSize: 13, marginRight: 2 }}>{sb.stashEmoji || '🌱'}</span>
+                <span>{sb.stashName}: <b>{money(sb.balanceOriginal, sb.currency)}</b></span>
               </span>
             ))}
           </div>
@@ -1359,11 +1364,6 @@ function DayDetailModal({
             >
               <div>
                 <span style={{ fontWeight: 600 }}>{a.accountName}</span>
-                {a.stashedOriginal > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--mute)', fontWeight: 400, marginLeft: 6 }}>
-                    (🔒 {money(a.stashedOriginal, a.currency)} stashed)
-                  </span>
-                )}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <b>{money(a.balanceOriginal, a.currency)}</b>
@@ -1377,6 +1377,52 @@ function DayDetailModal({
           ))}
         </div>
       </div>
+
+      {/* Stash Balances on this day */}
+      {day.stashes && day.stashes.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 6 }}>
+            Stash Balances on {day.dayLabel}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {day.stashes.map(s => (
+              <div
+                key={s.stashId}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  background: 'var(--card)',
+                  border: '1px dashed #94A3B8',
+                  borderLeft: '4px solid #64748B',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>{s.stashEmoji || '🌱'}</span>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{s.stashName}</span>
+                    {s.accountName && (
+                      <span style={{ fontSize: 11, color: 'var(--mute)', fontWeight: 400, marginLeft: 6 }}>
+                        (held in {s.accountName})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <b style={{ color: '#1E293B' }}>{money(s.balanceOriginal, s.currency)}</b>
+                  {s.currency !== mainCurrency && (
+                    <small className="muted" style={{ display: 'block', fontSize: 11 }}>
+                      ≈ {money(s.balanceInMain, mainCurrency)}
+                    </small>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Items List */}
       <div>
