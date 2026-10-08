@@ -1,10 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { uid, useData } from '../store';
 import { money, today } from '../schedule';
-import type { Account, Stash } from '../types';
+import { convert, getRate } from '../fx';
+import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { Bar, CurrencySelect, Empty, Field, Modal, Seg } from '../ui';
 
 const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cash: '💵', wallet: '👛', savings: '🐷' };
+
+/** Calculate live balance of an account considering payments and transfers */
+export function calcAccountBalance(
+  a: Account,
+  payments: Payment[],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  stashes: Stash[] = []
+): number {
+  let b = a.startBalance;
+  for (const p of payments) {
+    if (p.status !== 'confirmed') continue;
+    const plan = plans.find(x => x.id === p.planId);
+    const kind = p.kind ?? plan?.kind, stashId = p.stashId ?? plan?.stashId;
+    if (!kind) continue;
+    if (p.accountId === a.id) b += kind === 'income' ? p.amount : -p.amount;
+    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) b += p.amount;
+  }
+  for (const t of transfers) {
+    if (t.status === 'cancelled') continue;
+    if (t.fromAccountId === a.id) b -= t.fromAmount;
+    if (t.toAccountId === a.id) b += t.toAmount;
+  }
+  return b;
+}
 
 /** Savings goals */
 export function Stashes() {
@@ -15,8 +41,10 @@ export function Stashes() {
     .reduce((a, p) => a + p.amount, 0);
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Stashes</h1><p className="muted">Money you're putting aside for something.</p></div>
-        <button className="btn primary" onClick={() => setEdit('new')}>+ New stash</button></header>
+      <header className="page-head">
+        <div><h1>Stashes</h1><p className="muted">Money you're putting aside for something.</p></div>
+        <button className="btn primary" onClick={() => setEdit('new')}>+ New stash</button>
+      </header>
       {stashes.length === 0 && <Empty emoji="🐷" title="No stashes yet" text="A safety cushion of 3 months of expenses is a great first goal." />}
       <div className="grid">
         {stashes.map(s => {
@@ -70,32 +98,35 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
 /** Where money lives: cards, Payoneer, cash, savings accounts */
 export function Accounts() {
-  const { accounts, plans, payments, stashes } = useData();
+  const { accounts, plans, payments, stashes, transfers } = useData();
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
-  const balance = (a: Account) => payments.filter(p => p.status === 'confirmed').reduce((b, p) => {
-    const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind, stashId = p.stashId ?? plan?.stashId;
-    if (!kind) return b;
-    let d = 0;
-    if (p.accountId === a.id) d += kind === 'income' ? p.amount : -p.amount;
-    if (kind === 'saving' && stashes.find(s => s.id === stashId)?.accountId === a.id) d += p.amount;
-    return b + d;
-  }, a.startBalance);
+  const [transferring, setTransferring] = useState(false);
+
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Accounts</h1><p className="muted">Where your money lives.</p></div>
-        <button className="btn primary" onClick={() => setEdit('new')}>+ Add account</button></header>
+      <header className="page-head">
+        <div><h1>Accounts</h1><p className="muted">Where your money lives.</p></div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {accounts.length >= 2 && (
+            <button className="btn ok" onClick={() => setTransferring(true)}>⇄ Move money</button>
+          )}
+          <button className="btn primary" onClick={() => setEdit('new')}>+ Add account</button>
+        </div>
+      </header>
+
       <div className="grid">
         {accounts.map(a => (
           <button key={a.id} className="card click acc" style={{ ['--c' as string]: a.color }} onClick={() => setEdit(a)}>
             <div className="big">{ICONS[a.type]}</div>
             <div className="title">{a.name}</div>
-            <div className="sub">{a.institution ?? a.type}</div>
-            <div className="stash-amt"><b>{money(balance(a), a.currency)}</b></div>
+            <div className="sub">{a.institution ?? a.type} · {a.currency}</div>
+            <div className="stash-amt"><b>{money(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency)}</b></div>
           </button>
         ))}
       </div>
+
       {edit && <AccountForm acc={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
+      {transferring && <TransferModal onClose={() => setTransferring(false)} />}
     </div>
   );
 }
@@ -108,7 +139,7 @@ function AccountForm({ acc, onClose }: { acc?: Account; onClose: () => void }) {
     <Modal title={acc ? 'Edit account' : 'New account'} onClose={onClose}>
       <Seg value={a.type} onChange={t => set({ type: t })} options={Object.entries(ICONS).map(([k, v]) => [k as Account['type'], `${v} ${k}`])} />
       <Field label="Name"><input autoFocus value={a.name} placeholder="My Visa card" onChange={e => set({ name: e.target.value })} /></Field>
-      <Field label="Bank / service (optional)"><input value={a.institution ?? ''} placeholder="Revolut, Payoneer…" onChange={e => set({ institution: e.target.value || undefined })} /></Field>
+      <Field label="Bank / service (optional)"><input value={a.institution ?? ''} placeholder="Revolut, Payoneer, Alipay…" onChange={e => set({ institution: e.target.value || undefined })} /></Field>
       <div className="row">
         <Field label="Money there now"><input type="number" value={a.startBalance || ''} onChange={e => set({ startBalance: +e.target.value })} /></Field>
         <Field label="Currency"><CurrencySelect value={a.currency} onChange={v => set({ currency: v })} /></Field>
@@ -116,6 +147,132 @@ function AccountForm({ acc, onClose }: { acc?: Account; onClose: () => void }) {
       <Field label="Colour"><input type="color" value={a.color} onChange={e => set({ color: e.target.value })} /></Field>
       <button className="btn primary wide" disabled={!a.name} onClick={() => { save('accounts', a); onClose(); }}>{acc ? 'Save' : 'Add account'}</button>
       {acc && <button className="btn ghost wide danger" onClick={() => { remove('accounts', acc.id); onClose(); }}>Delete</button>}
+    </Modal>
+  );
+}
+
+/** Modal to move money between accounts with differing currencies & exchange rates */
+export function TransferModal({ transfer, onClose }: { transfer?: Transfer; onClose: () => void }) {
+  const { accounts, save, remove, payments, plans, stashes, transfers } = useData();
+  const [fromId, setFromId] = useState(transfer?.fromAccountId ?? accounts[0]?.id ?? '');
+  const [toId, setToId] = useState(transfer?.toAccountId ?? accounts.find(a => a.id !== fromId)?.id ?? accounts[1]?.id ?? '');
+  const [fromAmount, setFromAmount] = useState<number>(transfer?.fromAmount ?? 0);
+  const [toAmount, setToAmount] = useState<number>(transfer?.toAmount ?? 0);
+  const [date, setDate] = useState(transfer?.date ?? today());
+  const [note, setNote] = useState(transfer?.note ?? '');
+
+  const fromAcc = accounts.find(a => a.id === fromId);
+  const toAcc = accounts.find(a => a.id === toId);
+
+  // Auto-suggest toAmount on fromAmount change if currencies differ and not manually altered
+  const [userEditedTo, setUserEditedTo] = useState(!!transfer);
+
+  useEffect(() => {
+    if (!userEditedTo && fromAcc && toAcc && fromAmount > 0) {
+      const converted = convert(fromAmount, fromAcc.currency, toAcc.currency);
+      setToAmount(Math.round(converted * 100) / 100);
+    }
+  }, [fromAmount, fromAcc?.currency, toAcc?.currency, userEditedTo]);
+
+  const submit = () => {
+    if (!fromAcc || !toAcc || fromAmount <= 0 || toAmount <= 0 || fromId === toId) return;
+    const t: Transfer = {
+      id: transfer?.id ?? uid(),
+      date,
+      fromAccountId: fromId,
+      toAccountId: toId,
+      fromAmount: +fromAmount,
+      fromCurrency: fromAcc.currency,
+      toAmount: +toAmount,
+      toCurrency: toAcc.currency,
+      note: note.trim() || undefined,
+      status: transfer?.status ?? 'confirmed',
+      createdAt: transfer?.createdAt ?? Date.now(),
+    };
+    save('transfers', t);
+    onClose();
+  };
+
+  const fromBal = fromAcc ? calcAccountBalance(fromAcc, payments, transfers, plans, stashes) : 0;
+  const toBal = toAcc ? calcAccountBalance(toAcc, payments, transfers, plans, stashes) : 0;
+
+  return (
+    <Modal title={transfer ? 'Edit transfer' : 'Move money between accounts'} onClose={onClose}>
+      <Field label="From account">
+        <select value={fromId} onChange={e => { setFromId(e.target.value); setUserEditedTo(false); }}>
+          {accounts.map(a => (
+            <option key={a.id} value={a.id} disabled={a.id === toId}>
+              {a.name} ({a.currency}) · Available: {money(fromBal, a.currency)}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="To account">
+        <select value={toId} onChange={e => { setToId(e.target.value); setUserEditedTo(false); }}>
+          {accounts.map(a => (
+            <option key={a.id} value={a.id} disabled={a.id === fromId}>
+              {a.name} ({a.currency}) · Current: {money(toBal, a.currency)}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <div className="row even">
+        <Field label={`Amount taken out (${fromAcc?.currency ?? ''})`}>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={fromAmount || ''}
+            placeholder="0"
+            onChange={e => setFromAmount(+e.target.value)}
+          />
+        </Field>
+        <Field label={`Amount put in (${toAcc?.currency ?? ''})`} hint="Editable for exact rate/fees">
+          <input
+            type="number"
+            inputMode="decimal"
+            value={toAmount || ''}
+            placeholder="0"
+            onChange={e => { setToAmount(+e.target.value); setUserEditedTo(true); }}
+          />
+        </Field>
+      </div>
+
+      {fromAcc && toAcc && fromAcc.currency !== toAcc.currency && fromAmount > 0 && toAmount > 0 && (
+        <div className="preview" style={{ fontSize: 13 }}>
+          💱 Effective rate: 1 {fromAcc.currency} = {(toAmount / fromAmount).toFixed(4)} {toAcc.currency}
+        </div>
+      )}
+
+      <Field label="Date">
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+
+      <Field label="Note (optional)">
+        <input
+          value={note}
+          placeholder="e.g. Card top-up, currency conversion, withdrawal…"
+          onChange={e => setNote(e.target.value)}
+        />
+      </Field>
+
+      <button
+        className="btn primary wide"
+        disabled={!fromAcc || !toAcc || fromId === toId || fromAmount <= 0 || toAmount <= 0}
+        onClick={submit}
+      >
+        {transfer ? 'Save changes' : '✓ Move money'}
+      </button>
+
+      {transfer && (
+        <button
+          className="btn ghost wide danger"
+          onClick={() => { remove('transfers', transfer.id); onClose(); }}
+        >
+          Delete record
+        </button>
+      )}
     </Modal>
   );
 }

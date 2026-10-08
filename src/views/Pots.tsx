@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisMonth } from '../schedule';
+import { convert } from '../fx';
 import type { Category, Occurrence } from '../types';
 import { Bar, Empty } from '../ui';
 import { CategoryModal } from './CategoryModal';
 
-const sum = (xs: Occurrence[]) => xs.reduce((s, o) => s + o.amount, 0);
+const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + convert(o.amount, o.currency, targetCur), 0);
 
 /** MAIN FLOW #2 — monthly pots: planned vs done vs still needed */
 export function Pots() {
@@ -19,7 +20,7 @@ export function Pots() {
 
   const income = occ.filter(o => o.kind === 'income');
   const outgoing = occ.filter(o => o.kind !== 'income');
-  const inPlan = sum(income), outPlan = sum(outgoing);
+  const inPlan = sum(income, cur), outPlan = sum(outgoing, cur);
   const free = inPlan - outPlan;
 
   const activePots = categories
@@ -45,8 +46,8 @@ export function Pots() {
       </header>
 
       <div className="summary">
-        <div><span>Coming in</span><b className="in">{money(inPlan, cur)}</b><small>{money(sum(income.filter(o => o.status === 'confirmed')), cur)} received</small></div>
-        <div><span>Going out</span><b>{money(outPlan, cur)}</b><small>{money(sum(outgoing.filter(o => o.status === 'confirmed')), cur)} done</small></div>
+        <div><span>Coming in</span><b className="in">{money(inPlan, cur)}</b><small>{money(sum(income.filter(o => o.status === 'confirmed'), cur), cur)} received</small></div>
+        <div><span>Going out</span><b>{money(outPlan, cur)}</b><small>{money(sum(outgoing.filter(o => o.status === 'confirmed'), cur), cur)} done</small></div>
         <div className={free >= 0 ? 'good' : 'badbox'}>
           <span>{free >= 0 ? 'Free to use' : 'Short by'}</span><b>{money(Math.abs(free), cur)}</b>
           <small>{free >= 0 ? 'not planned for anything yet' : 'plans are bigger than income'}</small>
@@ -112,10 +113,10 @@ export function Pots() {
 }
 
 function Pot({ c, items, cur, open, toggle, onEdit }: { c: Category; items: Occurrence[]; cur: string; open: boolean; toggle: () => void; onEdit: () => void }) {
-  const planned = sum(items);
+  const planned = sum(items, cur);
   const doneItems = items.filter(o => o.status === 'confirmed');
   const left = items.filter(o => o.status === 'pending');
-  const done = sum(doneItems), need = sum(left);
+  const done = sum(doneItems, cur), need = sum(left, cur);
   const full = left.length === 0;
 
   // Breakdown by subcategory
@@ -123,10 +124,10 @@ function Pot({ c, items, cur, open, toggle, onEdit }: { c: Category; items: Occu
     const map = new Map<string, number>();
     for (const item of items) {
       const key = item.subcategory || 'General';
-      map.set(key, (map.get(key) ?? 0) + item.amount);
+      map.set(key, (map.get(key) ?? 0) + convert(item.amount, item.currency, cur));
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [items]);
+  }, [items, cur]);
 
   return (
     <div className={`pot ${open ? 'open' : ''}`} style={{ ['--c' as string]: c.color }} onClick={toggle}>

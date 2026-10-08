@@ -7,6 +7,7 @@ import { Today } from './views/Today';
 import { Pots } from './views/Pots';
 import { Plans } from './views/Plans';
 import { Accounts, Stashes } from './views/Money';
+import { LogBook } from './views/LogBook';
 import { CurrencySelect } from './ui';
 import './styles.css';
 
@@ -14,6 +15,7 @@ const TABS = [
   ['today', '✅', 'Today', Today],
   ['pots', '🫙', 'Pots', Pots],
   ['plan', '🗓️', 'Plan', Plans],
+  ['logbook', '📜', 'Log Book', LogBook],
   ['stashes', '🐷', 'Stashes', Stashes],
   ['accounts', '💳', 'Accounts', Accounts],
 ] as const;

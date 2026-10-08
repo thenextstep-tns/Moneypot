@@ -1,4 +1,4 @@
-import type { Account, Category, Plan, Stash } from './types';
+import type { Account, Category, Plan, Stash, Transfer } from './types';
 import { shiftMonth, thisMonth } from './schedule';
 
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -29,12 +29,29 @@ export const DEMO = {
     ...DEFAULT_ACCOUNTS,
     { id: 'card', name: 'Main card', type: 'card', institution: 'Revolut', currency: 'EUR', startBalance: 1200, color: '#6C8EF5' },
     { id: 'payoneer', name: 'Payoneer', type: 'wallet', institution: 'Payoneer', currency: 'USD', startBalance: 300, color: '#F2885B' },
+    { id: 'alipay', name: 'Alipay / WeChat', type: 'wallet', institution: 'Alipay', currency: 'CNY', startBalance: 3500, color: '#00A3FF' },
+    { id: 'rub', name: 'Tinkoff / Sber', type: 'bank', institution: 'Tinkoff', currency: 'RUB', startBalance: 45000, color: '#EDB536' },
+    { id: 'gbp', name: 'UK Account', type: 'bank', institution: 'Barclays', currency: 'GBP', startBalance: 250, color: '#9B7BEA' },
     { id: 'savings', name: 'Savings account', type: 'savings', institution: 'Raiffeisen', currency: 'EUR', startBalance: 500, color: '#2FA36B' },
   ] as Account[],
   stashes: [
     { id: 'cushion', name: 'Safety cushion', emoji: '🛟', target: 3000, currency: 'EUR', accountId: 'savings', startAmount: 500 },
     { id: 'holiday', name: 'Summer holiday', emoji: '🏖️', target: 1200, currency: 'EUR', accountId: 'savings', startAmount: 0 },
   ] as Stash[],
+  transfers: [
+    {
+      id: 'demo_tr_1',
+      date: `${m}-10`,
+      fromAccountId: 'card',
+      toAccountId: 'payoneer',
+      fromAmount: 100,
+      fromCurrency: 'EUR',
+      toAmount: 108,
+      toCurrency: 'USD',
+      note: 'Converted EUR to USD for online subscriptions',
+      status: 'confirmed',
+    },
+  ] as Transfer[],
   plans: [
     P('salary', 'Salary', 'income', 'salary', 2600, 'monthly', '01'),
     P('rent', 'Rent', 'expense', 'home', 850, 'monthly', '05', 'card', { note: 'Flat + building maintenance' }),

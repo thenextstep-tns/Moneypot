@@ -34,7 +34,7 @@ export const Empty = ({ emoji, title, text, action }: { emoji: string; title: st
   <div className="empty"><div className="big">{emoji}</div><h3>{title}</h3>{text && <p>{text}</p>}{action}</div>
 );
 
-export const CURRENCIES = ['EUR', 'USD', 'GBP', 'RSD', 'RUB', 'CHF', 'PLN', 'UAH', 'TRY', 'GEL'];
+export const CURRENCIES = ['EUR', 'USD', 'GBP', 'CNY', 'RUB', 'RSD', 'CHF', 'PLN', 'UAH', 'TRY', 'GEL', 'JPY', 'CAD', 'AUD'];
 export const CurrencySelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
   <select value={value} onChange={e => onChange(e.target.value)}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select>
 );

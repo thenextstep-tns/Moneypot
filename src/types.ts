@@ -80,6 +80,20 @@ export interface Payment extends Owned {
   note?: string;                // comment added when confirming / postponing
 }
 
+/** Money movement between two accounts (with currency exchange support) */
+export interface Transfer extends Owned {
+  date: string;               // YYYY-MM-DD
+  fromAccountId: string;
+  toAccountId: string;
+  fromAmount: number;         // deducted from source account
+  fromCurrency: string;
+  toAmount: number;           // added to destination account
+  toCurrency: string;
+  note?: string;
+  status: 'confirmed' | 'cancelled';
+  createdAt?: number;
+}
+
 export interface Settings { currency: string }
 
 /** Computed, never stored */
