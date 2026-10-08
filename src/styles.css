@@ -130,11 +130,11 @@ main { flex: 1; min-width: 0; }
   .page {
     padding: 18px 16px 105px;
   }
-  .backdrop {
+  .backdrop, .modal-backdrop {
     padding: 12px 10px calc(14px + env(safe-area-inset-bottom, 0px));
     z-index: 1000;
   }
-  .modal {
+  .modal, .modal-card {
     max-width: calc(100vw - 20px);
     max-height: calc(100vh - 28px);
     max-height: calc(100dvh - 28px);
@@ -142,7 +142,7 @@ main { flex: 1; min-width: 0; }
     border-radius: 20px;
     gap: 12px;
   }
-  .modal > *:last-child {
+  .modal > *:last-child, .modal-card > *:last-child {
     margin-bottom: 8px;
   }
 }
@@ -279,7 +279,7 @@ main { flex: 1; min-width: 0; }
 .stash-amt b { font-size: 20px; }
 
 /* forms / modal */
-.backdrop {
+.backdrop, .modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
@@ -292,12 +292,12 @@ main { flex: 1; min-width: 0; }
   animation: fade .15s;
   overscroll-behavior: contain;
 }
-.modal {
+.modal, .modal-card {
   background: var(--card);
   border-radius: 22px;
   padding: 22px 22px calc(24px + env(safe-area-inset-bottom, 0px));
   width: 100%;
-  max-width: min(440px, calc(100vw - 24px));
+  max-width: min(500px, calc(100vw - 24px));
   max-height: calc(100vh - 40px);
   max-height: calc(100dvh - 40px);
   overflow-x: hidden;

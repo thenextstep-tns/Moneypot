@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../store';
+import { Modal } from '../ui';
 import { calculateCashflowRange, type DayCashflow, type CashflowItem } from '../cashflow';
 import { fetchLiveRates, getFxInfo, subscribeFx } from '../fx';
 import {
@@ -909,7 +910,7 @@ function CashflowSvgChart({
               style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--line)', whiteSpace: 'nowrap' }}
               onClick={() => onOpenModal(activeDayObj)}
             >
-              🔍 Details Modal
+              🔍 Details
             </button>
           </div>
 
@@ -1171,7 +1172,7 @@ function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenMo
               className={`cal-cell ${d.isToday ? 'today-cell' : ''} ${isSelected ? 'selected-cell' : ''}`}
               onClick={() => onPinDate(d.date)}
               onDoubleClick={() => onOpenModal(d)}
-              title="Click to view details in the rundown above, double-click for modal"
+              title="Click to view details in the rundown above, double-click for details"
             >
               {/* Day Number and End-of-Day Balance */}
               <div className="cal-cell-head">
@@ -1299,171 +1300,161 @@ function DayDetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-          <div>
-            <h2 style={{ margin: 0 }}>{day.fullLabel}</h2>
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              {day.isToday && <span className="tag ok-badge">Today</span>}
-              {day.isPast && <span className="tag" style={{ background: '#F1F5F9', color: '#475569' }}>Historical</span>}
-              {day.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected Schedule</span>}
-            </div>
-          </div>
-          <button type="button" className="btn ghost icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
+    <Modal title={day.fullLabel} onClose={onClose}>
+      <div style={{ display: 'flex', gap: 6, marginTop: -4, marginBottom: 8 }}>
+        {day.isToday && <span className="tag ok-badge">Today</span>}
+        {day.isPast && <span className="tag" style={{ background: '#F1F5F9', color: '#475569' }}>Historical</span>}
+        {day.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected Schedule</span>}
+      </div>
 
-        {/* Day End Total Balance & Net */}
-        <div style={{ display: 'grid', gridTemplateColumns: day.totalStashed > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10, background: '#F8FAFC', padding: 14, borderRadius: 12, marginBottom: 16 }}>
+      {/* Day End Total Balance & Net */}
+      <div style={{ display: 'grid', gridTemplateColumns: day.totalStashed > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10, background: '#F8FAFC', padding: 14, borderRadius: 12, marginBottom: 14 }}>
+        <div>
+          <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
+            AVAILABLE CASH
+          </span>
+          <b style={{ fontSize: 18, color: day.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+            {money(day.totalBalance, mainCurrency)}
+          </b>
+        </div>
+        <div>
+          <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
+            NET CASHFLOW
+          </span>
+          <b style={{ fontSize: 18, color: day.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
+            {day.netChange >= 0 ? `+${money(day.netChange, mainCurrency)}` : money(day.netChange, mainCurrency)}
+          </b>
+        </div>
+        {day.totalStashed > 0 && (
           <div>
             <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
-              AVAILABLE CASH
+              🔒 STASHED
             </span>
-            <b style={{ fontSize: 18, color: day.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-              {money(day.totalBalance, mainCurrency)}
+            <b style={{ fontSize: 18, color: '#475569' }}>
+              {money(day.totalStashed, mainCurrency)}
             </b>
           </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
-              NET CASHFLOW
-            </span>
-            <b style={{ fontSize: 18, color: day.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
-              {day.netChange >= 0 ? `+${money(day.netChange, mainCurrency)}` : money(day.netChange, mainCurrency)}
-            </b>
-          </div>
-          {day.totalStashed > 0 && (
-            <div>
-              <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
-                🔒 STASHED
-              </span>
-              <b style={{ fontSize: 18, color: '#475569' }}>
-                {money(day.totalStashed, mainCurrency)}
-              </b>
+        )}
+      </div>
+
+      {/* Account Balances on this day */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 6 }}>
+          Account Balances on {day.dayLabel}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {day.accounts.map(a => (
+            <div
+              key={a.accountId}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 12px',
+                borderRadius: 10,
+                background: 'var(--card)',
+                border: '1px solid var(--line)',
+                borderLeft: `4px solid ${a.accountColor}`,
+              }}
+            >
+              <div>
+                <span style={{ fontWeight: 600 }}>{a.accountName}</span>
+                {a.stashedOriginal > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--mute)', fontWeight: 400, marginLeft: 6 }}>
+                    (🔒 {money(a.stashedOriginal, a.currency)} stashed)
+                  </span>
+                )}
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <b>{money(a.balanceOriginal, a.currency)}</b>
+                {a.currency !== mainCurrency && (
+                  <small className="muted" style={{ display: 'block', fontSize: 11 }}>
+                    ≈ {money(a.balanceInMain, mainCurrency)}
+                  </small>
+                )}
+              </div>
             </div>
-          )}
+          ))}
+        </div>
+      </div>
+
+      {/* Items List */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 6 }}>
+          Transactions & Scheduled Items ({day.items.length})
         </div>
 
-        {/* Account Balances on this day */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 6 }}>
-            Account Balances on {day.dayLabel}
+        {day.items.length === 0 ? (
+          <div style={{ padding: 18, textAlign: 'center', background: '#F8FAFC', borderRadius: 10, color: 'var(--mute)' }}>
+            No transactions on this date.
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {day.accounts.map(a => (
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+            {day.items.map(it => (
               <div
-                key={a.accountId}
+                key={it.id}
                 style={{
                   display: 'flex',
-                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '8px 12px',
+                  justifyContent: 'space-between',
+                  padding: '9px 12px',
                   borderRadius: 10,
-                  background: 'var(--card)',
-                  border: '1px solid var(--line)',
-                  borderLeft: `4px solid ${a.accountColor}`,
+                  background: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
                 }}
               >
-                <div>
-                  <span style={{ fontWeight: 600 }}>{a.accountName}</span>
-                  {a.stashedOriginal > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--mute)', fontWeight: 400, marginLeft: 6 }}>
-                      (🔒 {money(a.stashedOriginal, a.currency)} stashed)
-                    </span>
-                  )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>{it.emoji}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{it.name}</span>
+                      {it.kind === 'saving' && (
+                        <span className="tag" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
+                          🌱 Stashed
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--mute)' }}>
+                      {it.accountName ? `${it.accountName} · ` : ''}
+                      {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled pending'}
+                    </div>
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <b>{money(a.balanceOriginal, a.currency)}</b>
-                  {a.currency !== mainCurrency && (
+                  <b
+                    style={{
+                      fontSize: 14,
+                      color:
+                        it.kind === 'income'
+                          ? '#16A34A'
+                          : it.kind === 'saving'
+                          ? '#0D9488'
+                          : '#DC2626',
+                    }}
+                  >
+                    {it.kind === 'income' ? '+' : '-'}
+                    {money(it.amount, it.currency)}
+                  </b>
+                  {it.currency !== mainCurrency && (
                     <small className="muted" style={{ display: 'block', fontSize: 11 }}>
-                      ≈ {money(a.balanceInMain, mainCurrency)}
+                      ≈ {money(it.amountInMain, mainCurrency)}
                     </small>
                   )}
                 </div>
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Items List */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 6 }}>
-            Transactions & Scheduled Items ({day.items.length})
-          </div>
-
-          {day.items.length === 0 ? (
-            <div style={{ padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 10, color: 'var(--mute)' }}>
-              No transactions on this date.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
-              {day.items.map(it => (
-                <div
-                  key={it.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    background: '#FFFFFF',
-                    border: '1px solid #E2E8F0',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 20 }}>{it.emoji}</span>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>{it.name}</span>
-                        {it.kind === 'saving' && (
-                          <span className="tag" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
-                            🌱 Stashed
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--mute)' }}>
-                        {it.accountName ? `${it.accountName} · ` : ''}
-                        {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled pending'}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <b
-                      style={{
-                        fontSize: 15,
-                        color:
-                          it.kind === 'income'
-                            ? '#16A34A'
-                            : it.kind === 'saving'
-                            ? '#0D9488'
-                            : '#DC2626',
-                      }}
-                    >
-                      {it.kind === 'income' ? '+' : '-'}
-                      {money(it.amount, it.currency)}
-                    </b>
-                    {it.currency !== mainCurrency && (
-                      <small className="muted" style={{ display: 'block', fontSize: 11 }}>
-                        ≈ {money(it.amountInMain, mainCurrency)}
-                      </small>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <button
-          type="button"
-          className="btn primary wide"
-          style={{ marginTop: 18 }}
-          onClick={onClose}
-        >
-          Close
-        </button>
+        )}
       </div>
-    </div>
+
+      <button
+        type="button"
+        className="btn primary wide"
+        style={{ marginTop: 12 }}
+        onClick={onClose}
+      >
+        Close
+      </button>
+    </Modal>
   );
 }
