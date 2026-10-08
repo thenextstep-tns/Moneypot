@@ -36,23 +36,42 @@ export function Cashflow() {
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [inspectDay, setInspectDay] = useState<DayCashflow | null>(null);
 
-  // FX state
-  const [fxInfo, setFxInfo] = useState(getFxInfo());
-  const [isRefreshingFx, setIsRefreshingFx] = useState(false);
+  // Selected Accounts filter state
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(() => accounts.map(a => a.id));
 
   useEffect(() => {
-    return subscribeFx(() => setFxInfo(getFxInfo()));
-  }, []);
+    if (accounts.length > 0) {
+      setSelectedAccountIds(prev => {
+        const valid = prev.filter(id => accounts.some(a => a.id === id));
+        return valid.length > 0 ? valid : accounts.map(a => a.id);
+      });
+    }
+  }, [accounts]);
 
-  const handleRefreshFx = async () => {
-    setIsRefreshingFx(true);
-    try {
-      await fetchLiveRates(true);
-      setFxInfo(getFxInfo());
-    } finally {
-      setIsRefreshingFx(false);
+  const isAllAccountsSelected = selectedAccountIds.length === accounts.length;
+
+  const toggleAccount = (accId: string) => {
+    if (selectedAccountIds.includes(accId)) {
+      if (selectedAccountIds.length > 1) {
+        setSelectedAccountIds(selectedAccountIds.filter(id => id !== accId));
+      }
+    } else {
+      setSelectedAccountIds([...selectedAccountIds, accId]);
     }
   };
+
+  const selectAllAccounts = () => {
+    setSelectedAccountIds(accounts.map(a => a.id));
+  };
+
+  const selectOnlyAccount = (accId: string) => {
+    setSelectedAccountIds([accId]);
+  };
+
+  const visibleAccounts = useMemo(() => {
+    const list = accounts.filter(a => selectedAccountIds.includes(a.id));
+    return list.length > 0 ? list : accounts;
+  }, [accounts, selectedAccountIds]);
 
   // Determine active date range [fromDate, toDate]
   const [fromDate, toDate] = useMemo((): [string, string] => {
@@ -70,7 +89,7 @@ export function Cashflow() {
     return calculateCashflowRange(
       fromDate,
       toDate,
-      accounts,
+      visibleAccounts,
       payments,
       transfers,
       plans,
@@ -78,7 +97,7 @@ export function Cashflow() {
       categories,
       mainCurrency
     );
-  }, [fromDate, toDate, accounts, payments, transfers, plans, stashes, categories, mainCurrency]);
+  }, [fromDate, toDate, visibleAccounts, payments, transfers, plans, stashes, categories, mainCurrency]);
 
   // Synchronize pinnedDate if it's out of range
   useEffect(() => {
@@ -132,7 +151,7 @@ export function Cashflow() {
 
   return (
     <div className="page wide cashflow-view">
-      {/* Top Header & Range Controls */}
+      {/* Top Header */}
       <div className="cashflow-top">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -142,26 +161,43 @@ export function Cashflow() {
             </span>
           </div>
           <p className="muted" style={{ margin: '4px 0 0' }}>
-            Daily cash trajectory across all accounts with projected bills and payments.
+            Daily cash trajectory with projected bills and payments.
           </p>
         </div>
 
-        {/* Currency & FX sync info */}
-        <div className="fx-status-box">
-          <span style={{ fontSize: 12, color: 'var(--mute)' }}>
-            FX Rates: {fxInfo.isLive ? '🟢 Live daily sync' : '⚪ Standard rates'}
-          </span>
-          <button
-            type="button"
-            className="btn ghost icon-btn"
-            title="Refresh exchange rates from live API"
-            disabled={isRefreshingFx}
-            onClick={handleRefreshFx}
-            style={{ fontSize: 14, padding: '4px 8px' }}
-          >
-            {isRefreshingFx ? '⏳ Syncing…' : '🔄 Refresh rates'}
-          </button>
-        </div>
+        {/* Account Selector Filter Chips */}
+        {accounts.length > 1 && (
+          <div className="cashflow-acc-filter-bar">
+            <span className="acc-filter-title">Accounts:</span>
+            <div className="acc-filter-chips">
+              <button
+                type="button"
+                className={`acc-filter-pill ${isAllAccountsSelected ? 'on' : ''}`}
+                onClick={selectAllAccounts}
+              >
+                All ({accounts.length})
+              </button>
+              {accounts.map(a => {
+                const isSelected = selectedAccountIds.includes(a.id);
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`acc-filter-pill ${isSelected ? 'on' : 'off'}`}
+                    style={{ ['--acc-c' as string]: a.color || '#3B82F6' }}
+                    onClick={() => toggleAccount(a.id)}
+                    onDoubleClick={() => selectOnlyAccount(a.id)}
+                    title={isSelected ? `Showing ${a.name} (click to hide, double-click to solo)` : `Hidden ${a.name} (click to show)`}
+                  >
+                    <span className="pill-dot" style={{ background: a.color || '#3B82F6' }} />
+                    <span>{a.name}</span>
+                    {isSelected && <span className="pill-check">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Navigation & Range Toolbar */}
@@ -354,12 +390,23 @@ export function Cashflow() {
 
           {/* Account Legend */}
           <div className="graph-legend">
-            {accounts.map(a => (
-              <div key={a.id} className="legend-item">
-                <span className="legend-color-dot" style={{ background: a.color || '#3B82F6' }} />
-                <span className="legend-name">{a.name}</span>
-              </div>
-            ))}
+            {accounts.map(a => {
+              const isSelected = selectedAccountIds.includes(a.id);
+              return (
+                <div
+                  key={a.id}
+                  className="legend-item clickable"
+                  style={{ cursor: 'pointer', opacity: isSelected ? 1 : 0.4 }}
+                  onClick={() => toggleAccount(a.id)}
+                  title={isSelected ? `Showing ${a.name} (click to hide)` : `Hiding ${a.name} (click to show)`}
+                >
+                  <span className="legend-color-dot" style={{ background: a.color || '#3B82F6' }} />
+                  <span className="legend-name" style={{ textDecoration: isSelected ? 'none' : 'line-through' }}>
+                    {a.name}
+                  </span>
+                </div>
+              );
+            })}
             <div className="legend-item">
               <span className="legend-dot-red" />
               <span className="legend-name">Activity / Payments</span>
@@ -370,7 +417,7 @@ export function Cashflow() {
         {/* SVG Graph Component */}
         <CashflowSvgChart
           days={days}
-          accounts={accounts}
+          accounts={visibleAccounts}
           mainCurrency={mainCurrency}
           activeDate={activeDate}
           pinnedDate={pinnedDate}

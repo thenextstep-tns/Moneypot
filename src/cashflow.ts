@@ -154,6 +154,7 @@ export function calculateCashflowRange(
     // 1. Confirmed payments on this date
     for (const p of confirmedPayments) {
       if (p.date === date) {
+        if (p.accountId && !accounts.some(a => a.id === p.accountId)) continue;
         const plan = plans.find(x => x.id === p.planId);
         const cat = plan?.categoryId ? categories.find(c => c.id === plan.categoryId) : undefined;
         const kind = p.kind ?? plan?.kind ?? 'expense';
@@ -183,6 +184,7 @@ export function calculateCashflowRange(
     // 2. Transfers on this date
     for (const tr of activeTransfers) {
       if (tr.date === date) {
+        if (!accounts.some(a => a.id === tr.fromAccountId || a.id === tr.toAccountId)) continue;
         const fromAcc = accounts.find(a => a.id === tr.fromAccountId);
         const toAcc = accounts.find(a => a.id === tr.toAccountId);
         items.push({
@@ -206,6 +208,7 @@ export function calculateCashflowRange(
     if (isFuture) {
       const dayOccurrences = futureOccurrencesByDate.get(date) ?? [];
       for (const o of dayOccurrences) {
+        if (o.accountId && !accounts.some(a => a.id === o.accountId)) continue;
         const acc = accounts.find(a => a.id === o.accountId);
         const cat = o.plan.categoryId ? categories.find(c => c.id === o.plan.categoryId) : undefined;
         items.push({

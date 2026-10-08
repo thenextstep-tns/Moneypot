@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { uid, useData } from '../store';
-import { money, today } from '../schedule';
+import { addDays, dayLabel, money, occurrences, today } from '../schedule';
 import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
@@ -115,6 +115,7 @@ export function Accounts() {
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [expandedAccId, setExpandedAccId] = useState<string | null>(null);
 
   return (
     <div className="page">
@@ -135,14 +136,89 @@ export function Accounts() {
       </header>
 
       <div className="grid">
-        {accounts.map(a => (
-          <button key={a.id} className="card click acc" style={{ ['--c' as string]: a.color }} onClick={() => setEdit(a)}>
-            <div className="big">{ICONS[a.type]}</div>
-            <div className="title">{a.name}</div>
-            <div className="sub">{a.institution ?? a.type} · {a.currency}</div>
-            <div className="stash-amt"><b>{money(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency)}</b></div>
-          </button>
-        ))}
+        {accounts.map(a => {
+          const isExpanded = expandedAccId === a.id;
+          const from = today();
+          const to = addDays(today(), 60);
+          const upcoming = occurrences(plans, payments, from, to)
+            .filter(o => o.accountId === a.id && o.status !== 'confirmed')
+            .sort((x, y) => x.dueDate.localeCompare(y.dueDate));
+          const bal = calcAccountBalance(a, payments, transfers, plans, stashes);
+
+          return (
+            <div
+              key={a.id}
+              className={`card acc ${isExpanded ? 'acc-open' : ''}`}
+              style={{ ['--c' as string]: a.color, position: 'relative', cursor: 'pointer' }}
+              onClick={() => setExpandedAccId(isExpanded ? null : a.id)}
+            >
+              {/* Three dots top right corner for edit modal */}
+              <button
+                type="button"
+                className="acc-three-dots"
+                title="Edit account & balance correction"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEdit(a);
+                }}
+              >
+                ⋮
+              </button>
+
+              <div className="big">{ICONS[a.type]}</div>
+              <div className="title" style={{ paddingRight: 24 }}>{a.name}</div>
+              <div className="sub">{a.institution ?? a.type} · {a.currency}</div>
+              <div className="stash-amt">
+                <b>{money(bal, a.currency)}</b>
+              </div>
+
+              {/* Reveal toggle indicator */}
+              <div className="acc-expand-toggle">
+                <span>{isExpanded ? '▲ Hide upcoming' : `▼ Upcoming (${upcoming.length})`}</span>
+              </div>
+
+              {/* Revealed upcoming payments */}
+              {isExpanded && (
+                <div className="acc-upcoming-tray" onClick={e => e.stopPropagation()}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Upcoming Scheduled ({upcoming.length})
+                  </div>
+                  {upcoming.length === 0 ? (
+                    <div className="muted" style={{ fontSize: 12, padding: '4px 0' }}>
+                      No payments scheduled for this account in the next 60 days.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                      {upcoming.slice(0, 8).map(o => (
+                        <div key={o.key} className="acc-upcoming-row">
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{o.plan.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--mute)' }}>
+                              Due {dayLabel(o.dueDate)}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              color: o.plan.kind === 'income' ? '#16A34A' : '#DC2626',
+                            }}
+                          >
+                            {o.plan.kind === 'income' ? '+' : '-'}{money(o.amount, o.currency)}
+                          </div>
+                        </div>
+                      ))}
+                      {upcoming.length > 8 && (
+                        <div className="muted" style={{ fontSize: 11, textAlign: 'center', paddingTop: 2 }}>
+                          +{upcoming.length - 8} more upcoming…
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {edit && <AccountForm acc={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}

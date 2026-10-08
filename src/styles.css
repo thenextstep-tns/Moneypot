@@ -120,7 +120,67 @@ main { flex: 1; min-width: 0; }
 /* cards grid */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-top: 24px; }
 .card { background: var(--card); border-radius: var(--r); padding: 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
-.card.acc { border-top: 5px solid var(--c); }
+.card.acc {
+  position: relative;
+  border-top: 5px solid var(--c);
+  transition: transform .12s ease, box-shadow .12s ease;
+  user-select: none;
+}
+.card.acc:hover {
+  transform: translateY(-1px);
+}
+.card.acc.acc-open {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+.acc-three-dots {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--mute);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+  z-index: 3;
+}
+.acc-three-dots:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--ink);
+}
+.acc-expand-toggle {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.acc-upcoming-tray {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: default;
+}
+.acc-upcoming-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg);
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
 .stash-amt b { font-size: 20px; }
 
 /* forms / modal */
@@ -542,15 +602,71 @@ main { flex: 1; min-width: 0; }
   font-size: 12px;
 }
 
-.fx-status-box {
+/* Account Filter Bar in Cashflow */
+.cashflow-acc-filter-bar {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   background: var(--card);
-  padding: 6px 12px;
-  border-radius: 12px;
+  padding: 8px 14px;
+  border-radius: 14px;
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
+}
+
+.acc-filter-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.acc-filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.acc-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  color: var(--mute);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.acc-filter-pill.on {
+  background: #FFFFFF;
+  border-color: var(--acc-c, var(--ink));
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.acc-filter-pill.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pill-check {
+  font-size: 11px;
+  font-weight: 800;
+  color: #16A34A;
 }
 
 .cashflow-toolbar {
