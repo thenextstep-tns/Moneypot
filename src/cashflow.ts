@@ -1,6 +1,7 @@
 import type { Account, Category, Occurrence, Payment, Plan, Stash, Transfer } from './types';
 import { convert } from './fx';
 import { addDays, occurrences, parse, today } from './schedule';
+import { calcProjectedStashBalance, calcStashBalance } from './balances';
 
 export interface CashflowItem {
   id: string;
@@ -106,9 +107,12 @@ export function calculateCashflowRange(
   const getPaymentDelta = (p: Payment, a: Account): number => {
     const plan = plans.find(x => x.id === p.planId);
     const kind = p.kind ?? plan?.kind ?? 'expense';
+    const stashId = p.stashId ?? plan?.stashId;
+    const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
+    const sourceAccId = p.accountId || plan?.accountId || s?.accountId;
     const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
     let d = 0;
-    if (p.accountId === a.id) d += kind === 'income' ? amt : -amt;
+    if (sourceAccId === a.id) d += kind === 'income' ? amt : -amt;
     return d;
   };
 
@@ -129,9 +133,11 @@ export function calculateCashflowRange(
   // Helper: compute delta for an account from a future occurrence
   const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
     const kind = o.plan.kind ?? 'expense';
+    const s = o.stashId ? stashes.find(x => x.id === o.stashId) : (o.plan.stashId ? stashes.find(x => x.id === o.plan.stashId) : undefined);
+    const sourceAccId = o.accountId || o.plan.accountId || s?.accountId;
     const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
     let d = 0;
-    if (o.accountId === a.id) d += kind === 'income' ? amt : -amt;
+    if (sourceAccId === a.id) d += kind === 'income' ? amt : -amt;
     return d;
   };
 
@@ -278,27 +284,17 @@ export function calculateCashflowRange(
       // Calculate stashed money associated with this account up to this date
       let stashedForAcc = 0;
       for (const s of stashes) {
-        if (s.accountId === a.id && s.startAmount > 0) {
-          stashedForAcc += s.currency === a.currency ? s.startAmount : convert(s.startAmount, s.currency, a.currency);
-        }
-      }
-      for (const p of confirmedPayments) {
-        if (p.date <= date && p.kind === 'saving') {
-          const s = stashes.find(x => x.id === (p.stashId ?? plans.find(pl => pl.id === p.planId)?.stashId));
-          const targetAccId = s?.accountId || p.accountId;
-          if (targetAccId === a.id) {
-            stashedForAcc += p.currency === a.currency ? p.amount : convert(p.amount, p.currency, a.currency);
-          }
-        }
-      }
-      if (date > t) {
-        for (const o of futureOccurrences) {
-          if (o.dueDate <= date && o.kind === 'saving') {
-            const s = stashes.find(x => x.id === o.stashId);
-            const targetAccId = s?.accountId || o.accountId;
-            if (targetAccId === a.id) {
-              stashedForAcc += o.currency === a.currency ? o.amount : convert(o.amount, o.currency, a.currency);
-            }
+        const accId = s.accountId || accounts[0]?.id;
+        if (accId === a.id) {
+          if (date > t) {
+            const proj = calcProjectedStashBalance(s, date, payments, transfers, plans, t);
+            const amtInAcc = proj.projected;
+            stashedForAcc += s.currency === a.currency ? amtInAcc : convert(amtInAcc, s.currency, a.currency);
+          } else {
+            const pastPays = confirmedPayments.filter(p => p.date <= date);
+            const pastTrans = activeTransfers.filter(tr => tr.date <= date);
+            const bStash = calcStashBalance(s, pastPays, pastTrans, plans);
+            stashedForAcc += s.currency === a.currency ? bStash : convert(bStash, s.currency, a.currency);
           }
         }
       }

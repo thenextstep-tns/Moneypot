@@ -15,12 +15,12 @@ import './styles.css';
 
 const TABS = [
   ['today', '✅', 'Today', Today],
-  ['cashflow', '📈', 'Cashflow', Cashflow],
-  ['pots', '🫙', 'Pots', Pots],
   ['plan', '🗓️', 'Plan', Plans],
-  ['logbook', '📜', 'Logbook', LogBook],
+  ['pots', '🫙', 'Pots', Pots],
   ['stashes', '🐷', 'Stashes', Stashes],
   ['accounts', '💳', 'Accounts', Accounts],
+  ['logbook', '📜', 'Logbook', LogBook],
+  ['cashflow', '📈', 'Cashflow', Cashflow],
 ] as const;
 
 function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExit: () => void }) {

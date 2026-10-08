@@ -210,7 +210,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
         freq: 'monthly',
         every: 1,
         startDate: today(),
-        accountId: accounts[0]?.id,
+        accountId: s.accountId || accounts[0]?.id,
       });
     }
     onClose();
