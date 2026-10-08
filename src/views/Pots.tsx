@@ -44,7 +44,7 @@ export function Pots() {
   );
 
   const income = occ.filter(o => o.kind === 'income');
-  const outgoing = occ.filter(o => o.kind !== 'income');
+  const outgoing = occ.filter(o => o.kind !== 'income' && o.kind !== 'transfer');
 
   const inPlan = sum(income, cur);
   const inDone = sum(income.filter(o => o.status === 'confirmed'), cur);
