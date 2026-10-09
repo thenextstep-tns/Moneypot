@@ -3,6 +3,7 @@ import type { Account, Payment, Stash } from './types';
 import { dayLabel, money, today } from './schedule';
 import { uid, useData } from './store';
 import { calcAccountBalance } from './balances';
+import { convert } from './fx';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
@@ -328,6 +329,17 @@ export function AccountCardsSelect({
         {accounts.map(a => {
           const isSel = activeId === a.id;
           const bal = balances?.get(a.id);
+          const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
+          const stashedAmt = (stashes || []).reduce((sum, s) => {
+            const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+            if (parentAccId === a.id) {
+              const sBal = Math.max(0, balances?.get(`stash_${s.id}`) ?? balances?.get(s.id) ?? 0);
+              const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
+              return sum + converted;
+            }
+            return sum;
+          }, 0);
+          const freeAmt = bal !== undefined ? Math.max(0, bal - stashedAmt) : undefined;
 
           let projBal: number | undefined;
           if (projectedBalances) {
@@ -352,10 +364,21 @@ export function AccountCardsSelect({
               <div className="acc-card-info">
                 <span className="acc-card-name">{a.name}</span>
                 <div className="acc-card-sub" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span>
-                    {a.currency}
-                    {bal !== undefined ? ` · Current: ${money(bal, a.currency)}` : ''}
-                  </span>
+                  {bal !== undefined && stashedAmt > 0 ? (
+                    <>
+                      <span>
+                        {a.currency} · <b>{money(freeAmt ?? 0, a.currency)} free</b>
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--mute)' }}>
+                        Total: {money(bal, a.currency)} (🔒 {money(stashedAmt, a.currency)} reserved)
+                      </span>
+                    </>
+                  ) : (
+                    <span>
+                      {a.currency}
+                      {bal !== undefined ? ` · Current: ${money(bal, a.currency)}` : ''}
+                    </span>
+                  )}
                   {isFuture && targetDate && projBal !== undefined && (
                     <span
                       style={{

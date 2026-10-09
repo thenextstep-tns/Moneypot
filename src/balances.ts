@@ -380,6 +380,19 @@ export function calcTotalAvailableBalance(
   return Math.max(0, total - stashed);
 }
 
+export interface CheckAccountFundsResult {
+  hasAccount: boolean;
+  accountName?: string;
+  balance?: number; // Free spending balance if account, stash balance if stash
+  totalBalance?: number;
+  stashedBalance?: number;
+  stashesInAccount?: Stash[];
+  accountCurrency?: string;
+  neededInAccCur: number;
+  isShort: boolean;
+  shortBy: number;
+}
+
 /** Check if an account or stash has sufficient balance for a specific payment/expense */
 export function checkAccountFunds(
   accountId: string | undefined,
@@ -388,7 +401,7 @@ export function checkAccountFunds(
   accounts: Account[],
   balances: Map<string, number>,
   stashes: Stash[] = []
-): { hasAccount: boolean; accountName?: string; balance?: number; accountCurrency?: string; neededInAccCur: number; isShort: boolean; shortBy: number } {
+): CheckAccountFundsResult {
   if (!accountId) {
     return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
   }
@@ -406,6 +419,8 @@ export function checkAccountFunds(
       hasAccount: true,
       accountName: `${stash.emoji} ${stash.name} (Stash)`,
       balance: bal,
+      totalBalance: bal,
+      stashedBalance: 0,
       accountCurrency: stash.currency,
       neededInAccCur,
       isShort,
@@ -417,15 +432,32 @@ export function checkAccountFunds(
   if (!acc) {
     return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
   }
-  const bal = balances.get(acc.id) ?? 0;
+  const totalBal = balances.get(acc.id) ?? 0;
+  let stashedBal = 0;
+  const stashesInAcc: Stash[] = [];
+  for (const s of stashes) {
+    const parentId = s.accountId || accounts[0]?.id;
+    if (parentId === acc.id) {
+      const sBal = Math.max(0, balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0);
+      const converted = s.currency === acc.currency ? sBal : convert(sBal, s.currency, acc.currency);
+      stashedBal += converted;
+      if (sBal > 0) {
+        stashesInAcc.push(s);
+      }
+    }
+  }
+  const freeBal = Math.max(0, totalBal - stashedBal);
   const neededInAccCur = convert(amount, currency, acc.currency);
-  const isShort = bal < neededInAccCur;
-  const shortBy = Math.max(0, neededInAccCur - bal);
+  const isShort = freeBal < neededInAccCur;
+  const shortBy = Math.max(0, neededInAccCur - freeBal);
 
   return {
     hasAccount: true,
     accountName: acc.name,
-    balance: bal,
+    balance: freeBal,
+    totalBalance: totalBal,
+    stashedBalance: stashedBal,
+    stashesInAccount: stashesInAcc,
     accountCurrency: acc.currency,
     neededInAccCur,
     isShort,

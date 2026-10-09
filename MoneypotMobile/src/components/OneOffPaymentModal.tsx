@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { convert, getRate } from '../domain/fx';
-import { today } from '../domain/schedule';
+import { today, money } from '../domain/schedule';
+import { calcAllAccountBalances, checkAccountFunds } from '../domain/balances';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -30,14 +31,62 @@ export function OneOffPaymentModal({
   initialFromId,
   initialToId,
 }: OneOffPaymentModalProps) {
-  const { accounts, categories, stashes, settings, save } = useData();
+  const { accounts, categories, stashes, settings, payments, transfers, plans, save } = useData();
 
   const [opType, setOpType] = useState<'expense' | 'income' | 'transfer'>(initialType || 'expense');
 
   const expenseCats = categories.filter(c => c.kind === 'expense');
   const incomeCats = categories.filter(c => c.kind === 'income');
 
-  // Expense & Income state
+  // Balances
+  const currentBalMap = useMemo(
+    () => calcAllAccountBalances(accounts, payments, transfers, plans, stashes),
+    [accounts, payments, transfers, plans, stashes]
+  );
+
+  const accountOptions = useMemo(() => [
+    ...accounts.map(a => {
+      const bal = currentBalMap.get(a.id) ?? 0;
+      const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
+      const stashedAmt = (stashes || []).reduce((sum, s) => {
+        const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+        if (parentAccId === a.id) {
+          const sBal = Math.max(0, currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0);
+          const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
+          return sum + converted;
+        }
+        return sum;
+      }, 0);
+      const freeBal = Math.max(0, bal - stashedAmt);
+      return {
+        id: a.id,
+        name: a.name,
+        currency: a.currency,
+        bal,
+        stashedAmt,
+        freeBal,
+        isStash: false,
+      };
+    }),
+    ...stashes
+      .filter(s => s.isInstantAccess)
+      .map(s => {
+        const bal = currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0;
+        return {
+          id: `stash_${s.id}`,
+          name: `${s.emoji} ${s.name} (Stash)`,
+          currency: s.currency,
+          bal,
+          stashedAmt: 0,
+          freeBal: bal,
+          isStash: true,
+        };
+      }),
+  ], [accounts, stashes, currentBalMap]);
+
+  // Transfer state
+  const selectableSources = accountOptions;
+
   const [name, setName] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(initialFromId || accounts[0]?.id || '');
@@ -46,12 +95,6 @@ export function OneOffPaymentModal({
   );
   const [note, setNote] = useState('');
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
-
-  // Transfer state
-  const selectableSources = [
-    ...accounts.map(a => ({ id: a.id, name: a.name, currency: a.currency, isStash: false })),
-    ...stashes.map(s => ({ id: `stash_${s.id}`, name: `${s.emoji} ${s.name}`, currency: s.currency, isStash: true })),
-  ];
 
   const [transferFromId, setTransferFromId] = useState(initialFromId || accounts[0]?.id || '');
   const [transferToId, setTransferToId] = useState(
@@ -64,41 +107,16 @@ export function OneOffPaymentModal({
   const [transferToAmountStr, setTransferToAmountStr] = useState('');
   const [transferNote, setTransferNote] = useState('');
 
-  useEffect(() => {
-    if (visible) {
-      if (initialType) setOpType(initialType);
-      if (initialFromId) {
-        setSelectedAccountId(initialFromId);
-        setTransferFromId(initialFromId);
-      }
-      if (initialToId) {
-        setTransferToId(initialToId);
-      }
-    }
-  }, [visible, initialType, initialFromId, initialToId]);
-
-  useEffect(() => {
-    if (opType === 'income') {
-      if (!incomeCats.some(c => c.id === selectedCategoryId)) {
-        setSelectedCategoryId(incomeCats[0]?.id || '');
-      }
-    } else if (opType === 'expense') {
-      if (!expenseCats.some(c => c.id === selectedCategoryId)) {
-        setSelectedCategoryId(expenseCats[0]?.id || categories[0]?.id || '');
-      }
-    }
-  }, [opType]);
-
-  const accountOptions = [
-    ...accounts.map(a => ({ id: a.id, name: a.name, currency: a.currency })),
-    ...stashes
-      .filter(s => s.isInstantAccess)
-      .map(s => ({ id: `stash_${s.id}`, name: `${s.emoji} ${s.name} (Stash)`, currency: s.currency })),
-  ];
+  const fundCheck = useMemo(() => {
+    const amt = parseFloat(amountStr.replace(',', '.')) || 0;
+    return checkAccountFunds(selectedAccountId, amt, settings.currency || 'EUR', accounts, currentBalMap, stashes);
+  }, [selectedAccountId, amountStr, settings.currency, accounts, currentBalMap, stashes]);
 
   const fromSource = selectableSources.find(s => s.id === transferFromId) || selectableSources[0];
   const toSource = selectableSources.find(s => s.id === transferToId) || selectableSources[1] || selectableSources[0];
   const isMultiCur = fromSource && toSource && fromSource.currency !== toSource.currency;
+  const numTransferAmt = parseFloat(transferAmountStr.replace(',', '.')) || 0;
+  const transferIsShort = fromSource && numTransferAmt > 0 && numTransferAmt > fromSource.freeBal;
 
   const handleSaveExpense = async () => {
     const amt = parseFloat(amountStr.replace(',', '.'));
@@ -226,6 +244,10 @@ export function OneOffPaymentModal({
       Alert.alert('Invalid Selection', 'Please select different source and destination.');
       return;
     }
+    if (transferIsShort) {
+      Alert.alert('Insufficient Funds', `${fromSource.name} only has ${money(fromSource.freeBal, fromSource.currency)} available free funds.`);
+      return;
+    }
 
     triggerHaptic('success');
     const transferId = `tr_${uid()}`;
@@ -333,12 +355,47 @@ export function OneOffPaymentModal({
                         }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                          {acc.name}
+                          {acc.name} · {acc.stashedAmt > 0 ? `${money(acc.freeBal, acc.currency)} free` : money(acc.bal, acc.currency)}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </ScrollView>
+
+                {fundCheck.isShort && (
+                  <View style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: 1, borderRadius: 10, padding: 10, marginVertical: 8 }}>
+                    <Text style={{ fontSize: 13, color: '#991B1B', fontWeight: '600' }}>
+                      ⚠️ Low free balance: {fundCheck.accountName} only has {money(fundCheck.balance ?? 0, fundCheck.accountCurrency)} free to spend
+                      {fundCheck.stashedBalance && fundCheck.stashedBalance > 0
+                        ? ` (Total: ${money(fundCheck.totalBalance ?? 0, fundCheck.accountCurrency)}, 🔒 ${money(fundCheck.stashedBalance, fundCheck.accountCurrency)} in stashes)`
+                        : ''}
+                    </Text>
+                    {fundCheck.stashesInAccount && fundCheck.stashesInAccount.length > 0 && (
+                      <View style={{ marginTop: 6 }}>
+                        <Text style={{ fontSize: 12, color: '#7F1D1D', marginBottom: 4 }}>Pay from a stash instead?</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {fundCheck.stashesInAccount.map(s => {
+                            const sBal = currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0;
+                            return (
+                              <TouchableOpacity
+                                key={s.id}
+                                style={{ backgroundColor: '#FFFFFF', borderColor: '#FCA5A5', borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}
+                                onPress={() => {
+                                  triggerHaptic('light');
+                                  setSelectedAccountId(`stash_${s.id}`);
+                                }}
+                              >
+                                <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600' }}>
+                                  {s.emoji} Pay from {s.name} ({money(sBal, s.currency)})
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
 
                 <Text style={styles.fieldLabel}>Pot (Category)</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -492,7 +549,7 @@ export function OneOffPaymentModal({
                         }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                          {s.name} ({s.currency})
+                          {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -513,7 +570,7 @@ export function OneOffPaymentModal({
                         }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                          {s.name} ({s.currency})
+                          {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -575,6 +632,30 @@ export function OneOffPaymentModal({
                   <Text style={styles.fxRateText}>
                     Live FX Rate: 1 {fromSource.currency} ≈ {getRate(fromSource.currency, toSource.currency).toFixed(4)} {toSource.currency}
                   </Text>
+                )}
+
+                {transferIsShort && (
+                  <View style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: 1, borderRadius: 10, padding: 10, marginVertical: 8 }}>
+                    <Text style={{ fontSize: 13, color: '#991B1B', fontWeight: '600' }}>
+                      ⚠️ Insufficient free funds in {fromSource.name}: Only {money(fromSource.freeBal, fromSource.currency)} available free to transfer (short by {money(numTransferAmt - fromSource.freeBal, fromSource.currency)})
+                    </Text>
+                    {!fromSource.isStash && toSource.isStash && (
+                      <TouchableOpacity
+                        style={{ marginTop: 6, backgroundColor: '#FFFFFF', borderColor: '#FCA5A5', borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' }}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          const curFrom = transferFromId;
+                          const curTo = transferToId;
+                          setTransferFromId(curTo);
+                          setTransferToId(curFrom);
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600' }}>
+                          ⇄ Swap direction to withdraw from {toSource.name}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 )}
 
                 <Text style={styles.fieldLabel}>Note (Optional)</Text>

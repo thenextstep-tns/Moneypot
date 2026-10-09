@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { uid, useData } from '../store';
 import { dayLabel, money, today } from '../schedule';
 import { convert } from '../fx';
-import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance, checkAccountFunds } from '../balances';
+import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance, checkAccountFunds, calcAccountStashedBalance } from '../balances';
 import type { Payment, Plan, QuickTemplate, Transfer } from '../types';
 import { ACC_ICONS, AccountCardsSelect, CurrencySelect, Field, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
@@ -178,7 +178,16 @@ export function OneOffPaymentModal({
   const toParty = getParty(toId);
   const fromBals = fromParty ? getPartyBals(fromParty.id) : null;
   const toBals = toParty ? getPartyBals(toParty.id) : null;
-  const effectiveFromBal = isFuture ? (fromBals?.projected ?? 0) : (fromBals?.current ?? 0);
+
+  const fromAcc = fromParty && !fromParty.isStash ? accounts.find(a => a.id === fromParty.id) : null;
+  const fromStashedBal = fromAcc ? calcAccountStashedBalance(fromAcc, stashes, payments, transfers, plans, accounts) : 0;
+  const fromFreeCurrent = Math.max(0, (fromBals?.current ?? 0) - fromStashedBal);
+  const effectiveFromBal = isFuture ? (fromBals?.projected ?? 0) : fromFreeCurrent;
+
+  const toAcc = toParty && !toParty.isStash ? accounts.find(a => a.id === toParty.id) : null;
+  const toStashedBal = toAcc ? calcAccountStashedBalance(toAcc, stashes, payments, transfers, plans, accounts) : 0;
+  const toFreeCurrent = Math.max(0, (toBals?.current ?? 0) - toStashedBal);
+
   const transferIsShort = !!fromParty && +transferAmount > 0 && +transferAmount > effectiveFromBal;
 
   const handleTransferFromChange = (newFromId: string) => {
@@ -651,8 +660,32 @@ export function OneOffPaymentModal({
           </Field>
 
           {!isFuture && funds?.isShort && (
-            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13 }}>
-              ⚠️ <b>Low balance:</b> {funds.accountName} only has {funds.balance} {funds.accountCurrency}.
+            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div>
+                ⚠️ <b>Low free balance:</b> {funds.accountName} only has <b>{money(funds.balance ?? 0, funds.accountCurrency)} free</b> to spend
+                {funds.stashedBalance && funds.stashedBalance > 0 ? (
+                  <span> (Total: {money(funds.totalBalance ?? 0, funds.accountCurrency)}, but 🔒 {money(funds.stashedBalance, funds.accountCurrency)} is reserved in stashes).</span>
+                ) : '.'}
+              </div>
+              {funds.stashesInAccount && funds.stashesInAccount.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 2 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Did you want to pay from a stash instead?</span>
+                  {funds.stashesInAccount.map(s => {
+                    const sBal = balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="btn"
+                        style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, background: '#FFFFFF', border: '1px solid #F8B4B4', color: '#9B1C1C', cursor: 'pointer' }}
+                        onClick={() => setAccountId(`stash_${s.id}`)}
+                      >
+                        <span>{s.emoji} Pay from {s.name} ({money(sBal, s.currency)})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -960,9 +993,11 @@ export function OneOffPaymentModal({
               <optgroup label="💳 Accounts">
                 {accounts.map(a => {
                   const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
+                  const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
+                  const free = Math.max(0, b.current - stashed);
                   return (
                     <option key={a.id} value={a.id} disabled={a.id === toId}>
-                      {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
+                      {a.name} ({a.currency}) · {stashed > 0 ? `${money(free, a.currency)} free (Total: ${money(b.current, a.currency)})` : `Current: ${money(b.current, a.currency)}`}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
                     </option>
                   );
                 })}
@@ -988,9 +1023,11 @@ export function OneOffPaymentModal({
               <optgroup label="💳 Accounts">
                 {accounts.map(a => {
                   const b = calcProjectedAccountBalance(a, date, payments, transfers, plans, stashes);
+                  const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
+                  const free = Math.max(0, b.current - stashed);
                   return (
                     <option key={a.id} value={a.id} disabled={a.id === fromId}>
-                      {a.name} ({a.currency}) · Current: {money(b.current, a.currency)}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
+                      {a.name} ({a.currency}) · {stashed > 0 ? `${money(free, a.currency)} free (Total: ${money(b.current, a.currency)})` : `Current: ${money(b.current, a.currency)}`}{isFuture ? ` → Projected on ${dayLabel(date)}: ${money(b.projected, a.currency)}` : ''}
                     </option>
                   );
                 })}
@@ -1022,7 +1059,16 @@ export function OneOffPaymentModal({
                 <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>From: {fromParty.icon} {fromParty.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
-                    Current: <b>{money(fromBals.current, fromParty.currency)}</b>
+                    {fromStashedBal > 0 ? (
+                      <>
+                        Free: <b>{money(fromFreeCurrent, fromParty.currency)}</b>
+                        <span style={{ display: 'block', fontSize: 10, color: 'var(--mute)', marginTop: 1 }}>
+                          Total: {money(fromBals.current, fromParty.currency)} (🔒 {money(fromStashedBal, fromParty.currency)})
+                        </span>
+                      </>
+                    ) : (
+                      <>Current: <b>{money(fromBals.current, fromParty.currency)}</b></>
+                    )}
                   </div>
                   {isFuture && (
                     <div style={{ fontSize: 11, color: fromBals.projected < 0 ? '#DC2626' : '#2563EB', marginTop: 2, fontWeight: 600 }}>
@@ -1031,7 +1077,7 @@ export function OneOffPaymentModal({
                   )}
                   {+transferAmount > 0 && (
                     <div style={{ fontSize: 11, color: effectiveFromBal - +transferAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
-                      After move: <b>{money(effectiveFromBal - +transferAmount, fromParty.currency)}</b>
+                      After move: <b>{money(effectiveFromBal - +transferAmount, fromParty.currency)}</b> free
                     </div>
                   )}
                 </div>
@@ -1039,7 +1085,16 @@ export function OneOffPaymentModal({
                 <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>To: {toParty.icon} {toParty.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
-                    Current: <b>{money(toBals.current, toParty.currency)}</b>
+                    {toStashedBal > 0 ? (
+                      <>
+                        Free: <b>{money(toFreeCurrent, toParty.currency)}</b>
+                        <span style={{ display: 'block', fontSize: 10, color: 'var(--mute)', marginTop: 1 }}>
+                          Total: {money(toBals.current, toParty.currency)} (🔒 {money(toStashedBal, toParty.currency)})
+                        </span>
+                      </>
+                    ) : (
+                      <>Current: <b>{money(toBals.current, toParty.currency)}</b></>
+                    )}
                   </div>
                   {isFuture && (
                     <div style={{ fontSize: 11, color: '#2563EB', marginTop: 2, fontWeight: 600 }}>
@@ -1093,11 +1148,31 @@ export function OneOffPaymentModal({
           )}
 
           {transferIsShort && (
-            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>⚠️</span>
-              <span>
-                <strong>Insufficient {isFuture ? 'projected ' : ''}funds in {fromParty?.name}:</strong> {isFuture ? `Projected balance on ${dayLabel(date)}` : 'Available balance'} is {money(effectiveFromBal, fromParty?.currency)}, which is {money(+transferAmount - effectiveFromBal, fromParty?.currency)} short.
-              </span>
+            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>⚠️</span>
+                <span>
+                  <strong>Insufficient {isFuture ? 'projected ' : ''}funds in {fromParty?.name}:</strong> {isFuture ? `Projected balance on ${dayLabel(date)}` : 'Available free balance'} is {money(effectiveFromBal, fromParty?.currency)}, which is {money(+transferAmount - effectiveFromBal, fromParty?.currency)} short.
+                </span>
+              </div>
+              {fromParty && !fromParty.isStash && toParty?.isStash && (
+                <div style={{ fontSize: 12, marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>💡 Did you want to take money <em>out</em> of <b>{toParty.name}</b> and put it into <b>{fromParty.name}</b>?</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: '3px 8px', fontSize: 11, background: '#FFFFFF', border: '1px solid #F8B4B4', color: '#9B1C1C', cursor: 'pointer' }}
+                    onClick={() => {
+                      const curFrom = fromId;
+                      const curTo = toId;
+                      handleTransferFromChange(curTo);
+                      handleTransferToChange(curFrom);
+                    }}
+                  >
+                    ⇄ Swap direction
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

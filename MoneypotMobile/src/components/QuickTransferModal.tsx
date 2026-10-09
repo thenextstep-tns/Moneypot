@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -12,6 +12,7 @@ import {
 import { useData, uid } from '../context/DataContext';
 import { convert, getRate } from '../domain/fx';
 import { today, money } from '../domain/schedule';
+import { calcAllAccountBalances } from '../domain/balances';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -28,15 +29,55 @@ export function QuickTransferModal({
   defaultFromAccountId,
   defaultToAccountId,
 }: QuickTransferModalProps) {
-  const { accounts, stashes, save } = useData();
+  const { accounts, stashes, payments, transfers, plans, save } = useData();
+
+  const currentBalMap = useMemo(
+    () => calcAllAccountBalances(accounts, payments, transfers, plans, stashes),
+    [accounts, payments, transfers, plans, stashes]
+  );
 
   // Instant access stashes are also valid transfer participants
-  const selectableSources = [
-    ...accounts.map(a => ({ id: a.id, name: a.name, currency: a.currency, isStash: false, color: a.color })),
+  const selectableSources = useMemo(() => [
+    ...accounts.map(a => {
+      const bal = currentBalMap.get(a.id) ?? 0;
+      const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
+      const stashedAmt = (stashes || []).reduce((sum, s) => {
+        const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+        if (parentAccId === a.id) {
+          const sBal = Math.max(0, currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0);
+          const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
+          return sum + converted;
+        }
+        return sum;
+      }, 0);
+      const freeBal = Math.max(0, bal - stashedAmt);
+      return {
+        id: a.id,
+        name: a.name,
+        currency: a.currency,
+        bal,
+        stashedAmt,
+        freeBal,
+        isStash: false,
+        color: a.color,
+      };
+    }),
     ...stashes
       .filter(s => s.isInstantAccess)
-      .map(s => ({ id: `stash_${s.id}`, name: `${s.emoji} ${s.name}`, currency: s.currency, isStash: true, color: '#2FA36B' })),
-  ];
+      .map(s => {
+        const bal = currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0;
+        return {
+          id: `stash_${s.id}`,
+          name: `${s.emoji} ${s.name}`,
+          currency: s.currency,
+          bal,
+          stashedAmt: 0,
+          freeBal: bal,
+          isStash: true,
+          color: '#2FA36B',
+        };
+      }),
+  ], [accounts, stashes, currentBalMap]);
 
   const [fromId, setFromId] = useState(defaultFromAccountId || selectableSources[0]?.id || '');
   const [toId, setToId] = useState(defaultToAccountId || selectableSources[1]?.id || selectableSources[0]?.id || '');
@@ -82,6 +123,11 @@ export function QuickTransferModal({
       return;
     }
 
+    if (transferIsShort) {
+      Alert.alert('Insufficient Funds', `${fromSource.name} only has ${money(fromSource.freeBal, fromSource.currency)} available free funds.`);
+      return;
+    }
+
     triggerHaptic('success');
     const transferId = `tr_${uid()}`;
     await save('transfers', {
@@ -108,6 +154,8 @@ export function QuickTransferModal({
 
   const rate = getRate(fromSource.currency, toSource.currency);
   const isMultiCur = fromSource.currency !== toSource.currency;
+  const numFromAmt = parseFloat(fromAmountStr.replace(',', '.')) || 0;
+  const transferIsShort = fromSource && numFromAmt > 0 && numFromAmt > fromSource.freeBal;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -136,7 +184,7 @@ export function QuickTransferModal({
                     }}
                   >
                     <Text style={[styles.accountChipText, active && styles.accountChipTextActive]}>
-                      {s.name} ({s.currency})
+                      {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -158,7 +206,7 @@ export function QuickTransferModal({
                     }}
                   >
                     <Text style={[styles.accountChipText, active && styles.accountChipTextActive]}>
-                      {s.name} ({s.currency})
+                      {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -196,6 +244,30 @@ export function QuickTransferModal({
               <Text style={styles.fxRateText}>
                 Live FX Rate: 1 {fromSource.currency} ≈ {rate.toFixed(4)} {toSource.currency}
               </Text>
+            )}
+
+            {transferIsShort && (
+              <View style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: 1, borderRadius: 10, padding: 10, marginVertical: 8 }}>
+                <Text style={{ fontSize: 13, color: '#991B1B', fontWeight: '600' }}>
+                  ⚠️ Insufficient free funds in {fromSource.name}: Only {money(fromSource.freeBal, fromSource.currency)} available free to transfer (short by {money(numFromAmt - fromSource.freeBal, fromSource.currency)})
+                </Text>
+                {!fromSource.isStash && toSource.isStash && (
+                  <TouchableOpacity
+                    style={{ marginTop: 6, backgroundColor: '#FFFFFF', borderColor: '#FCA5A5', borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' }}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      const curFrom = fromId;
+                      const curTo = toId;
+                      setFromId(curTo);
+                      setToId(curFrom);
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600' }}>
+                      ⇄ Swap direction to withdraw from {toSource.name}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
 
             {/* Note */}
