@@ -11,6 +11,7 @@ import {
   Switch,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
+import { calcAccountAvailableBalance } from '../domain/balances';
 import { today, money } from '../domain/schedule';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -30,7 +31,7 @@ export function StashEditModal({
   stashToEdit,
   onOpenCorrection,
 }: StashEditModalProps) {
-  const { accounts, settings, save, remove } = useData();
+  const { accounts, settings, save, remove, payments, transfers, plans, stashes } = useData();
 
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('🌱');
@@ -64,16 +65,30 @@ export function StashEditModal({
     }
   }, [stashToEdit, visible]);
 
-  const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Name Required', 'Please enter a name for your savings stash.');
-      return;
-    }
-
+  const doSave = async (addTechnicalEdit = false, targetAcc?: any, starterAmt = 0) => {
     triggerHaptic('success');
     const stashId = stashToEdit ? stashToEdit.id : `stash_${uid()}`;
     const targetAmt = parseFloat(targetStr.replace(',', '.')) || 0;
-    const starterAmt = parseFloat(starterBalanceStr.replace(',', '.')) || 0;
+
+    if (addTechnicalEdit && targetAcc && starterAmt > 0) {
+      const techPaymentId = `adj_acc_${targetAcc.id}_${Date.now()}`;
+      await save('payments', {
+        id: techPaymentId,
+        planId: techPaymentId,
+        dueDate: today(),
+        date: today(),
+        name: 'Technical balance edit',
+        amount: starterAmt,
+        currency: targetAcc.currency,
+        accountId: targetAcc.id,
+        kind: 'income',
+        categoryId: 'other',
+        subcategory: 'Balance adjustment',
+        note: 'Technical balance edit for prepping the stash top up (confirmed by user)',
+        status: 'confirmed',
+        isCorrection: true,
+      });
+    }
 
     const newStash: Stash = {
       id: stashId,
@@ -111,6 +126,50 @@ export function StashEditModal({
     }
 
     onClose();
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('Name Required', 'Please enter a name for your savings stash.');
+      return;
+    }
+
+    const starterAmt = parseFloat(starterBalanceStr.replace(',', '.')) || 0;
+    const targetAccId = accountId || accounts.find(a => a.type === 'savings')?.id || accounts[0]?.id;
+    const targetAcc = accounts.find(a => a.id === targetAccId);
+    const availInAcc = targetAcc
+      ? calcAccountAvailableBalance(targetAcc, stashes, payments, transfers, plans, accounts)
+      : 0;
+
+    if (!stashToEdit && starterAmt > 0 && targetAcc && starterAmt > availInAcc) {
+      Alert.alert(
+        'Is this money already set apart?',
+        `You're setting a starter balance of ${money(starterAmt, currency)} for this stash, but ${targetAcc.name} currently only has ${money(availInAcc, targetAcc.currency)} available.\n\nIs this money you already had set aside separately (not taking it out of your currently available cash in ${targetAcc.name})?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'No, deduct from available cash',
+            style: 'default',
+            onPress: () => {
+              void doSave(false, targetAcc, starterAmt);
+            },
+          },
+          {
+            text: `Yes, add to ${targetAcc.name}`,
+            style: 'default',
+            onPress: () => {
+              void doSave(true, targetAcc, starterAmt);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    await doSave(false, targetAcc, starterAmt);
   };
 
   const handleDelete = () => {

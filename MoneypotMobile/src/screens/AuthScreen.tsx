@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
 import { useData } from '../context/DataContext';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -93,17 +94,31 @@ export function AuthScreen() {
     setLoading(true);
 
     try {
-      const supported = await Linking.canOpenURL(GOOGLE_AUTH_URL);
-      if (supported) {
-        await Linking.openURL(GOOGLE_AUTH_URL);
+      const authUrl = `${GOOGLE_AUTH_URL}?prompt=select_account`;
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        'moneypot://auth'
+      );
+
+      if (result.type === 'success' && result.url) {
+        handleAuthUrl(result.url);
       } else {
-        setErrorMsg('Unable to open web browser for Google sign in.');
         setLoading(false);
       }
     } catch (err: any) {
-      console.warn('Error launching Google sign in:', err);
-      setErrorMsg('Could not open sign in window. Please try again.');
-      setLoading(false);
+      console.warn('WebBrowser auth session error, falling back to Linking:', err);
+      try {
+        const supported = await Linking.canOpenURL(GOOGLE_AUTH_URL);
+        if (supported) {
+          await Linking.openURL(`${GOOGLE_AUTH_URL}?prompt=select_account`);
+        } else {
+          setErrorMsg('Unable to open web browser for Google sign in.');
+          setLoading(false);
+        }
+      } catch (fallbackErr: any) {
+        setErrorMsg('Could not open sign in window. Please try again.');
+        setLoading(false);
+      }
     }
   };
 

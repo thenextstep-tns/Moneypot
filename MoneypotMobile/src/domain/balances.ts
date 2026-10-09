@@ -121,7 +121,7 @@ export function calcAccountAvailableBalance(
 ): number {
   const total = calcAccountBalance(a, payments, transfers, plans, stashes);
   const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, allAccounts);
-  return total - stashed;
+  return Math.max(0, total - stashed);
 }
 
 /** Map of all account balances keyed by account ID (and stash_ ID for stashes) */

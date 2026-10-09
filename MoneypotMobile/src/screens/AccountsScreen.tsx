@@ -108,7 +108,7 @@ export function AccountsScreen() {
         {accounts.map(acc => {
           const totalBal = calcAccountBalance(acc, payments, transfers, plans, stashes);
           const stashedBal = calcAccountStashedBalance(acc, stashes, payments, transfers, plans, accounts);
-          const freeBal = totalBal - stashedBal;
+          const freeBal = Math.max(0, totalBal - stashedBal);
           const typeIcons: Record<Account['type'], string> = {
             card: '💳',
             bank: '🏦',

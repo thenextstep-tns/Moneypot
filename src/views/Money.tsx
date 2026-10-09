@@ -8,6 +8,7 @@ import { EmojiPicker } from '../emojis';
 import {
   calcAccountBalance,
   calcAccountStashedBalance,
+  calcAccountAvailableBalance,
   calcProjectedAccountBalance,
   calcStashBalance,
   calcProjectedStashBalance,
@@ -143,7 +144,7 @@ export function Stashes() {
 }
 
 function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
-  const { user, accounts, categories, settings, payments, plans, transfers, save, remove } = useData();
+  const { user, accounts, categories, settings, payments, plans, transfers, stashes, save, remove } = useData();
   const savingCats = categories.filter(c => c.kind === 'saving');
   const expenseCats = categories.filter(c => c.kind === 'expense');
   const defaultCatId = savingCats[0]?.id || 'savings';
@@ -169,6 +170,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   });
   const [isInstant, setIsInstant] = useState(initialInstant);
   const [monthly, setMonthly] = useState(0);
+  const [fundingPrompt, setFundingPrompt] = useState<{ targetAcc: Account; initialAmount: number; availInAcc: number } | null>(null);
   const set = (p: Partial<Stash>) => setS(x => ({ ...x, ...p }));
 
   const currentBal = stash ? calcStashBalance(stash, payments, transfers, plans) : 0;
@@ -239,11 +241,34 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       .map(([name, amount]) => ({ name, amount }));
   }, [stash, payments, plans, user]);
 
-  const submit = () => {
+  const doSaveStash = (addTechnicalEdit = false, targetAccParam?: Account, initialAmountParam?: number) => {
     const finalIsInstant = !isSharedStash && isInstant;
     const finalCatId = finalIsInstant ? undefined : (s.categoryId || defaultCatId);
     const finalSubcat = finalIsInstant ? undefined : (s.subcategory || s.name.trim());
-    const initialAmount = !stash ? (s.startAmount || 0) : 0;
+    const initialAmount = !stash ? (initialAmountParam ?? s.startAmount ?? 0) : 0;
+    const targetAccId = s.accountId || accounts.find(a => a.type === 'savings')?.id || accounts[0]?.id;
+    const targetAcc = targetAccParam || accounts.find(a => a.id === targetAccId);
+
+    if (addTechnicalEdit && targetAcc && initialAmount > 0) {
+      const techPayment: Payment = {
+        id: `adj_acc_${targetAcc.id}_${Date.now()}`,
+        planId: `adj_acc_${targetAcc.id}`,
+        dueDate: today(),
+        date: today(),
+        amount: initialAmount,
+        currency: targetAcc.currency,
+        accountId: targetAcc.id,
+        name: 'Technical balance edit',
+        kind: 'income',
+        categoryId: 'other',
+        subcategory: 'Balance adjustment',
+        note: 'Technical balance edit for prepping the stash top up (confirmed by user)',
+        status: 'confirmed',
+        isCorrection: true,
+      };
+      save('payments', techPayment);
+    }
+
     const finalStash: Stash = {
       ...s,
       startAmount: stash ? s.startAmount : 0,
@@ -290,6 +315,22 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       });
     }
     onClose();
+  };
+
+  const submit = () => {
+    const initialAmount = !stash ? (s.startAmount || 0) : 0;
+    const targetAccId = s.accountId || accounts.find(a => a.type === 'savings')?.id || accounts[0]?.id;
+    const targetAcc = accounts.find(a => a.id === targetAccId);
+    const availInAcc = targetAcc
+      ? calcAccountAvailableBalance(targetAcc, stashes, payments, transfers, plans, accounts)
+      : 0;
+
+    if (!stash && initialAmount > 0 && targetAcc && initialAmount > availInAcc) {
+      setFundingPrompt({ targetAcc, initialAmount, availInAcc });
+      return;
+    }
+
+    doSaveStash(false);
   };
   return (
     <Modal title={stash ? 'Edit stash' : 'New stash'} onClose={onClose}>
@@ -503,6 +544,48 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       {stash && <button className="btn ghost wide danger" style={{ marginTop: 8 }} onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
       {showSharing && <SharingModal type="stash" item={s} onClose={() => setShowSharing(false)} />}
       {transferring && <TransferModal initialFromId={`stash_${stash!.id}`} onClose={() => setTransferring(false)} />}
+      {fundingPrompt && (
+        <Modal title="Is this money already set apart?" onClose={() => setFundingPrompt(null)}>
+          <div style={{ padding: '8px 0 16px', lineHeight: 1.5, fontSize: 14 }}>
+            <p style={{ margin: '0 0 12px' }}>
+              You are setting a starter balance of <b>{money(fundingPrompt.initialAmount, s.currency)}</b> for this stash, but <b>{fundingPrompt.targetAcc.name}</b> currently only has <b>{money(fundingPrompt.availInAcc, fundingPrompt.targetAcc.currency)}</b> available.
+            </p>
+            <p style={{ margin: 0, color: 'var(--mute)' }}>
+              Is this money that has already been set apart separately, so you are <b>not</b> taking it out of your currently available cash in {fundingPrompt.targetAcc.name}?
+            </p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                const { targetAcc, initialAmount } = fundingPrompt;
+                setFundingPrompt(null);
+                doSaveStash(true, targetAcc, initialAmount);
+              }}
+            >
+              ✅ Yes, it's set apart separately (+{money(fundingPrompt.initialAmount, s.currency)} to {fundingPrompt.targetAcc.name})
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setFundingPrompt(null);
+                doSaveStash(false);
+              }}
+            >
+              No, deduct from available account cash
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setFundingPrompt(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -580,7 +663,7 @@ export function Accounts() {
             .sort((x, y) => x.dueDate.localeCompare(y.dueDate));
           const totalBal = calcAccountBalance(a, payments, transfers, plans, stashes);
           const stashedBal = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
-          const freeBal = totalBal - stashedBal;
+          const freeBal = Math.max(0, totalBal - stashedBal);
 
           return (
             <div

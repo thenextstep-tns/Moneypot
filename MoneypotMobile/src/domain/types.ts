@@ -115,6 +115,7 @@ export interface Payment extends Owned {
   stashId?: string;
   note?: string;                // comment added when confirming / postponing
   isShared?: boolean;
+  isCorrection?: boolean;
   contributorEmail?: string;
   contributorName?: string;
 }

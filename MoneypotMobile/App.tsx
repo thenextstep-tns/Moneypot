@@ -10,6 +10,9 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 import { DataProvider, useData } from './src/context/DataContext';
 import { AuthScreen } from './src/screens/AuthScreen';

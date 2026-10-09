@@ -13,7 +13,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
+      min-height: 100vh;
       margin: 0;
       padding: 20px;
       box-sizing: border-box;
@@ -23,9 +23,10 @@
       padding: 32px 24px;
       border-radius: 24px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-      max-width: 360px;
+      max-width: 380px;
       width: 100%;
       text-align: center;
+      box-sizing: border-box;
     }
     .logo {
       width: 64px;
@@ -36,12 +37,13 @@
       margin: 0 0 8px;
       font-size: 22px;
       font-weight: 800;
+      color: #1E293B;
     }
     p {
-      color: #8A857D;
+      color: #64748B;
       font-size: 14px;
       line-height: 20px;
-      margin: 0 0 24px;
+      margin: 0 0 20px;
     }
     .spinner {
       border: 3px solid #EAE6DF;
@@ -50,7 +52,7 @@
       width: 32px;
       height: 32px;
       animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
+      margin: 16px auto;
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
@@ -72,28 +74,90 @@
       width: 100%;
       box-sizing: border-box;
       text-decoration: none;
+      transition: background 0.15s;
     }
     .btn:hover {
       background: #F8F7F4;
+    }
+    .btn.primary {
+      background: #2FA36B;
+      border-color: #2FA36B;
+      color: #FFFFFF;
+      font-weight: 700;
+    }
+    .btn.primary:hover {
+      background: #26895A;
+    }
+    .btn.secondary {
+      background: #F8FAFC;
+      border-color: #E2E8F0;
+      color: #475569;
+    }
+    .btn.secondary:hover {
+      background: #F1F5F9;
     }
     .google-icon {
       width: 18px;
       height: 18px;
     }
+    .account-badge {
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      border-radius: 14px;
+      padding: 14px;
+      margin: 0 0 18px;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .avatar-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 20px;
+      background: #E2E8F0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .account-details {
+      flex: 1;
+      min-width: 0;
+    }
+    .account-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #0F172A;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-email {
+      font-size: 12px;
+      color: #64748B;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .status-text {
       font-size: 13px;
       color: #8A857D;
-      margin-top: 12px;
+      margin-top: 14px;
     }
   </style>
 </head>
 <body>
   <div class="card">
     <img src="./logo.png" alt="Moneypot" class="logo" />
-    <h2>Connecting Google</h2>
-    <p id="msg">Signing in with your Google account...</p>
+    <h2 id="title">Google Sign In</h2>
+    <p id="msg">Loading authentication...</p>
+    
     <div class="spinner" id="loader"></div>
-    <div id="btn-container" style="display: none;">
+
+    <!-- Container: Fresh login button -->
+    <div id="login-container" style="display: none;">
       <button class="btn" onclick="startAuth()">
         <svg class="google-icon" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -104,12 +168,42 @@
         Sign in with Google
       </button>
     </div>
+
+    <!-- Container: Existing browser session prompt -->
+    <div id="existing-container" style="display: none;">
+      <div class="account-badge">
+        <div class="avatar-circle">👤</div>
+        <div class="account-details">
+          <div class="account-name" id="existing-name">User</div>
+          <div class="account-email" id="existing-email">user@gmail.com</div>
+        </div>
+      </div>
+      <p style="font-size: 13px; color: #64748B; margin-bottom: 16px;">
+        You're logged in with this Google account in your browser. Do you want to use this account?
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn primary" id="continue-existing-btn" onclick="continueWithExisting()">
+          Continue with this account
+        </button>
+        <button class="btn secondary" onclick="switchAccount()">
+          Use a different account
+        </button>
+      </div>
+    </div>
+
+    <!-- Container: Return to app confirmation -->
+    <div id="app-redirect-container" style="display: none;">
+      <a class="btn primary" id="open-app-link" href="#" style="margin-top: 10px;">
+        Open Moneypot App
+      </a>
+    </div>
+
     <div class="status-text" id="status"></div>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: 'AIzaSyCGlXGlR7JgDOcCNQQmGbyEhg2mPuIZpbQ',
@@ -121,58 +215,127 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    let activeUser = null;
+    let handled = false;
 
     function sendToApp(user) {
+      if (!user) return;
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('login-container').style.display = 'none';
+      document.getElementById('existing-container').style.display = 'none';
+      document.getElementById('title').innerText = "Connected!";
       document.getElementById('msg').innerText = "Signed in as " + (user.displayName || user.email);
       document.getElementById('status').innerText = "Returning to Moneypot app...";
+
       const target = "moneypot://auth?uid=" + encodeURIComponent(user.uid) +
                      "&email=" + encodeURIComponent(user.email || "") +
                      "&displayName=" + encodeURIComponent(user.displayName || user.email?.split('@')[0] || "");
-      window.location.href = target;
+      
+      const appLink = document.getElementById('open-app-link');
+      appLink.href = target;
+      document.getElementById('app-redirect-container').style.display = 'block';
+
+      // Attempt immediate deep link redirect
+      try {
+        window.location.href = target;
+      } catch (e) {}
+
+      // Keep button clickable if browser blocks auto-navigation
+      setTimeout(() => {
+        document.getElementById('status').innerText = "If Moneypot didn't open automatically, tap the button above.";
+      }, 1500);
     }
 
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        sendToApp(user);
-      }
-    });
+    function showExistingPrompt(user) {
+      activeUser = user;
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('login-container').style.display = 'none';
+      document.getElementById('app-redirect-container').style.display = 'none';
 
-    getRedirectResult(auth)
-      .then((res) => {
-        if (res && res.user) {
-          sendToApp(res.user);
-        } else if (!auth.currentUser) {
-          // If not automatically initiated, show button
-          document.getElementById('btn-container').style.display = 'block';
-          document.getElementById('loader').style.display = 'none';
-          document.getElementById('msg').innerText = "Tap below to connect your Google account.";
-        }
-      })
-      .catch((err) => {
-        document.getElementById('loader').style.display = 'none';
-        document.getElementById('btn-container').style.display = 'block';
-        document.getElementById('msg').innerText = "Sign in was interrupted. Please try again.";
-        document.getElementById('status').innerText = err.message || "";
-      });
+      document.getElementById('title').innerText = "Google Account Found";
+      document.getElementById('msg').innerText = "Choose whether to continue with this account or switch.";
+      document.getElementById('existing-name').innerText = user.displayName || user.email?.split('@')[0] || "Google User";
+      document.getElementById('existing-email').innerText = user.email || "";
+      document.getElementById('continue-existing-btn').innerText = "Continue as " + (user.displayName || user.email?.split('@')[0] || "User");
+
+      document.getElementById('existing-container').style.display = 'block';
+      document.getElementById('status').innerText = "";
+    }
+
+    function showLoginButton() {
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('existing-container').style.display = 'none';
+      document.getElementById('app-redirect-container').style.display = 'none';
+
+      document.getElementById('title').innerText = "Google Sign In";
+      document.getElementById('msg').innerText = "Connect with your Google account to sync your budget.";
+      document.getElementById('login-container').style.display = 'block';
+      document.getElementById('status').innerText = "";
+    }
+
+    window.continueWithExisting = function() {
+      if (activeUser) {
+        sendToApp(activeUser);
+      }
+    };
+
+    window.switchAccount = async function() {
+      document.getElementById('existing-container').style.display = 'none';
+      document.getElementById('loader').style.display = 'block';
+      document.getElementById('msg').innerText = "Switching Google account...";
+      try {
+        await signOut(auth);
+      } catch (e) {}
+      startAuth();
+    };
 
     window.startAuth = function() {
+      sessionStorage.setItem('in_active_redirect_flow', '1');
       document.getElementById('loader').style.display = 'block';
-      document.getElementById('btn-container').style.display = 'none';
+      document.getElementById('login-container').style.display = 'none';
+      document.getElementById('existing-container').style.display = 'none';
       document.getElementById('msg').innerText = "Opening Google Sign In...";
       signInWithRedirect(auth, provider);
     };
 
-    // Auto-prompt on first load
-    setTimeout(() => {
-      if (!auth.currentUser) {
-        try {
-          signInWithRedirect(auth, provider);
-        } catch {
-          document.getElementById('loader').style.display = 'none';
-          document.getElementById('btn-container').style.display = 'block';
+    // Check redirect result on load
+    getRedirectResult(auth)
+      .then((res) => {
+        if (res && res.user) {
+          handled = true;
+          sessionStorage.removeItem('in_active_redirect_flow');
+          sendToApp(res.user);
+        } else {
+          // Check if session was active from redirect
+          const wasRedirectFlow = sessionStorage.getItem('in_active_redirect_flow') === '1';
+          sessionStorage.removeItem('in_active_redirect_flow');
+
+          onAuthStateChanged(auth, (user) => {
+            if (handled) return;
+            if (user) {
+              handled = true;
+              if (wasRedirectFlow) {
+                // User just went through Google picker and returned -> auto-send
+                sendToApp(user);
+              } else {
+                // User had existing account in browser before opening this page -> prompt first!
+                showExistingPrompt(user);
+              }
+            } else {
+              showLoginButton();
+            }
+          });
         }
-      }
-    }, 500);
+      })
+      .catch((err) => {
+        console.warn("Auth error:", err);
+        sessionStorage.removeItem('in_active_redirect_flow');
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('status').innerText = err.message || "Sign in interrupted.";
+        showLoginButton();
+      });
   </script>
 </body>
 </html>
