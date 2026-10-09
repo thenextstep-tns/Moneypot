@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moneypot — Google Sign In</title>
+  <link rel="icon" type="image/png" href="./logo.png" />
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #F6F4EF;
+      color: #2D2A26;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .card {
+      background: #FFFFFF;
+      padding: 32px 24px;
+      border-radius: 24px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      font-weight: 800;
+    }
+    p {
+      color: #8A857D;
+      font-size: 14px;
+      line-height: 20px;
+      margin: 0 0 24px;
+    }
+    .spinner {
+      border: 3px solid #EAE6DF;
+      border-top: 3px solid #2FA36B;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #FFFFFF;
+      border: 1.5px solid #D8D4CC;
+      color: #2D2A26;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 12px 20px;
+      border-radius: 12px;
+      cursor: pointer;
+      width: 100%;
+      box-sizing: border-box;
+      text-decoration: none;
+    }
+    .btn:hover {
+      background: #F8F7F4;
+    }
+    .google-icon {
+      width: 18px;
+      height: 18px;
+    }
+    .status-text {
+      font-size: 13px;
+      color: #8A857D;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="./logo.png" alt="Moneypot" class="logo" />
+    <h2>Connecting Google</h2>
+    <p id="msg">Signing in with your Google account...</p>
+    <div class="spinner" id="loader"></div>
+    <div id="btn-container" style="display: none;">
+      <button class="btn" onclick="startAuth()">
+        <svg class="google-icon" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        Sign in with Google
+      </button>
+    </div>
+    <div class="status-text" id="status"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: 'AIzaSyCGlXGlR7JgDOcCNQQmGbyEhg2mPuIZpbQ',
+      authDomain: 'honeypot-834a1.firebaseapp.com',
+      projectId: 'honeypot-834a1',
+      appId: '1:1093994142262:web:34ae22d54101375ff69697',
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    function sendToApp(user) {
+      document.getElementById('msg').innerText = "Signed in as " + (user.displayName || user.email);
+      document.getElementById('status').innerText = "Returning to Moneypot app...";
+      const target = "moneypot://auth?uid=" + encodeURIComponent(user.uid) +
+                     "&email=" + encodeURIComponent(user.email || "") +
+                     "&displayName=" + encodeURIComponent(user.displayName || user.email?.split('@')[0] || "");
+      window.location.href = target;
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        sendToApp(user);
+      }
+    });
+
+    getRedirectResult(auth)
+      .then((res) => {
+        if (res && res.user) {
+          sendToApp(res.user);
+        } else if (!auth.currentUser) {
+          // If not automatically initiated, show button
+          document.getElementById('btn-container').style.display = 'block';
+          document.getElementById('loader').style.display = 'none';
+          document.getElementById('msg').innerText = "Tap below to connect your Google account.";
+        }
+      })
+      .catch((err) => {
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('btn-container').style.display = 'block';
+        document.getElementById('msg').innerText = "Sign in was interrupted. Please try again.";
+        document.getElementById('status').innerText = err.message || "";
+      });
+
+    window.startAuth = function() {
+      document.getElementById('loader').style.display = 'block';
+      document.getElementById('btn-container').style.display = 'none';
+      document.getElementById('msg').innerText = "Opening Google Sign In...";
+      signInWithRedirect(auth, provider);
+    };
+
+    // Auto-prompt on first load
+    setTimeout(() => {
+      if (!auth.currentUser) {
+        try {
+          signInWithRedirect(auth, provider);
+        } catch {
+          document.getElementById('loader').style.display = 'none';
+          document.getElementById('btn-container').style.display = 'block';
+        }
+      }
+    }, 500);
+  </script>
+</body>
+</html>
