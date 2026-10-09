@@ -125,7 +125,7 @@ export function Cashflow() {
 
   // Overall KPIs for this period
   const kpis = useMemo(() => {
-    if (!days.length) return { startBal: 0, endBal: 0, net: 0, income: 0, expense: 0, minBal: 0, maxBal: 0 };
+    if (!days.length) return { startBal: 0, endBal: 0, endStashed: 0, endAvailable: 0, net: 0, income: 0, expense: 0, minBal: 0, maxBal: 0 };
     const startBal = days[0].totalBalance;
     const endBal = days[days.length - 1].totalBalance;
     let income = 0;
@@ -142,10 +142,12 @@ export function Cashflow() {
       if (d.totalBalance > maxBal) maxBal = d.totalBalance;
     }
     const endStashed = days[days.length - 1]?.totalStashed ?? 0;
+    const endAvailable = Math.max(0, endBal - endStashed);
     return {
       startBal,
       endBal,
       endStashed,
+      endAvailable,
       net: income - (expense + saving),
       income,
       expense: expense + saving,
@@ -337,8 +339,8 @@ export function Cashflow() {
       <div className="cashflow-kpis">
         <div className="kpi-card">
           <span className="kpi-label">AVAILABLE CASH</span>
-          <b className="kpi-value" style={{ color: (kpis.endBal - (kpis.endStashed ?? 0)) < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-            {money(kpis.endBal - (kpis.endStashed ?? 0), mainCurrency)}
+          <b className="kpi-value" style={{ color: (kpis.endAvailable <= 0 && kpis.endBal <= 0) ? 'var(--ink)' : '#16A34A' }}>
+            {money(kpis.endAvailable, mainCurrency)}
           </b>
           <small className="muted">
             End of period · Total: {money(kpis.endBal, mainCurrency)}{(kpis.endStashed ?? 0) > 0 ? ` · 🔒 ${money(kpis.endStashed ?? 0, mainCurrency)}` : ''}
@@ -1331,8 +1333,8 @@ function DayDetailModal({
           <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
             AVAILABLE CASH
           </span>
-          <b style={{ fontSize: 18, color: day.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-            {money(day.totalBalance, mainCurrency)}
+          <b style={{ fontSize: 18, color: day.totalAvailable <= 0 ? 'var(--ink)' : '#16A34A' }}>
+            {money(Math.max(0, day.totalAvailable), mainCurrency)}
           </b>
         </div>
         <div>

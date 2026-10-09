@@ -96,7 +96,7 @@ export function StashEditModal({
       emoji: emoji || '🌱',
       target: targetAmt,
       currency,
-      accountId: accountId || undefined,
+      accountId: targetAcc?.id || accountId || accounts[0]?.id || undefined,
       startAmount: 0, // Stored as 0 to prevent double-counting as per blueprint
       deadline: deadline || undefined,
       isInstantAccess,

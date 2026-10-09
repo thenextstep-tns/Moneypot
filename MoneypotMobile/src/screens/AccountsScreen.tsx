@@ -14,7 +14,7 @@ import {
   calcTotalLiquidBalance,
   calcTotalStashedBalance,
 } from '../domain/balances';
-import { money } from '../domain/schedule';
+import { money, today } from '../domain/schedule';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
@@ -24,7 +24,7 @@ import { QuickTransferModal } from '../components/QuickTransferModal';
 import type { Account } from '../domain/types';
 
 export function AccountsScreen() {
-  const { accounts, payments, transfers, plans, stashes, settings } = useData();
+  const { accounts, payments, transfers, plans, stashes, settings, save } = useData();
 
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -148,6 +148,40 @@ export function AccountsScreen() {
                   )}
                 </View>
               </TouchableOpacity>
+
+              {stashedBal > totalBal && (
+                <View style={styles.deficitBox}>
+                  <Text style={styles.deficitText}>
+                    ⚠️ {money(stashedBal, acc.currency)} in stashes exceeds account cash ({money(totalBal, acc.currency)}).
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.deficitBtn}
+                    onPress={async () => {
+                      triggerHaptic('success');
+                      const deficit = stashedBal - totalBal;
+                      const techPaymentId = `adj_acc_${acc.id}_${Date.now()}`;
+                      await save('payments', {
+                        id: techPaymentId,
+                        planId: techPaymentId,
+                        dueDate: today(),
+                        date: today(),
+                        name: 'Technical balance edit',
+                        amount: deficit,
+                        currency: acc.currency,
+                        accountId: acc.id,
+                        kind: 'income',
+                        categoryId: 'other',
+                        subcategory: 'Balance adjustment',
+                        note: 'Technical balance edit for prepping the stash top up (confirmed by user)',
+                        status: 'confirmed',
+                        isCorrection: true,
+                      });
+                    }}
+                  >
+                    <Text style={styles.deficitBtnText}>+ Add {money(stashedBal - totalBal, acc.currency)} external cash (technical edit)</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Action shortcuts */}
               <View style={styles.actionRow}>
@@ -356,5 +390,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: theme.colors.ink,
+  },
+  deficitBox: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+    gap: 6,
+  },
+  deficitText: {
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  deficitBtn: {
+    backgroundColor: theme.colors.brand,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  deficitBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

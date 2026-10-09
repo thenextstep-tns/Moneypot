@@ -163,7 +163,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
     target: 0,
     currency: settings.currency,
     startAmount: 0,
-    accountId: accounts.find(a => a.type === 'savings')?.id,
+    accountId: accounts.find(a => a.type === 'savings')?.id || accounts[0]?.id || '',
     categoryId: undefined,
     subcategory: undefined,
     isInstantAccess: true,
@@ -271,6 +271,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
     const finalStash: Stash = {
       ...s,
+      accountId: targetAcc?.id || targetAccId,
       startAmount: stash ? s.startAmount : 0,
       isInstantAccess: finalIsInstant,
       categoryId: finalCatId,
@@ -332,6 +333,53 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
     doSaveStash(false);
   };
+
+  if (fundingPrompt) {
+    return (
+      <Modal title="Is this money already set apart?" onClose={() => setFundingPrompt(null)}>
+        <div style={{ padding: '8px 0 16px', lineHeight: 1.5, fontSize: 14 }}>
+          <p style={{ margin: '0 0 12px' }}>
+            You are setting a starter balance of <b>{money(fundingPrompt.initialAmount, s.currency)}</b> for this stash, but <b>{fundingPrompt.targetAcc.name}</b> currently only has <b>{money(fundingPrompt.availInAcc, fundingPrompt.targetAcc.currency)}</b> available.
+          </p>
+          <p style={{ margin: 0, color: 'var(--mute)' }}>
+            Is this money that has already been set apart separately, so you are <b>not</b> taking it out of your currently available cash in {fundingPrompt.targetAcc.name}?
+          </p>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              const { targetAcc, initialAmount } = fundingPrompt;
+              setFundingPrompt(null);
+              doSaveStash(true, targetAcc, initialAmount);
+            }}
+          >
+            ✅ Yes, it's set apart separately (+{money(fundingPrompt.initialAmount, s.currency)} to {fundingPrompt.targetAcc.name})
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              const { targetAcc, initialAmount } = fundingPrompt;
+              setFundingPrompt(null);
+              doSaveStash(false, targetAcc, initialAmount);
+            }}
+          >
+            No, deduct from available account cash
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => setFundingPrompt(null)}
+          >
+            Back to edit
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal title={stash ? 'Edit stash' : 'New stash'} onClose={onClose}>
       <Field label="Icon">
@@ -518,7 +566,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           ))}
         </div>
       )}
-      <button className="btn primary wide" disabled={!s.name || !s.target} onClick={submit}>{stash ? 'Save' : 'Create stash'}</button>
+      <button className="btn primary wide" disabled={!s.name.trim()} onClick={submit}>{stash ? 'Save' : 'Create stash'}</button>
       {stash && (
         <button
           type="button"
@@ -544,48 +592,6 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       {stash && <button className="btn ghost wide danger" style={{ marginTop: 8 }} onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
       {showSharing && <SharingModal type="stash" item={s} onClose={() => setShowSharing(false)} />}
       {transferring && <TransferModal initialFromId={`stash_${stash!.id}`} onClose={() => setTransferring(false)} />}
-      {fundingPrompt && (
-        <Modal title="Is this money already set apart?" onClose={() => setFundingPrompt(null)}>
-          <div style={{ padding: '8px 0 16px', lineHeight: 1.5, fontSize: 14 }}>
-            <p style={{ margin: '0 0 12px' }}>
-              You are setting a starter balance of <b>{money(fundingPrompt.initialAmount, s.currency)}</b> for this stash, but <b>{fundingPrompt.targetAcc.name}</b> currently only has <b>{money(fundingPrompt.availInAcc, fundingPrompt.targetAcc.currency)}</b> available.
-            </p>
-            <p style={{ margin: 0, color: 'var(--mute)' }}>
-              Is this money that has already been set apart separately, so you are <b>not</b> taking it out of your currently available cash in {fundingPrompt.targetAcc.name}?
-            </p>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => {
-                const { targetAcc, initialAmount } = fundingPrompt;
-                setFundingPrompt(null);
-                doSaveStash(true, targetAcc, initialAmount);
-              }}
-            >
-              ✅ Yes, it's set apart separately (+{money(fundingPrompt.initialAmount, s.currency)} to {fundingPrompt.targetAcc.name})
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setFundingPrompt(null);
-                doSaveStash(false);
-              }}
-            >
-              No, deduct from available account cash
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => setFundingPrompt(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </Modal>
-      )}
     </Modal>
   );
 }
@@ -593,7 +599,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
 /** Where money lives: cards, Payoneer, cash, savings accounts */
 export function Accounts() {
-  const { accounts, plans, payments, stashes, transfers, settings } = useData();
+  const { accounts, plans, payments, stashes, transfers, settings, save } = useData();
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -695,6 +701,55 @@ export function Accounts() {
               {stashedBal > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
                   Total: {money(totalBal, a.currency)} · 🔒 {money(stashedBal, a.currency)} reserved
+                </div>
+              )}
+              {stashedBal > totalBal && (
+                <div
+                  style={{
+                    background: '#FEF3C7',
+                    border: '1px solid #FCD34D',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: '#92400E',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div>
+                    ⚠️ <b>{money(stashedBal, a.currency)}</b> reserved in stashes exceeds account cash ({money(totalBal, a.currency)}).
+                  </div>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    style={{ fontSize: 11, padding: '4px 8px', alignSelf: 'flex-start' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const deficit = stashedBal - totalBal;
+                      const techPayment: Payment = {
+                        id: `adj_acc_${a.id}_${Date.now()}`,
+                        planId: `adj_acc_${a.id}`,
+                        dueDate: today(),
+                        date: today(),
+                        amount: deficit,
+                        currency: a.currency,
+                        accountId: a.id,
+                        name: 'Technical balance edit',
+                        kind: 'income',
+                        categoryId: 'other',
+                        subcategory: 'Balance adjustment',
+                        note: 'Technical balance edit for prepping the stash top up (confirmed by user)',
+                        status: 'confirmed',
+                        isCorrection: true,
+                      };
+                      save('payments', techPayment);
+                    }}
+                  >
+                    + Add {money(stashedBal - totalBal, a.currency)} external cash (technical edit)
+                  </button>
                 </div>
               )}
 
