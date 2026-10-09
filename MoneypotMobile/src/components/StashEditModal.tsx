@@ -137,21 +137,18 @@ export function StashEditModal({
     const starterAmt = parseFloat(starterBalanceStr.replace(',', '.')) || 0;
     const targetAccId = accountId || accounts.find(a => a.type === 'savings')?.id || accounts[0]?.id;
     const targetAcc = accounts.find(a => a.id === targetAccId);
-    const availInAcc = targetAcc
-      ? calcAccountAvailableBalance(targetAcc, stashes, payments, transfers, plans, accounts)
-      : 0;
 
-    if (!stashToEdit && starterAmt > 0 && targetAcc && starterAmt > availInAcc) {
+    if (!stashToEdit && starterAmt > 0 && targetAcc) {
       Alert.alert(
         'Is this money already set apart?',
-        `You're setting a starter balance of ${money(starterAmt, currency)} for this stash, but ${targetAcc.name} currently only has ${money(availInAcc, targetAcc.currency)} available.\n\nIs this money you already had set aside separately (not taking it out of your currently available cash in ${targetAcc.name})?`,
+        `You're setting a starter balance of ${money(starterAmt, currency)} for this stash.\n\nIs this money you had already set aside separately (so we top up ${targetAcc.name} by ${money(starterAmt, currency)}), or should it be deducted from your existing ${targetAcc.name} balance?`,
         [
           {
             text: 'Cancel',
             style: 'cancel',
           },
           {
-            text: 'No, deduct from available cash',
+            text: `No, deduct from ${targetAcc.name}`,
             style: 'default',
             onPress: () => {
               void doSave(false, targetAcc, starterAmt);
