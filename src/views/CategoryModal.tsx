@@ -81,7 +81,7 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
       <Seg
         value={c.kind}
         onChange={k => set({ kind: k })}
-        options={[['expense', '💸 Expense'], ['income', '💰 Income'], ['saving', '🌱 Saving']]}
+        options={[['expense', '💸 Expense'], ['income', '💰 Income']]}
       />
 
       <Field label="Pot name">

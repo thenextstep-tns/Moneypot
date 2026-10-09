@@ -2,6 +2,19 @@ import type { Account, Occurrence, Payment, Plan, Stash, Transfer } from './type
 import { convert } from './fx';
 import { addDays, monthRange, occurrences, shiftMonth, today } from './schedule';
 
+/** Helper to resolve the physical account ID of an account or stash */
+export function getPhysicalAccountId(id?: string, stashes: Stash[] = [], defaultAccountId?: string): string | undefined {
+  if (!id) return undefined;
+  if (id.startsWith('stash_')) {
+    const sId = id.replace('stash_', '');
+    const s = stashes.find(x => x.id === sId);
+    return s?.accountId || defaultAccountId;
+  }
+  const s = stashes.find(x => x.id === id);
+  if (s) return s.accountId || defaultAccountId;
+  return id;
+}
+
 /** Calculate live balance of an account considering payments and transfers */
 export function calcAccountBalance(
   a: Account,
@@ -17,17 +30,32 @@ export function calcAccountBalance(
     const kind = p.kind ?? plan?.kind ?? 'expense';
     if (kind === 'transfer') continue; // Handled via transfers collection
     const stashId = p.stashId ?? plan?.stashId;
-    const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
-    if (p.accountId === a.id) b += kind === 'income' ? amt : -amt;
+    const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
+    const sourceAccId = p.accountId || plan?.accountId || s?.accountId;
+    if (sourceAccId === a.id) {
+      const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
+      if (kind === 'income') b += amt;
+      else if (kind === 'expense') b -= amt;
+      // Stash saving stays inside the physical account envelope, so physical balance does not decrease
+    }
   }
   for (const t of transfers) {
     if (t.status === 'cancelled') continue;
     if (t.date && t.date > today()) continue;
-    if (t.fromAccountId === a.id) {
+    const physFrom = getPhysicalAccountId(t.fromAccountId, stashes, a.id);
+    const physTo = getPhysicalAccountId(t.toAccountId, stashes, a.id);
+
+    // If transfer is internal to this account (e.g. into or out of a stash held in this account),
+    // the total physical balance remains in this account.
+    if (physFrom === a.id && physTo === a.id) {
+      continue;
+    }
+
+    if (physFrom === a.id) {
       const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
       b -= amt;
     }
-    if (t.toAccountId === a.id) {
+    if (physTo === a.id) {
       const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
       b += amt;
     }
@@ -185,11 +213,16 @@ export function calcProjectedAccountBalance(
   // 1. Pending occurrences for this account
   for (const o of futurePending) {
     if (o.kind === 'transfer') {
-      if (o.accountId === account.id) {
+      const physFrom = getPhysicalAccountId(o.accountId, stashes, account.id);
+      const physTo = getPhysicalAccountId(o.toAccountId, stashes, account.id);
+      if (physFrom === account.id && physTo === account.id) {
+        continue;
+      }
+      if (physFrom === account.id) {
         const amtInAcc = convert(o.amount, o.currency, account.currency);
         projected -= amtInAcc;
       }
-      if (o.toAccountId === account.id) {
+      if (physTo === account.id) {
         const toAmt = o.toAmount ?? o.amount;
         const toCur = o.toCurrency ?? o.currency;
         const amtInAcc = convert(toAmt, toCur, account.currency);
@@ -197,13 +230,17 @@ export function calcProjectedAccountBalance(
       }
       continue;
     }
-    const amtInAcc = convert(o.amount, o.currency, account.currency);
-    if (o.accountId === account.id) {
+    const stashId = o.stashId ?? o.plan?.stashId;
+    const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
+    const sourceAccId = o.accountId || o.plan?.accountId || s?.accountId;
+    if (sourceAccId === account.id) {
+      const amtInAcc = convert(o.amount, o.currency, account.currency);
       if (o.kind === 'income') {
         projected += amtInAcc;
-      } else {
+      } else if (o.kind === 'expense') {
         projected -= amtInAcc;
       }
+      // kind === 'saving' stays inside the account envelope
     }
   }
 
@@ -211,11 +248,18 @@ export function calcProjectedAccountBalance(
   for (const tr of transfers) {
     if (tr.status === 'cancelled') continue;
     if (tr.date > todayDate && tr.date <= targetDate) {
-      if (tr.fromAccountId === account.id) {
-        projected -= tr.fromAmount;
+      const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, account.id);
+      const physTo = getPhysicalAccountId(tr.toAccountId, stashes, account.id);
+      if (physFrom === account.id && physTo === account.id) {
+        continue;
       }
-      if (tr.toAccountId === account.id) {
-        projected += tr.toAmount;
+      if (physFrom === account.id) {
+        const amt = tr.fromCurrency && tr.fromCurrency !== account.currency ? convert(tr.fromAmount, tr.fromCurrency, account.currency) : tr.fromAmount;
+        projected -= amt;
+      }
+      if (physTo === account.id) {
+        const amt = tr.toCurrency && tr.toCurrency !== account.currency ? convert(tr.toAmount, tr.toCurrency, account.currency) : tr.toAmount;
+        projected += amt;
       }
     }
   }

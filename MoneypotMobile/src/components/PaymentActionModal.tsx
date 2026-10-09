@@ -128,7 +128,7 @@ export function PaymentActionModal({
   const isTr = occurrence.kind === 'transfer';
   const isSav = occurrence.kind === 'saving';
 
-  const earlyTitleVerb = isInc ? 'Receive Early' : isTr ? 'Transfer Early' : isSav ? 'Save Early' : 'Pay Early';
+  const earlyTitleVerb = isInc ? 'Receive Early' : (isTr || isSav) ? 'Transfer Early' : 'Pay Early';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -254,17 +254,13 @@ export function PaymentActionModal({
                       {isPayEarly
                         ? isInc
                           ? '⚡ Receive Early Today'
-                          : isTr
+                          : (isTr || isSav)
                           ? '⚡ Transfer Early Today'
-                          : isSav
-                          ? '⚡ Save Early Today'
                           : '⚡ Pay Early Today'
                         : isInc
                         ? '✓ Record Income'
-                        : isTr
+                        : (isTr || isSav)
                         ? '✓ Record Transfer'
-                        : isSav
-                        ? '✓ Put Aside'
                         : '✓ Mark as Paid'}
                     </Text>
                   </TouchableOpacity>

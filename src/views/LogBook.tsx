@@ -133,7 +133,13 @@ export function LogBook() {
     return items.filter(item => {
       // Status / Type filter
       if (filter === 'cancelled' && item.status !== 'cancelled') return false;
-      if (filter !== 'cancelled' && filter !== 'all' && item.type !== filter) return false;
+      if (filter !== 'cancelled' && filter !== 'all') {
+        if (filter === 'transfer') {
+          if (item.type !== 'transfer' && item.type !== 'saving') return false;
+        } else if (item.type !== filter) {
+          return false;
+        }
+      }
       if (filter !== 'cancelled' && item.status === 'cancelled') return false;
 
       // Account filter
@@ -223,14 +229,14 @@ export function LogBook() {
           </select>
 
           <div className="chips">
-            {(['all', 'expense', 'income', 'transfer', 'saving', 'cancelled'] as FilterType[]).map(f => (
+            {(['all', 'expense', 'income', 'transfer', 'cancelled'] as FilterType[]).map(f => (
               <button
                 key={f}
                 type="button"
                 className={filter === f ? 'chip on' : 'chip'}
                 onClick={() => setFilter(f)}
               >
-                {f === 'all' ? 'All' : f === 'expense' ? '💸 Expenses' : f === 'income' ? '💰 Income' : f === 'transfer' ? '⇄ Transfers' : f === 'saving' ? '🌱 Savings' : '🚫 Cancelled'}
+                {f === 'all' ? 'All' : f === 'expense' ? '💸 Expenses' : f === 'income' ? '💰 Income' : f === 'transfer' ? '⇄ Transfers & Stashes' : '🚫 Cancelled'}
               </button>
             ))}
           </div>

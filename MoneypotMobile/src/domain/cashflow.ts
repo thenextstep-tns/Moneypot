@@ -1,7 +1,7 @@
 import type { Account, Category, Occurrence, Payment, Plan, Stash, Transfer } from './types';
 import { convert } from './fx';
 import { addDays, occurrences, parse, today } from './schedule';
-import { calcProjectedStashBalance, calcStashBalance } from './balances';
+import { calcProjectedStashBalance, calcStashBalance, getPhysicalAccountId } from './balances';
 
 export interface CashflowItem {
   id: string;
@@ -129,18 +129,27 @@ export function calculateCashflowRange(
     const sourceAccId = p.accountId || plan?.accountId || s?.accountId;
     const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
     let d = 0;
-    if (sourceAccId === a.id) d += kind === 'income' ? amt : -amt;
+    if (sourceAccId === a.id) {
+      if (kind === 'income') d += amt;
+      else if (kind === 'expense') d -= amt;
+      // Stash saving stays inside the physical account envelope
+    }
     return d;
   };
 
   // Helper: compute delta for an account from a transfer
   const getTransferDelta = (tr: Transfer, a: Account): number => {
+    const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, a.id);
+    const physTo = getPhysicalAccountId(tr.toAccountId, stashes, a.id);
+    if (physFrom === a.id && physTo === a.id) {
+      return 0;
+    }
     let d = 0;
-    if (tr.fromAccountId === a.id) {
+    if (physFrom === a.id) {
       const amt = tr.fromCurrency && tr.fromCurrency !== a.currency ? convert(tr.fromAmount, tr.fromCurrency, a.currency) : tr.fromAmount;
       d -= amt;
     }
-    if (tr.toAccountId === a.id) {
+    if (physTo === a.id) {
       const amt = tr.toCurrency && tr.toCurrency !== a.currency ? convert(tr.toAmount, tr.toCurrency, a.currency) : tr.toAmount;
       d += amt;
     }
@@ -151,12 +160,17 @@ export function calculateCashflowRange(
   const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
     const kind = o.kind ?? o.plan.kind ?? 'expense';
     if (kind === 'transfer') {
+      const physFrom = getPhysicalAccountId(o.accountId, stashes, a.id);
+      const physTo = getPhysicalAccountId(o.toAccountId, stashes, a.id);
+      if (physFrom === a.id && physTo === a.id) {
+        return 0;
+      }
       let d = 0;
-      if (o.accountId === a.id) {
+      if (physFrom === a.id) {
         const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
         d -= amt;
       }
-      if (o.toAccountId === a.id) {
+      if (physTo === a.id) {
         const toAmt = o.toAmount ?? o.amount;
         const toCur = o.toCurrency ?? o.currency;
         const amt = toCur !== a.currency ? convert(toAmt, toCur, a.currency) : toAmt;
@@ -168,7 +182,10 @@ export function calculateCashflowRange(
     const sourceAccId = o.accountId || o.plan.accountId || s?.accountId;
     const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
     let d = 0;
-    if (sourceAccId === a.id) d += kind === 'income' ? amt : -amt;
+    if (sourceAccId === a.id) {
+      if (kind === 'income') d += amt;
+      else if (kind === 'expense') d -= amt;
+    }
     return d;
   };
 

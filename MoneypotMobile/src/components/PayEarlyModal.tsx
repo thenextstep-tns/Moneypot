@@ -155,10 +155,8 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
                             backgroundColor:
                               o.kind === 'income'
                                 ? '#166534'
-                                : o.kind === 'transfer'
+                                : (o.kind === 'transfer' || o.kind === 'saving')
                                 ? '#4338CA'
-                                : o.kind === 'saving'
-                                ? '#0D9488'
                                 : '#D97706',
                           },
                         ]}
@@ -167,10 +165,8 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
                         <Text style={styles.payTodayBtnText}>
                           {o.kind === 'income'
                             ? '⚡ Got today'
-                            : o.kind === 'transfer'
+                            : (o.kind === 'transfer' || o.kind === 'saving')
                             ? '⚡ Move today'
-                            : o.kind === 'saving'
-                            ? '⚡ Save today'
                             : '⚡ Pay today'}
                         </Text>
                       </TouchableOpacity>

@@ -126,12 +126,11 @@ export function CategoryEditModal({
           <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
             {/* Kind Selector */}
             <View style={styles.kindRow}>
-              {(['expense', 'income', 'saving'] as Kind[]).map(k => {
+              {(['expense', 'income'] as Kind[]).map(k => {
                 const active = kind === k;
                 const labels: Record<string, string> = {
                   expense: '💸 Expense',
                   income: '💰 Income',
-                  saving: '🌱 Saving',
                 };
                 return (
                   <TouchableOpacity

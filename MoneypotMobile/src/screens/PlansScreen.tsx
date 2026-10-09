@@ -17,12 +17,13 @@ import type { Plan, Kind } from '../domain/types';
 
 export function PlansScreen() {
   const { plans, categories, accounts, stashes, settings } = useData();
-  const [filter, setFilter] = useState<'all' | 'income' | 'expense' | 'saving' | 'transfer'>('all');
+  const [filter, setFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
   const filteredPlans = plans.filter(p => {
     if (filter === 'all') return true;
+    if (filter === 'transfer') return p.kind === 'transfer' || p.kind === 'saving';
     return p.kind === filter;
   });
 
@@ -34,8 +35,8 @@ export function PlansScreen() {
     .filter(p => p.kind === 'income')
     .reduce((sum, p) => sum + perMonth(p), 0);
 
-  const totalMonthlySaving = plans
-    .filter(p => p.kind === 'saving')
+  const totalMonthlyTransfer = plans
+    .filter(p => p.kind === 'transfer' || p.kind === 'saving')
     .reduce((sum, p) => sum + perMonth(p), 0);
 
   const handleOpenAdd = () => {
@@ -73,8 +74,7 @@ export function PlansScreen() {
           { key: 'all', label: `All (${plans.length})` },
           { key: 'expense', label: 'Bills & Living' },
           { key: 'income', label: 'Incomes' },
-          { key: 'saving', label: 'Savings' },
-          { key: 'transfer', label: 'Transfers' },
+          { key: 'transfer', label: 'Transfers & Stashes' },
         ].map(item => {
           const active = filter === item.key;
           return (
@@ -107,9 +107,9 @@ export function PlansScreen() {
           </Text>
         </View>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Avg Savings</Text>
+          <Text style={styles.kpiLabel}>Transfers / Mo</Text>
           <Text style={[styles.kpiVal, { color: theme.colors.purple }]}>
-            {money(totalMonthlySaving, settings.currency)}
+            {money(totalMonthlyTransfer, settings.currency)}
           </Text>
         </View>
       </View>

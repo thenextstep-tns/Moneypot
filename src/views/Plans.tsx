@@ -10,8 +10,7 @@ import { ScreenHelpModal } from './ScreenHelpModal';
 const GROUPS: [Kind, string, string][] = [
   ['income', 'Money coming in', 'Salary, freelance, anything you receive'],
   ['expense', 'Money going out', 'Bills, groceries, subscriptions…'],
-  ['saving', 'Putting aside', 'Regular top-ups of your stashes'],
-  ['transfer', 'Transfers between accounts', 'Regular card top-ups, moving money to savings, or between accounts'],
+  ['transfer', 'Transfers & Stash top-ups', 'Regular card top-ups, moving money to stashes, or between accounts'],
 ];
 
 /** Setup: income & expenses with their regularity */
@@ -61,7 +60,8 @@ export function Plans() {
       </header>
       {GROUPS.map(([kind, title, hint]) => {
         const list = plans.filter(p => {
-          if (p.kind !== kind) return false;
+          const matchesKind = kind === 'transfer' ? (p.kind === 'transfer' || p.kind === 'saving') : (p.kind === kind);
+          if (!matchesKind) return false;
           if (p.freq === 'once') return showOneOffs;
           return ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq);
         });
@@ -76,18 +76,29 @@ export function Plans() {
             </h2>
             {list.length === 0 && <p className="muted">{hint}</p>}
             {list.map(p => {
-              const isTransfer = p.kind === 'transfer';
+              const isTransfer = p.kind === 'transfer' || p.kind === 'saving';
+              const s = p.stashId ? stashes.find(x => x.id === p.stashId) : undefined;
               const c = cat(p.categoryId);
-              const fromName = getPartyName(p.accountId);
-              const toName = getPartyName(p.toAccountId);
+              const fromName = getPartyName(p.accountId || s?.accountId);
+              const toName = p.kind === 'saving' && s ? `${s.emoji} ${s.name}` : getPartyName(p.toAccountId);
               return (
                 <button
                   key={p.id}
                   className="item click"
                   style={{ ['--c' as string]: isTransfer ? '#6366F1' : c?.color }}
-                  onClick={() => setEdit(p)}
+                  onClick={() => {
+                    if (p.kind === 'saving') {
+                      setEdit({
+                        ...p,
+                        kind: 'transfer',
+                        toAccountId: p.toAccountId || (p.stashId ? `stash_${p.stashId}` : ''),
+                      });
+                    } else {
+                      setEdit(p);
+                    }
+                  }}
                 >
-                  <div className="emoji">{isTransfer ? '⇄' : c?.emoji}</div>
+                  <div className="emoji">{isTransfer ? (p.kind === 'saving' && s ? s.emoji : '⇄') : c?.emoji}</div>
                   <div className="grow">
                     <div className="title">
                       {p.name}
@@ -110,7 +121,7 @@ export function Plans() {
                     </div>
                     {p.note && <div className="note">📝 {p.note}</div>}
                   </div>
-                  <div className={`amt ${kind === 'income' ? 'in' : ''}`}>{money(p.amount, p.currency)}</div>
+                  <div className={`amt ${p.kind === 'income' ? 'in' : ''}`}>{money(p.amount, p.currency)}</div>
                 </button>
               );
             })}
@@ -132,11 +143,31 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
   const { categories, accounts, stashes, settings, payments, transfers, plans, save, remove } = useData();
   const balances = useMemo(() => calcAllAccountBalances(accounts, payments, transfers, plans, stashes), [accounts, payments, transfers, plans, stashes]);
 
-  const [p, setP] = useState<Plan>(plan ?? {
-    id: uid(), name: '', kind: kind ?? 'expense', categoryId: '', amount: 0, currency: settings.currency,
-    accountId: accounts[0]?.id || '',
-    toAccountId: accounts.find(a => a.id !== accounts[0]?.id)?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''),
-    freq: 'monthly', every: 1, startDate: today(),
+  const [p, setP] = useState<Plan>(() => {
+    if (plan) {
+      if (plan.kind === 'saving') {
+        return {
+          ...plan,
+          kind: 'transfer',
+          toAccountId: plan.toAccountId || (plan.stashId ? `stash_${plan.stashId}` : ''),
+        };
+      }
+      return plan;
+    }
+    const k: Kind = (kind === 'saving' ? 'transfer' : (kind ?? 'expense'));
+    return {
+      id: uid(),
+      name: '',
+      kind: k,
+      categoryId: '',
+      amount: 0,
+      currency: settings.currency,
+      accountId: accounts[0]?.id || '',
+      toAccountId: accounts.find(a => a.id !== accounts[0]?.id)?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''),
+      freq: 'monthly',
+      every: 1,
+      startDate: today(),
+    };
   });
   const [addingSub, setAddingSub] = useState(false);
   const [newSubVal, setNewSubVal] = useState('');
@@ -278,16 +309,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
       <Seg
         value={p.kind}
         onChange={k => {
-          if (k === 'saving') {
-            const defStash = stashes[0];
-            set({
-              kind: k,
-              stashId: defStash?.id,
-              categoryId: defStash?.categoryId || 'savings',
-              subcategory: defStash?.subcategory || defStash?.name,
-              name: p.name || defStash?.name || '',
-            });
-          } else if (k === 'transfer') {
+          if (k === 'transfer') {
             set({
               kind: k,
               categoryId: '',
@@ -303,7 +325,6 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
         options={[
           ['income', '💰 In'],
           ['expense', '💸 Out'],
-          ['saving', '🌱 Save'],
           ['transfer', '⇄ Transfer'],
         ]}
       />
@@ -311,7 +332,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
         <input
           autoFocus
           value={p.name}
-          placeholder={p.kind === 'income' ? 'Salary' : p.kind === 'saving' ? 'Safety cushion' : p.kind === 'transfer' ? 'Card top-up, savings move…' : 'Rent, Groceries, Netflix…'}
+          placeholder={p.kind === 'income' ? 'Salary' : p.kind === 'transfer' ? 'Card top-up, stash top-up, transfer…' : 'Rent, Groceries, Netflix…'}
           onChange={e => set({ name: e.target.value })}
         />
       </Field>

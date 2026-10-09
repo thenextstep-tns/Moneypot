@@ -40,11 +40,12 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
   useEffect(() => {
     if (planToEdit) {
       setName(planToEdit.name);
-      setKind(planToEdit.kind);
+      const isSav = planToEdit.kind === 'saving';
+      setKind(isSav ? 'transfer' : planToEdit.kind);
       setAmountStr(String(planToEdit.amount));
       setCurrency(planToEdit.currency || settings.currency || 'EUR');
       setAccountId(planToEdit.accountId || accounts[0]?.id || '');
-      setToAccountId(planToEdit.toAccountId || '');
+      setToAccountId(planToEdit.toAccountId || (isSav && planToEdit.stashId ? `stash_${planToEdit.stashId}` : ''));
       setCategoryId(planToEdit.categoryId || categories[0]?.id || '');
       setStashId(planToEdit.stashId || '');
       setNote(planToEdit.note || '');
@@ -80,6 +81,12 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
 
     triggerHaptic('success');
     const planId = planToEdit ? planToEdit.id : `plan_${uid()}`;
+    const stashDestination = toAccountId.startsWith('stash_')
+      ? toAccountId.replace('stash_', '')
+      : accountId.startsWith('stash_')
+      ? accountId.replace('stash_', '')
+      : undefined;
+
     const newPlan: Plan = {
       id: planId,
       name: name.trim(),
@@ -89,7 +96,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       accountId: accountId || undefined,
       toAccountId: kind === 'transfer' ? toAccountId : undefined,
       categoryId: kind !== 'transfer' ? categoryId : undefined,
-      stashId: kind === 'saving' ? stashId : undefined,
+      stashId: stashDestination,
       note: note.trim() || undefined,
       freq,
       every: parseInt(every, 10) || 1,
@@ -145,7 +152,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
           <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
             {/* Kind Selector */}
             <View style={styles.kindRow}>
-              {(['expense', 'income', 'saving', 'transfer'] as Kind[]).map(k => {
+              {(['expense', 'income', 'transfer'] as Kind[]).map(k => {
                 const active = kind === k;
                 const labels: Record<Kind, string> = {
                   expense: '💸 Expense',
@@ -193,7 +200,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
             </View>
 
             {/* Account (From) */}
-            <Text style={styles.fieldLabel}>{kind === 'transfer' ? 'From Account' : 'Account'}</Text>
+            <Text style={styles.fieldLabel}>{kind === 'transfer' ? 'From (Account or Stash)' : 'Account'}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
               {accounts.map(a => {
                 const active = a.id === accountId;
@@ -210,12 +217,28 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                   </TouchableOpacity>
                 );
               })}
+              {kind === 'transfer' && stashes.map(s => {
+                const sId = `stash_${s.id}`;
+                const active = sId === accountId;
+                return (
+                  <TouchableOpacity
+                    key={sId}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setAccountId(sId);
+                    }}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{s.emoji} {s.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
 
-            {/* If Transfer -> Destination Account */}
+            {/* If Transfer -> Destination Account or Stash */}
             {kind === 'transfer' && (
               <>
-                <Text style={styles.fieldLabel}>To Account</Text>
+                <Text style={styles.fieldLabel}>To (Account or Stash)</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                   {accounts.map(a => {
                     const active = a.id === toAccountId;
@@ -229,6 +252,22 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                         }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>{a.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {stashes.map(s => {
+                    const sId = `stash_${s.id}`;
+                    const active = sId === toAccountId;
+                    return (
+                      <TouchableOpacity
+                        key={sId}
+                        style={[styles.chip, active && styles.chipActive]}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setToAccountId(sId);
+                        }}
+                      >
+                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{s.emoji} {s.name}</Text>
                       </TouchableOpacity>
                     );
                   })}

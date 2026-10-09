@@ -164,11 +164,11 @@ export function TodayScreen() {
     const isSav = o.kind === 'saving';
 
     const actionText = isUpcoming
-      ? (isInc ? '⚡ Got early' : isTr ? '⚡ Move early' : isSav ? '⚡ Save early' : '⚡ Pay early')
-      : (isInc ? '✓ Got it' : isTr ? '✓ Moved' : isSav ? '✓ Put aside' : '✓ Paid');
+      ? (isInc ? '⚡ Got early' : (isTr || isSav) ? '⚡ Move early' : '⚡ Pay early')
+      : (isInc ? '✓ Got it' : (isTr || isSav) ? '✓ Moved' : '✓ Paid');
 
     const actionBtnBg = isUpcoming
-      ? (isInc ? '#166534' : isTr ? '#4338CA' : isSav ? '#0D9488' : '#D97706')
+      ? (isInc ? '#166534' : (isTr || isSav) ? '#4338CA' : '#D97706')
       : theme.colors.brand;
 
     return (

@@ -326,9 +326,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       save('plans', {
         id: uid(),
         name: s.name,
-        kind: 'saving',
-        categoryId: finalCatId || defaultCatId,
-        subcategory: finalSubcat || s.name.trim(),
+        kind: 'transfer',
         stashId: s.id,
         amount: monthly,
         currency: s.currency,
@@ -336,6 +334,9 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
         every: 1,
         startDate: today(),
         accountId: s.accountId || accounts[0]?.id,
+        toAccountId: `stash_${s.id}`,
+        toAmount: monthly,
+        toCurrency: s.currency,
       });
     }
     onClose();
@@ -537,7 +538,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
         </label>
       </div>
 
-      {!stash && <Field label="Put aside every month (optional)" hint="We'll remind you each month"><input type="number" value={monthly || ''} onChange={e => setMonthly(+e.target.value)} /></Field>}
+      {!stash && <Field label="Transfer every month (optional)" hint="We'll remind you each month"><input type="number" value={monthly || ''} onChange={e => setMonthly(+e.target.value)} /></Field>}
       <Field label="Where is it kept?">
         <AccountCardsSelect
           accounts={accounts}

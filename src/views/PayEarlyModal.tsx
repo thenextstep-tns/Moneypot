@@ -147,7 +147,7 @@ export function PayEarlyModal({
                     onSelect(o);
                   }}
                 >
-                  {o.kind === 'income' ? '⚡ Got today' : o.kind === 'transfer' ? '⚡ Move today' : o.kind === 'saving' ? '⚡ Save today' : '⚡ Pay today'}
+                  {o.kind === 'income' ? '⚡ Got today' : (o.kind === 'transfer' || o.kind === 'saving') ? '⚡ Move today' : '⚡ Pay today'}
                 </button>
               </div>
             );

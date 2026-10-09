@@ -55,7 +55,7 @@ export function Today() {
     const isTransfer = o.kind === 'transfer';
     const c = cat(o.categoryId);
     const inc = o.kind === 'income';
-    const verb = isTransfer ? 'Moved' : inc ? 'Got it' : o.kind === 'saving' ? 'Put aside' : 'Paid';
+    const verb = (isTransfer || o.kind === 'saving') ? 'Moved' : inc ? 'Got it' : 'Paid';
     const funds = (!inc && o.accountId)
       ? checkAccountFunds(o.accountId, o.amount, o.currency, accounts, balances, stashes)
       : null;
@@ -397,12 +397,10 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           ? `Move "${o.name}" to…`
           : isPayEarly
           ? `⚡ ${earlyActionTitle}: "${o.name}" (Due ${dayLabel(o.dueDate || o.date)})`
-          : o.kind === 'transfer'
+          : (o.kind === 'transfer' || o.kind === 'saving')
           ? `Confirm transfer: "${o.name}"`
           : o.kind === 'income'
           ? `Confirm income: "${o.name}"`
-          : o.kind === 'saving'
-          ? `Confirm saving: "${o.name}"`
           : `Confirm payment: "${o.name}"`
       }
       onClose={onClose}
@@ -700,19 +698,15 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           : isPayEarly
           ? (o.kind === 'income'
               ? '⚡ Approve & Receive Early Today'
-              : o.kind === 'transfer'
+              : (o.kind === 'transfer' || o.kind === 'saving')
               ? '⚡ Approve & Transfer Early Today'
-              : o.kind === 'saving'
-              ? '⚡ Approve & Save Early Today'
               : '⚡ Approve & Pay Early Today')
-          : o.kind === 'transfer'
+          : (o.kind === 'transfer' || o.kind === 'saving')
           ? '✓ Approve & Transfer'
           : selFunds?.isShort
           ? '✓ Approve & Pay anyway (Overdraft)'
           : o.kind === 'income'
           ? '✓ Approve & Record Income'
-          : o.kind === 'saving'
-          ? '✓ Approve & Put Aside'
           : '✓ Approve & Record Payment'}
       </button>
     </Modal>
