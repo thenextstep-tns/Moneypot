@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Platform,
   NativeModules,
+  Animated,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { occurrences, today, addDays, money, toPayment } from '../domain/schedule';
@@ -20,6 +21,7 @@ import { PaymentActionModal } from '../components/PaymentActionModal';
 import { QuickTransferModal } from '../components/QuickTransferModal';
 import { PayEarlyModal } from '../components/PayEarlyModal';
 import { OneOffPaymentModal } from '../components/OneOffPaymentModal';
+import { QuickLogButton } from '../components/QuickLogButton';
 import type { Occurrence, QuickTemplate } from '../domain/types';
 
 export function TodayScreen() {
@@ -95,8 +97,31 @@ export function TodayScreen() {
     setTimeout(() => setRefreshing(false), 300);
   };
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastAnim.setValue(0);
+    Animated.spring(toastAnim, {
+      toValue: 1,
+      tension: 65,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+
+    toastTimerRef.current = setTimeout(() => {
+      Animated.timing(toastAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => setToastMessage(null));
+    }, 2500);
+  };
+
   const handleQuickTemplatePress = async (tmpl: QuickTemplate) => {
-    triggerHaptic('success');
     const paymentId = `p_${uid()}`;
     const pRecord = {
       id: paymentId,
@@ -114,6 +139,7 @@ export function TodayScreen() {
       note: 'Quick template',
     };
     await save('payments', pRecord);
+    showToast(`✓ Logged ${tmpl.name} (${money(tmpl.amount, tmpl.currency || settings.currency)})`);
   };
 
   const handleDirectPaid = async (o: Occurrence) => {
@@ -250,20 +276,18 @@ export function TodayScreen() {
         {/* Quick Payment Shortcut Templates */}
         {templates.length > 0 && (
           <View style={styles.quickTemplateSection}>
-            <Text style={styles.sectionHeading}>Quick Log</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeading}>Quick Log</Text>
+              <Text style={styles.holdHint}>Hold 1s to log</Text>
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateScroll}>
               {templates.map(tmpl => (
-                <TouchableOpacity
+                <QuickLogButton
                   key={tmpl.id}
-                  style={styles.templatePill}
-                  onPress={() => handleQuickTemplatePress(tmpl)}
-                >
-                  <Text style={styles.templateEmoji}>{tmpl.emoji || '⚡'}</Text>
-                  <View>
-                    <Text style={styles.templateName}>{tmpl.name}</Text>
-                    <Text style={styles.templateAmount}>{money(tmpl.amount, tmpl.currency)}</Text>
-                  </View>
-                </TouchableOpacity>
+                  template={tmpl}
+                  onSuccess={handleQuickTemplatePress}
+                  currencyDefault={settings.currency}
+                />
               ))}
             </ScrollView>
           </View>
@@ -345,6 +369,30 @@ export function TodayScreen() {
         visible={oneOffVisible}
         onClose={() => setOneOffVisible(false)}
       />
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toastContainer,
+            {
+              opacity: toastAnim,
+              transform: [
+                {
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [24, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Text style={styles.toastEmoji}>⚡</Text>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 }
@@ -596,5 +644,40 @@ const styles = StyleSheet.create({
     color: theme.colors.mute,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  holdHint: {
+    fontSize: 11,
+    color: theme.colors.mute,
+    fontWeight: '600',
+    backgroundColor: theme.colors.lineLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: theme.radius.full,
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center',
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: theme.radius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 9999,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+  },
+  toastEmoji: {
+    fontSize: 15,
+  },
+  toastText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
