@@ -25,9 +25,13 @@ function parseQueryParams(url: string): Record<string, string> {
     const queryString = url.slice(qIdx + 1);
     const pairs = queryString.split('&');
     for (const pair of pairs) {
-      const [key, val] = pair.split('=');
-      if (key) {
-        params[decodeURIComponent(key)] = decodeURIComponent(val || '');
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = pair.slice(0, eqIdx);
+        const val = pair.slice(eqIdx + 1);
+        if (key) {
+          params[decodeURIComponent(key)] = decodeURIComponent(val || '');
+        }
       }
     }
   } catch (e) {
@@ -52,6 +56,9 @@ export function AuthScreen() {
       const displayName = params.displayName;
 
       if (uid) {
+        try {
+          WebBrowser.dismissAuthSession();
+        } catch {}
         triggerHaptic('success');
         setLoading(false);
         setUser({
@@ -94,7 +101,8 @@ export function AuthScreen() {
     setLoading(true);
 
     try {
-      const authUrl = `${GOOGLE_AUTH_URL}?prompt=select_account`;
+      // Add cache-busting timestamp to ensure the latest auth-mobile.html is always loaded
+      const authUrl = `${GOOGLE_AUTH_URL}?prompt=select_account&_v=${Date.now()}`;
       const result = await WebBrowser.openAuthSessionAsync(
         authUrl,
         'moneypot://auth'
@@ -108,9 +116,10 @@ export function AuthScreen() {
     } catch (err: any) {
       console.warn('WebBrowser auth session error, falling back to Linking:', err);
       try {
-        const supported = await Linking.canOpenURL(GOOGLE_AUTH_URL);
+        const fallbackUrl = `${GOOGLE_AUTH_URL}?prompt=select_account&_v=${Date.now()}`;
+        const supported = await Linking.canOpenURL(fallbackUrl);
         if (supported) {
-          await Linking.openURL(`${GOOGLE_AUTH_URL}?prompt=select_account`);
+          await Linking.openURL(fallbackUrl);
         } else {
           setErrorMsg('Unable to open web browser for Google sign in.');
           setLoading(false);
