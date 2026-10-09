@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   StyleSheet,
   SafeAreaView,
   RefreshControl,
+  Platform,
+  NativeModules,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { occurrences, today, addDays, money, toPayment } from '../domain/schedule';
@@ -16,6 +18,8 @@ import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { PaymentActionModal } from '../components/PaymentActionModal';
 import { QuickTransferModal } from '../components/QuickTransferModal';
+import { PayEarlyModal } from '../components/PayEarlyModal';
+import { OneOffPaymentModal } from '../components/OneOffPaymentModal';
 import type { Occurrence, QuickTemplate } from '../domain/types';
 
 export function TodayScreen() {
@@ -29,22 +33,61 @@ export function TodayScreen() {
     templates,
     settings,
     save,
+    deepLinkAction,
+    setDeepLinkAction,
   } = useData();
 
   const [activeOccurrence, setActiveOccurrence] = useState<Occurrence | null>(null);
   const [transferVisible, setTransferVisible] = useState(false);
   const [transferTargetAccId, setTransferTargetAccId] = useState<string | undefined>(undefined);
+  const [payEarlyVisible, setPayEarlyVisible] = useState(false);
+  const [oneOffVisible, setOneOffVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const t = today();
-  // Look at window from 30 days ago up to today for overdue/due items
-  const allOccurrences = occurrences(plans, payments, addDays(t, -30), t);
+  // Look at window from 30 days ago up to 7 days ahead
+  const allOccurrences = occurrences(plans, payments, addDays(t, -30), addDays(t, 7));
   const pendingOccurrences = allOccurrences.filter(o => o.status === 'pending');
 
   const overdue = pendingOccurrences.filter(o => o.dueDate < t);
   const dueToday = pendingOccurrences.filter(o => o.dueDate === t);
+  const upcomingThisWeek = pendingOccurrences.filter(o => o.dueDate > t);
 
   const currentBalMap = calcAllAccountBalances(accounts, payments, transfers, plans, stashes);
+
+  // Sync state with Android Home Screen AppWidget
+  useEffect(() => {
+    const dueCount = overdue.length + dueToday.length;
+    const dueSum = [...overdue, ...dueToday].reduce((acc, o) => acc + o.amount, 0);
+    const dueSumText = dueSum > 0 ? money(dueSum, settings.currency || 'EUR') : '';
+
+    if (Platform.OS === 'android' && NativeModules.MoneypotWidget) {
+      try {
+        NativeModules.MoneypotWidget.updateWidgetData(dueCount, dueSumText);
+      } catch (err) {
+        console.warn('Failed to update widget data', err);
+      }
+    }
+  }, [overdue.length, dueToday.length, settings.currency]);
+
+  // Handle incoming deep links (from Android Widget or URL scheme)
+  useEffect(() => {
+    if (!deepLinkAction) return;
+
+    if (deepLinkAction === 'confirm-today') {
+      const firstDue = dueToday[0] || overdue[0];
+      if (firstDue) {
+        setActiveOccurrence(firstDue);
+      }
+      setDeepLinkAction(null);
+    } else if (deepLinkAction === 'add-payment') {
+      setOneOffVisible(true);
+      setDeepLinkAction(null);
+    } else if (deepLinkAction === 'pay-early') {
+      setPayEarlyVisible(true);
+      setDeepLinkAction(null);
+    }
+  }, [deepLinkAction, dueToday, overdue, setDeepLinkAction]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -75,11 +118,12 @@ export function TodayScreen() {
 
   const handleDirectPaid = async (o: Occurrence) => {
     triggerHaptic('success');
-    const pRecord = toPayment(o, 'confirmed');
+    const isPayEarly = o.dueDate > t || o.date > t;
+    const pRecord = toPayment(o, 'confirmed', isPayEarly ? { date: t } : {});
     await save('payments', pRecord);
   };
 
-  const renderOccurrenceCard = (o: Occurrence, isOverdue: boolean) => {
+  const renderOccurrenceCard = (o: Occurrence, isOverdue: boolean, isUpcoming: boolean = false) => {
     const cat = categories.find(c => c.id === o.categoryId);
     const acc = accounts.find(a => a.id === o.accountId);
     const stash = stashes.find(s => s.id === o.stashId || `stash_${s.id}` === o.accountId);
@@ -99,7 +143,7 @@ export function TodayScreen() {
             <View style={styles.titleCol}>
               <Text style={styles.cardTitle}>{o.name}</Text>
               <Text style={styles.cardMeta}>
-                {accName} • {isOverdue ? `Due ${o.dueDate}` : 'Due Today'}
+                {accName} • {isOverdue ? `Due ${o.dueDate}` : isUpcoming ? `Due ${o.dueDate}` : 'Due Today'}
               </Text>
             </View>
           </View>
@@ -133,10 +177,12 @@ export function TodayScreen() {
         {/* Action Row */}
         <View style={styles.cardActions}>
           <TouchableOpacity
-            style={styles.paidBtn}
-            onPress={() => handleDirectPaid(o)}
+            style={[styles.paidBtn, isUpcoming && styles.payEarlyBtn]}
+            onPress={() => (isUpcoming ? setActiveOccurrence(o) : handleDirectPaid(o))}
           >
-            <Text style={styles.paidBtnText}>✓ Paid</Text>
+            <Text style={styles.paidBtnText}>
+              {isUpcoming ? '⚡ Pay early' : '✓ Paid'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -153,11 +199,35 @@ export function TodayScreen() {
     );
   };
 
+  const totalDueCount = overdue.length + dueToday.length;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <TopHeader
         title="Today"
-        subtitle={`${pendingOccurrences.length} item${pendingOccurrences.length === 1 ? '' : 's'} waiting for action`}
+        subtitle={`${totalDueCount} item${totalDueCount === 1 ? '' : 's'} waiting today`}
+        rightAction={
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              style={styles.headerActionBtnEarly}
+              onPress={() => {
+                triggerHaptic('light');
+                setPayEarlyVisible(true);
+              }}
+            >
+              <Text style={styles.headerActionBtnEarlyText}>⚡ Pay early</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerActionBtnAdd}
+              onPress={() => {
+                triggerHaptic('light');
+                setOneOffVisible(true);
+              }}
+            >
+              <Text style={styles.headerActionBtnAddText}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
 
       <ScrollView
@@ -210,13 +280,24 @@ export function TodayScreen() {
               <Text style={styles.emptyEmoji}>🎉</Text>
               <Text style={styles.emptyTitle}>All Caught Up!</Text>
               <Text style={styles.emptySub}>
-                No scheduled bills or incomes due today. Log quick expenses anytime with the templates above.
+                No scheduled bills or incomes due today. Log quick expenses or pay upcoming bills early.
               </Text>
             </View>
           ) : (
             dueToday.map(o => renderOccurrenceCard(o, false))
           )}
         </View>
+
+        {/* Coming Up This Week */}
+        {upcomingThisWeek.length > 0 && (
+          <View style={styles.queueSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeading}>Coming Up This Week</Text>
+              <Text style={styles.sectionCount}>{upcomingThisWeek.length}</Text>
+            </View>
+            {upcomingThisWeek.map(o => renderOccurrenceCard(o, false, true))}
+          </View>
+        )}
       </ScrollView>
 
       {/* Payment Action Modal */}
@@ -239,6 +320,19 @@ export function TodayScreen() {
         }}
         defaultToAccountId={transferTargetAccId}
       />
+
+      {/* Pay Early Modal */}
+      <PayEarlyModal
+        visible={payEarlyVisible}
+        onClose={() => setPayEarlyVisible(false)}
+        onSelect={o => setActiveOccurrence(o)}
+      />
+
+      {/* One-Off Payment Modal */}
+      <OneOffPaymentModal
+        visible={oneOffVisible}
+        onClose={() => setOneOffVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -248,77 +342,115 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg,
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerActionBtnEarly: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  headerActionBtnEarlyText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  headerActionBtnAdd: {
+    backgroundColor: theme.colors.brand,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  headerActionBtnAddText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   container: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 32,
+    gap: 20,
   },
   quickTemplateSection: {
-    marginBottom: 20,
+    marginBottom: 4,
   },
   sectionHeading: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: theme.colors.ink,
-    marginBottom: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.mute,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 10,
   },
   overdueHeading: {
     color: theme.colors.bad,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sectionCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.mute,
+    backgroundColor: theme.colors.lineLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: theme.radius.full,
+  },
   templateScroll: {
     gap: 10,
+    paddingRight: 16,
   },
   templatePill: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.card,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: theme.radius.lg,
-    gap: 10,
-    ...theme.shadow,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.line,
+    gap: 8,
+    ...theme.shadowCard,
   },
   templateEmoji: {
-    fontSize: 22,
+    fontSize: 16,
   },
   templateName: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
     color: theme.colors.ink,
   },
   templateAmount: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
     color: theme.colors.mute,
+    fontWeight: '500',
   },
   queueSection: {
-    marginBottom: 22,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  sectionCount: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: theme.colors.mute,
+    gap: 12,
   },
   queueCard: {
     backgroundColor: theme.colors.card,
     borderRadius: theme.radius.lg,
     padding: 16,
-    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.line,
     ...theme.shadowCard,
   },
   queueCardOverdue: {
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.bad,
+    borderColor: theme.colors.badLight,
+    backgroundColor: '#FFFBFB',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -328,25 +460,25 @@ const styles = StyleSheet.create({
   cardInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     flex: 1,
   },
   iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: theme.colors.bg,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
   iconText: {
-    fontSize: 22,
+    fontSize: 18,
   },
   titleCol: {
     flex: 1,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: theme.colors.ink,
   },
@@ -356,26 +488,26 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   cardAmountCol: {
-    alignItems: 'flex-end',
+    marginLeft: 12,
   },
   amountText: {
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  incomeText: {
-    color: theme.colors.brandDark,
+    fontSize: 16,
+    fontWeight: '700',
   },
   expenseText: {
     color: theme.colors.ink,
   },
+  incomeText: {
+    color: theme.colors.brand,
+  },
   shortfallBox: {
     backgroundColor: theme.colors.warningLight,
-    padding: 10,
     borderRadius: theme.radius.sm,
-    marginTop: 12,
+    padding: 8,
+    marginTop: 10,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   shortfallText: {
     fontSize: 12,
@@ -410,6 +542,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     alignItems: 'center',
   },
+  payEarlyBtn: {
+    backgroundColor: '#D97706',
+  },
   paidBtnText: {
     color: '#FFF',
     fontSize: 14,
@@ -432,8 +567,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     padding: 24,
     alignItems: 'center',
-    textAlign: 'center',
-    ...theme.shadow,
+    ...theme.shadowCard,
   },
   emptyEmoji: {
     fontSize: 40,

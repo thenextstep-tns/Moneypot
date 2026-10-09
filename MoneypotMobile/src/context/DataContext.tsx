@@ -33,6 +33,8 @@ export interface DataContextValue extends DataState {
   loaded: boolean;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  deepLinkAction: string | null;
+  setDeepLinkAction: (action: string | null) => void;
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
   showHowItWorks: boolean;
@@ -93,6 +95,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<CurrentUser | null>(null);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('Today');
+  const [deepLinkAction, setDeepLinkAction] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [showHowItWorks, setShowHowItWorks] = useState<boolean>(false);
   const [data, setData] = useState<DataState>(emptyData);
@@ -369,6 +372,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     loaded,
     activeTab,
     setActiveTab,
+    deepLinkAction,
+    setDeepLinkAction,
     drawerOpen,
     setDrawerOpen,
     showHowItWorks,

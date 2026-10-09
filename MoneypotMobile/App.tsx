@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -32,7 +33,29 @@ const PRIMARY_TABS = [
 
 function MainApp() {
   const insets = useSafeAreaInsets();
-  const { user, isDemoMode, loaded, activeTab, setActiveTab, setDrawerOpen } = useData();
+  const { user, isDemoMode, loaded, activeTab, setActiveTab, setDrawerOpen, setDeepLinkAction } = useData();
+
+  React.useEffect(() => {
+    const handleUrl = (url: string | null) => {
+      if (!url) return;
+      if (url.includes('confirm-today')) {
+        setActiveTab('Today');
+        setDeepLinkAction('confirm-today');
+      } else if (url.includes('add-payment')) {
+        setActiveTab('Today');
+        setDeepLinkAction('add-payment');
+      } else if (url.includes('pay-early')) {
+        setActiveTab('Today');
+        setDeepLinkAction('pay-early');
+      } else if (url.includes('today')) {
+        setActiveTab('Today');
+      }
+    };
+
+    Linking.getInitialURL().then(handleUrl);
+    const subscription = Linking.addEventListener('url', event => handleUrl(event.url));
+    return () => subscription.remove();
+  }, [setActiveTab, setDeepLinkAction]);
 
   if (!loaded) {
     return (

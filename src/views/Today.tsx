@@ -6,6 +6,7 @@ import type { Occurrence, Payment, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
 import { OneOffPaymentModal, TemplateModal } from './PaymentModal';
 import { ScreenHelpModal } from './ScreenHelpModal';
+import { PayEarlyModal } from './PayEarlyModal';
 
 /** MAIN FLOW #1 — confirm / edit / postpone / skip what's due */
 export function Today() {
@@ -13,6 +14,7 @@ export function Today() {
   const [act, setAct] = useState<{ o: Occurrence; mode: 'confirm' | 'later' } | null>(null);
   const [oneOffModal, setOneOffModal] = useState<{ open: boolean; template?: QuickTemplate } | null>(null);
   const [templateModal, setTemplateModal] = useState<QuickTemplate | 'new' | null>(null);
+  const [payEarlyModal, setPayEarlyModal] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const t = today();
   const occ = useMemo(() => occurrences(plans, payments, addDays(t, -60), addDays(t, 7)), [plans, payments, t]);
@@ -102,7 +104,9 @@ export function Today() {
         </div>
         <div className={`amt ${inc ? 'in' : ''}`}>{inc ? '+' : ''}{money(o.amount, o.currency)}</div>
         <div className="actions">
-          <button className="btn ok" onClick={handleConfirm}>✓ {verb}</button>
+          <button className="btn ok" onClick={handleConfirm}>
+            {o.date > t ? '⚡ Pay early' : `✓ ${verb}`}
+          </button>
           <button className="btn" onClick={() => setAct({ o, mode: 'confirm' })} title="Different amount or account">✎ Edit</button>
           <button className="btn" onClick={() => setAct({ o, mode: 'later' })}>⏰ Later</button>
           <button className="btn ghost" onClick={() => write(o, 'cancelled')} title="Didn't happen">Skip</button>
@@ -123,6 +127,9 @@ export function Today() {
           <p className="muted">{due.length + missed.length ? `You have ${due.length + missed.length} thing${due.length + missed.length > 1 ? 's' : ''} to check.` : 'Nothing to check right now.'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => setPayEarlyModal(true)} title="Pay an upcoming planned bill or transfer early today">
+            ⚡ Pay early
+          </button>
           <button className="btn" onClick={() => setTemplateModal('new')} title="Create a reusable payment template">
             + Payment template
           </button>
@@ -253,6 +260,12 @@ export function Today() {
           onClose={() => setTemplateModal(null)}
         />
       )}
+      {payEarlyModal && (
+        <PayEarlyModal
+          onClose={() => setPayEarlyModal(false)}
+          onSelect={o => setAct({ o, mode: 'confirm' })}
+        />
+      )}
       {helpOpen && <ScreenHelpModal screenKey="today" onClose={() => setHelpOpen(false)} />}
     </div>
   );
@@ -365,12 +378,26 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
     ? checkAccountFunds(accountId, +amount || 0, currency, accounts, balances, stashes)
     : null;
   const valid = +amount > 0 && !!accountId && (o.kind !== 'transfer' || (!!toAccountId && toAccountId !== accountId));
+  const isPayEarly = mode === 'confirm' && (o.date > t || o.dueDate > t) && date <= t;
 
   return (
-    <Modal title={mode === 'later' ? `Move "${o.name}" to…` : o.kind === 'transfer' ? `Confirm transfer: "${o.name}"` : `Confirm payment: "${o.name}"`} onClose={onClose}>
+    <Modal
+      title={
+        mode === 'later'
+          ? `Move "${o.name}" to…`
+          : isPayEarly
+          ? `⚡ Pay early: "${o.name}" (Due ${dayLabel(o.dueDate || o.date)})`
+          : o.kind === 'transfer'
+          ? `Confirm transfer: "${o.name}"`
+          : `Confirm payment: "${o.name}"`
+      }
+      onClose={onClose}
+    >
       {mode === 'confirm' && (
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
-          {o.kind === 'transfer'
+          {isPayEarly
+            ? `Paying early on ${dayLabel(date)}: this satisfies the upcoming scheduled ${dayLabel(o.dueDate || o.date)} bill so it won't prompt again.`
+            : o.kind === 'transfer'
             ? 'Please confirm the amount and accounts for this transfer:'
             : o.kind === 'income'
             ? 'Please confirm the final sum and the account the money goes into:'
@@ -656,6 +683,8 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       >
         {mode === 'later'
           ? '⏰ Move it'
+          : isPayEarly
+          ? '⚡ Approve & Pay Early Today'
           : o.kind === 'transfer'
           ? '✓ Approve & Transfer'
           : selFunds?.isShort

@@ -123,12 +123,14 @@ export function PaymentActionModal({
     );
   };
 
+  const isPayEarly = (occurrence.dueDate > today() || occurrence.date > today()) && dateStr <= today();
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.content}>
           <View style={styles.header}>
-            <Text style={styles.title}>{occurrence.name}</Text>
+            <Text style={styles.title}>{isPayEarly ? `⚡ Pay Early: ${occurrence.name}` : occurrence.name}</Text>
             <TouchableOpacity onPress={onClose}>
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
@@ -228,8 +230,13 @@ export function PaymentActionModal({
             <View style={styles.actionSection}>
               {!postponeMode ? (
                 <>
-                  <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-                    <Text style={styles.confirmBtnText}>✓ Mark as Paid</Text>
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, isPayEarly && { backgroundColor: '#D97706' }]}
+                    onPress={handleConfirm}
+                  >
+                    <Text style={styles.confirmBtnText}>
+                      {isPayEarly ? '⚡ Pay Early Today' : '✓ Mark as Paid'}
+                    </Text>
                   </TouchableOpacity>
 
                   <View style={styles.subActionRow}>
