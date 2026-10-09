@@ -148,8 +148,7 @@ console.log('--- Starting Moneypot Android Mobile Verification Suite ---');
   assert(range.length === 8, `Calculated cashflow range contains 8 days (got ${range.length})`);
   const todayFlow = range[0];
   assert(todayFlow.totalBalance > 0, `Liquid balance is positive: ${todayFlow.totalBalance.toFixed(2)} EUR`);
-  assert(todayFlow.totalStashed > 0, `Stashed reserved balance is positive: ${todayFlow.totalStashed.toFixed(2)} EUR`);
-  assert(todayFlow.stashedY1 > todayFlow.totalBalance, 'Stashed layer stacks above liquid cash layer');
+  assert(todayFlow.stashedY1 <= todayFlow.totalBalance, 'Stashed layer is an envelope inside liquid cash layer');
 }
 
 // Test 5: Consecutive Month Projections

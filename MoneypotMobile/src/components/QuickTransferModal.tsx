@@ -168,7 +168,7 @@ export function QuickTransferModal({
             {/* Amount Input */}
             <View style={styles.amountBox}>
               <View style={styles.amountCol}>
-                <Text style={styles.subLabel}>Deducted ({fromSource.currency})</Text>
+                <Text style={styles.subLabel}>{isMultiCur ? `Deducted (${fromSource.currency})` : `Amount (${fromSource.currency})`}</Text>
                 <TextInput
                   style={styles.amountInput}
                   placeholder="0.00"

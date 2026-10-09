@@ -262,7 +262,7 @@ export function TodayScreen() {
                 setOneOffVisible(true);
               }}
             >
-              <Text style={styles.headerActionBtnAddText}>+ Add</Text>
+              <Text style={styles.headerActionBtnAddText}>+ Record</Text>
             </TouchableOpacity>
           </View>
         }

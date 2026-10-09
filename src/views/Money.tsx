@@ -17,6 +17,7 @@ import {
 } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
+import { OneOffPaymentModal } from './PaymentModal';
 
 export { calcAccountBalance, calcStashBalance };
 
@@ -24,10 +25,11 @@ const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cas
 
 /** Savings goals */
 export function Stashes() {
-  const { user, stashes, plans, payments, transfers } = useData();
+  const { user, accounts, stashes, plans, payments, transfers } = useData();
   const [edit, setEdit] = useState<Stash | 'new' | null>(null);
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [transferStash, setTransferStash] = useState<Stash | null>(null);
+  const [topUpStash, setTopUpStash] = useState<Stash | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const saved = (s: Stash) => calcStashBalance(s, payments, transfers, plans);
 
@@ -123,12 +125,24 @@ export function Stashes() {
                   style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    setTopUpStash(s);
+                  }}
+                  title="Top up this stash"
+                >
+                  <span>+</span>
+                  <span>Top up</span>
+                </span>
+                <span
+                  className="btn ghost"
+                  style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setTransferStash(s);
                   }}
                   title="Withdraw to account or deposit into this stash"
                 >
                   <span>⇄</span>
-                  <span>Move money / Withdraw</span>
+                  <span>Move / Withdraw</span>
                 </span>
               </div>
             </button>
@@ -137,6 +151,14 @@ export function Stashes() {
       </div>
       {edit && <StashForm stash={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
       {showAcceptInvite && <AcceptInviteModal onClose={() => setShowAcceptInvite(false)} />}
+      {topUpStash && (
+        <OneOffPaymentModal
+          initialType="transfer"
+          initialFromId={topUpStash.accountId || accounts[0]?.id}
+          initialToId={`stash_${topUpStash.id}`}
+          onClose={() => setTopUpStash(null)}
+        />
+      )}
       {transferStash && <TransferModal initialFromId={`stash_${transferStash.id}`} onClose={() => setTransferStash(null)} />}
       {helpOpen && <ScreenHelpModal screenKey="stashes" onClose={() => setHelpOpen(false)} />}
     </div>
@@ -150,6 +172,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   const defaultCatId = savingCats[0]?.id || 'savings';
   const [showSharing, setShowSharing] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [topUp, setTopUp] = useState(false);
 
   const isSharedStash = Boolean((stash?.sharedWith && stash.sharedWith.length > 0) || stash?.name?.toLowerCase().trim() === 'kinky fund');
   const initialInstant = stash
@@ -568,6 +591,17 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           type="button"
           className="btn ok wide"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}
+          onClick={() => setTopUp(true)}
+        >
+          <span>+</span>
+          <span>Top up this stash</span>
+        </button>
+      )}
+      {stash && (
+        <button
+          type="button"
+          className="btn ghost wide"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}
           onClick={() => setTransferring(true)}
         >
           <span>⇄</span>
@@ -587,6 +621,14 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       )}
       {stash && <button className="btn ghost wide danger" style={{ marginTop: 8 }} onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
       {showSharing && <SharingModal type="stash" item={s} onClose={() => setShowSharing(false)} />}
+      {topUp && stash && (
+        <OneOffPaymentModal
+          initialType="transfer"
+          initialFromId={stash.accountId || accounts[0]?.id}
+          initialToId={`stash_${stash.id}`}
+          onClose={() => setTopUp(false)}
+        />
+      )}
       {transferring && <TransferModal initialFromId={`stash_${stash!.id}`} onClose={() => setTransferring(false)} />}
     </Modal>
   );
@@ -972,26 +1014,42 @@ export function TransferModal({
         </div>
       )}
 
-      <div className="row even">
-        <Field label={`Amount taken out (${fromParty?.currency ?? ''})`}>
+      {fromParty && toParty && fromParty.currency !== toParty.currency ? (
+        <div className="row even">
+          <Field label={`Amount taken out (${fromParty.currency})`}>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={fromAmount || ''}
+              placeholder="0"
+              onChange={e => setFromAmount(+e.target.value)}
+            />
+          </Field>
+          <Field label={`Amount put in (${toParty.currency})`} hint="Editable for exact rate/fees">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={toAmount || ''}
+              placeholder="0"
+              onChange={e => { setToAmount(+e.target.value); setUserEditedTo(true); }}
+            />
+          </Field>
+        </div>
+      ) : (
+        <Field label={`Amount (${fromParty?.currency ?? ''})`}>
           <input
             type="number"
             inputMode="decimal"
             value={fromAmount || ''}
             placeholder="0"
-            onChange={e => setFromAmount(+e.target.value)}
+            onChange={e => {
+              const v = +e.target.value;
+              setFromAmount(v);
+              setToAmount(v);
+            }}
           />
         </Field>
-        <Field label={`Amount put in (${toParty?.currency ?? ''})`} hint="Editable for exact rate/fees">
-          <input
-            type="number"
-            inputMode="decimal"
-            value={toAmount || ''}
-            placeholder="0"
-            onChange={e => { setToAmount(+e.target.value); setUserEditedTo(true); }}
-          />
-        </Field>
-      </div>
+      )}
 
       {isShort && (
         <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -12,7 +12,7 @@ import { PayEarlyModal } from './PayEarlyModal';
 export function Today() {
   const { user, plans, payments, transfers, stashes, categories, accounts, templates, save, remove } = useData();
   const [act, setAct] = useState<{ o: Occurrence; mode: 'confirm' | 'later' } | null>(null);
-  const [oneOffModal, setOneOffModal] = useState<{ open: boolean; template?: QuickTemplate } | null>(null);
+  const [oneOffModal, setOneOffModal] = useState<{ open: boolean; template?: QuickTemplate; initialType?: 'expense' | 'income' | 'transfer'; initialFromId?: string; initialToId?: string } | null>(null);
   const [templateModal, setTemplateModal] = useState<QuickTemplate | 'new' | null>(null);
   const [payEarlyModal, setPayEarlyModal] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -136,7 +136,7 @@ export function Today() {
             + Payment template
           </button>
           <button className="btn primary" onClick={() => setOneOffModal({ open: true })}>
-            + I spent money
+            + Record
           </button>
         </div>
       </header>
@@ -253,6 +253,9 @@ export function Today() {
       {oneOffModal?.open && (
         <OneOffPaymentModal
           template={oneOffModal.template}
+          initialType={oneOffModal.initialType}
+          initialFromId={oneOffModal.initialFromId}
+          initialToId={oneOffModal.initialToId}
           onClose={() => setOneOffModal(null)}
         />
       )}

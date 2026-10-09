@@ -18,6 +18,7 @@ import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { StashEditModal } from '../components/StashEditModal';
 import { BalanceCorrectionModal } from '../components/BalanceCorrectionModal';
+import { OneOffPaymentModal } from '../components/OneOffPaymentModal';
 import type { Stash } from '../domain/types';
 
 export function StashesScreen() {
@@ -25,6 +26,7 @@ export function StashesScreen() {
 
   const [activeStash, setActiveStash] = useState<Stash | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [topUpStash, setTopUpStash] = useState<Stash | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<{
     type: 'stash';
     item: Stash;
@@ -47,25 +49,6 @@ export function StashesScreen() {
     triggerHaptic('light');
     setActiveStash(s);
     setModalVisible(true);
-  };
-
-  const handleQuickAddMoney = async (s: Stash) => {
-    triggerHaptic('success');
-    const paymentId = `p_${uid()}`;
-    await save('payments', {
-      id: paymentId,
-      planId: paymentId,
-      dueDate: today(),
-      date: today(),
-      name: `Top-up ${s.name}`,
-      amount: 50,
-      currency: s.currency,
-      status: 'confirmed',
-      kind: 'saving',
-      accountId: accounts[0]?.id,
-      stashId: s.id,
-      note: 'Quick stash top-up',
-    });
   };
 
   const handleShareStash = async (s: Stash) => {
@@ -222,9 +205,12 @@ export function StashesScreen() {
                 <View style={styles.actionRow}>
                   <TouchableOpacity
                     style={styles.actionBtnPrimary}
-                    onPress={() => handleQuickAddMoney(s)}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setTopUpStash(s);
+                    }}
                   >
-                    <Text style={styles.actionBtnPrimaryText}>+ Add 50 {s.currency}</Text>
+                    <Text style={styles.actionBtnPrimaryText}>+ Top up</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -271,6 +257,17 @@ export function StashesScreen() {
         onClose={() => setCorrectionTarget(null)}
         target={correctionTarget}
       />
+
+      {/* Top up Record Modal */}
+      {topUpStash && (
+        <OneOffPaymentModal
+          visible={!!topUpStash}
+          initialType="transfer"
+          initialFromId={topUpStash.accountId || accounts[0]?.id}
+          initialToId={`stash_${topUpStash.id}`}
+          onClose={() => setTopUpStash(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
