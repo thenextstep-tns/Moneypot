@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
-import { db, auth } from '../services/firebase';
+import { db, auth, logout } from '../services/firebase';
 import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_TEMPLATES, DEMO } from '../domain/defaults';
 import type { Account, Category, Payment, Plan, QuickTemplate, Settings, ShareInvite, Stash, Transfer } from '../domain/types';
 
@@ -30,8 +30,16 @@ export interface DataState {
 export interface DataContextValue extends DataState {
   user: CurrentUser | null;
   isDemoMode: boolean;
+  loaded: boolean;
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  drawerOpen: boolean;
+  setDrawerOpen: (open: boolean) => void;
+  showHowItWorks: boolean;
+  setShowHowItWorks: (show: boolean) => void;
   setDemoMode: (demo: boolean) => void;
   setUser: (user: CurrentUser | null) => void;
+  logoutUser: () => Promise<void>;
   save: <C extends Coll>(c: C, o: DataState[C][number]) => Promise<void>;
   remove: (c: Coll, id: string) => Promise<void>;
   setSettings: (s: Settings) => Promise<void>;
@@ -83,7 +91,10 @@ export function useData(): DataContextValue {
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<CurrentUser | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<string>('Today');
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+  const [showHowItWorks, setShowHowItWorks] = useState<boolean>(false);
   const [data, setData] = useState<DataState>(emptyData);
   const [loaded, setLoaded] = useState<boolean>(false);
 
@@ -97,7 +108,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setUserState(parsedUser);
           setIsDemoMode(false);
         } else {
-          setIsDemoMode(true);
+          setUserState(null);
+          setIsDemoMode(false);
         }
       } catch (err) {
         console.warn('Error reading stored auth:', err);
@@ -113,7 +125,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIsDemoMode(false);
       AsyncStorage.setItem(AUTH_KEY, JSON.stringify(newUser)).catch(() => {});
     } else {
-      setIsDemoMode(true);
+      setIsDemoMode(false);
       AsyncStorage.removeItem(AUTH_KEY).catch(() => {});
     }
   };
@@ -126,9 +138,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const logoutUser = async () => {
+    setUserState(null);
+    setIsDemoMode(false);
+    setDrawerOpen(false);
+    await AsyncStorage.removeItem(AUTH_KEY).catch(() => {});
+    try {
+      await logout();
+    } catch {}
+  };
+
   // Sync Data according to mode (Demo vs Firebase Firestore)
   useEffect(() => {
     if (!loaded) return;
+
+    if (!user && !isDemoMode) {
+      setData(emptyData);
+      return;
+    }
 
     if (isDemoMode || !user || !db) {
       // Local Demo Mode via AsyncStorage
@@ -339,8 +366,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     ...data,
     user,
     isDemoMode,
+    loaded,
+    activeTab,
+    setActiveTab,
+    drawerOpen,
+    setDrawerOpen,
+    showHowItWorks,
+    setShowHowItWorks,
     setDemoMode,
     setUser,
+    logoutUser,
     save,
     remove,
     setSettings,

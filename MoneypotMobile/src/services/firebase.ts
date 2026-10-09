@@ -1,5 +1,12 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signOut } from 'firebase/auth';
+import {
+  getAuth,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+} from 'firebase/auth';
 import { initializeFirestore, getFirestore } from 'firebase/firestore';
 
 export const firebaseConfig = {
@@ -31,3 +38,19 @@ if (isFirebaseConfigured) {
 
 export { app, auth, db };
 export const logout = () => auth && signOut(auth);
+
+export const loginWithEmail = async (email: string, pass: string) => {
+  if (!auth) throw new Error('Firebase Auth is not initialized');
+  return signInWithEmailAndPassword(auth, email.trim(), pass);
+};
+
+export const registerWithEmail = async (email: string, pass: string) => {
+  if (!auth) throw new Error('Firebase Auth is not initialized');
+  return createUserWithEmailAndPassword(auth, email.trim(), pass);
+};
+
+export const resetPassword = async (email: string) => {
+  if (!auth) throw new Error('Firebase Auth is not initialized');
+  return sendPasswordResetEmail(auth, email.trim());
+};
+
