@@ -5,7 +5,15 @@ import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
-import { calcAccountBalance, calcProjectedAccountBalance, calcStashBalance, calcProjectedStashBalance } from '../balances';
+import {
+  calcAccountBalance,
+  calcAccountStashedBalance,
+  calcProjectedAccountBalance,
+  calcStashBalance,
+  calcProjectedStashBalance,
+  calcTotalLiquidBalance,
+  calcTotalStashedBalance,
+} from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
 
@@ -502,11 +510,16 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
 /** Where money lives: cards, Payoneer, cash, savings accounts */
 export function Accounts() {
-  const { accounts, plans, payments, stashes, transfers } = useData();
+  const { accounts, plans, payments, stashes, transfers, settings } = useData();
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [expandedAccId, setExpandedAccId] = useState<string | null>(null);
+
+  const mainCur = settings.currency || 'EUR';
+  const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, mainCur);
+  const totalStashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, mainCur);
+  const totalAvailable = Math.max(0, totalLiquid - totalStashed);
 
   return (
     <div className="page">
@@ -526,6 +539,37 @@ export function Accounts() {
         </div>
       </header>
 
+      {accounts.length > 0 && (
+        <div style={{
+          background: 'var(--card)',
+          borderRadius: 16,
+          padding: '16px 20px',
+          marginBottom: 20,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          border: '1px solid var(--line)',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Available to Spend
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', marginTop: 2 }}>
+              {money(totalAvailable, mainCur)}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
+              Total: {money(totalLiquid, mainCur)}
+              {totalStashed > 0 ? ` · 🔒 ${money(totalStashed, mainCur)} reserved in stashes` : ''}
+            </div>
+          </div>
+          {accounts.length >= 2 && (
+            <button className="btn ok" onClick={() => setTransferring(true)}>⇄ Move money</button>
+          )}
+        </div>
+      )}
+
       <div className="grid">
         {accounts.map(a => {
           const isExpanded = expandedAccId === a.id;
@@ -534,7 +578,9 @@ export function Accounts() {
           const upcoming = occurrences(plans, payments, from, to)
             .filter(o => o.accountId === a.id && o.status !== 'confirmed')
             .sort((x, y) => x.dueDate.localeCompare(y.dueDate));
-          const bal = calcAccountBalance(a, payments, transfers, plans, stashes);
+          const totalBal = calcAccountBalance(a, payments, transfers, plans, stashes);
+          const stashedBal = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
+          const freeBal = totalBal - stashedBal;
 
           return (
             <div
@@ -560,8 +606,14 @@ export function Accounts() {
               <div className="title" style={{ paddingRight: 24 }}>{a.name}</div>
               <div className="sub">{a.institution ?? a.type} · {a.currency}</div>
               <div className="stash-amt">
-                <b>{money(bal, a.currency)}</b>
+                <b>{money(freeBal, a.currency)}</b>
+                <span style={{ fontSize: 13, color: 'var(--mute)', fontWeight: 600, marginLeft: 6 }}>free</span>
               </div>
+              {stashedBal > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
+                  Total: {money(totalBal, a.currency)} · 🔒 {money(stashedBal, a.currency)} reserved
+                </div>
+              )}
 
               {/* Reveal toggle indicator */}
               <div className="acc-expand-toggle">

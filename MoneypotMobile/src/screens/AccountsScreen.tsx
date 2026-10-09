@@ -8,7 +8,12 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useData } from '../context/DataContext';
-import { calcAccountBalance, calcTotalLiquidBalance } from '../domain/balances';
+import {
+  calcAccountBalance,
+  calcAccountStashedBalance,
+  calcTotalLiquidBalance,
+  calcTotalStashedBalance,
+} from '../domain/balances';
 import { money } from '../domain/schedule';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -39,6 +44,17 @@ export function AccountsScreen() {
     stashes,
     settings.currency
   );
+
+  const totalStashed = calcTotalStashedBalance(
+    accounts,
+    stashes,
+    payments,
+    transfers,
+    plans,
+    settings.currency
+  );
+
+  const totalAvailable = Math.max(0, totalLiquid - totalStashed);
 
   const handleOpenAdd = () => {
     triggerHaptic('light');
@@ -73,9 +89,12 @@ export function AccountsScreen() {
       {/* Net Liquid Total Banner */}
       <View style={styles.totalBanner}>
         <View style={styles.totalInfo}>
-          <Text style={styles.totalLabel}>Total Available Liquid Cash</Text>
-          <Text style={styles.totalValue}>{money(totalLiquid, settings.currency)}</Text>
-          <Text style={styles.totalSub}>Across {accounts.length} connected accounts</Text>
+          <Text style={styles.totalLabel}>Available to Spend</Text>
+          <Text style={styles.totalValue}>{money(totalAvailable, settings.currency)}</Text>
+          <Text style={styles.totalSub}>
+            Total: {money(totalLiquid, settings.currency)}
+            {totalStashed > 0 ? ` • 🔒 ${money(totalStashed, settings.currency)} reserved` : ''}
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.transferBtn} onPress={() => handleOpenTransfer()}>
@@ -87,7 +106,9 @@ export function AccountsScreen() {
         <Text style={styles.sectionHeading}>Your Accounts ({accounts.length})</Text>
 
         {accounts.map(acc => {
-          const liveBal = calcAccountBalance(acc, payments, transfers, plans, stashes);
+          const totalBal = calcAccountBalance(acc, payments, transfers, plans, stashes);
+          const stashedBal = calcAccountStashedBalance(acc, stashes, payments, transfers, plans, accounts);
+          const freeBal = totalBal - stashedBal;
           const typeIcons: Record<Account['type'], string> = {
             card: '💳',
             bank: '🏦',
@@ -116,9 +137,15 @@ export function AccountsScreen() {
                 </View>
 
                 <View style={styles.accRight}>
-                  <Text style={[styles.accBalance, liveBal < 0 && styles.negativeBalance]}>
-                    {money(liveBal, acc.currency)}
+                  <Text style={[styles.accBalance, freeBal < 0 && styles.negativeBalance]}>
+                    {money(freeBal, acc.currency)}
                   </Text>
+                  <Text style={styles.accFreeLabel}>free to spend</Text>
+                  {stashedBal > 0 && (
+                    <Text style={styles.accStashedSub}>
+                      Total: {money(totalBal, acc.currency)} • 🔒 {money(stashedBal, acc.currency)}
+                    </Text>
+                  )}
                 </View>
               </TouchableOpacity>
 
@@ -131,7 +158,7 @@ export function AccountsScreen() {
                     setCorrectionTarget({
                       type: 'account',
                       item: acc,
-                      currentBalance: liveBal,
+                      currentBalance: totalBal,
                     });
                   }}
                 >
@@ -298,6 +325,18 @@ const styles = StyleSheet.create({
   },
   negativeBalance: {
     color: theme.colors.bad,
+  },
+  accFreeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: theme.colors.mute,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  accStashedSub: {
+    fontSize: 11,
+    color: theme.colors.mute,
+    marginTop: 2,
   },
   actionRow: {
     flexDirection: 'row',

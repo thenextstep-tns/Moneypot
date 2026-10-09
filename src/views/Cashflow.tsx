@@ -336,12 +336,12 @@ export function Cashflow() {
       {/* KPI Cards */}
       <div className="cashflow-kpis">
         <div className="kpi-card">
-          <span className="kpi-label">TOTAL LIQUID BALANCE</span>
-          <b className="kpi-value" style={{ color: kpis.endBal < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-            {money(kpis.endBal, mainCurrency)}
+          <span className="kpi-label">AVAILABLE CASH</span>
+          <b className="kpi-value" style={{ color: (kpis.endBal - (kpis.endStashed ?? 0)) < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+            {money(kpis.endBal - (kpis.endStashed ?? 0), mainCurrency)}
           </b>
           <small className="muted">
-            End of period ({days[days.length - 1]?.dayLabel ?? ''})
+            End of period · Total: {money(kpis.endBal, mainCurrency)}{(kpis.endStashed ?? 0) > 0 ? ` · 🔒 ${money(kpis.endStashed ?? 0, mainCurrency)}` : ''}
           </small>
         </div>
 
@@ -544,7 +544,7 @@ function CashflowSvgChart({
 
   // Auto-scale vertical bounds
   const minBalRaw = Math.min(0, ...days.map(d => d.totalBalance));
-  const maxBalRaw = Math.max(10, ...days.map(d => d.totalBalance + (d.totalStashed ?? 0)));
+  const maxBalRaw = Math.max(10, ...days.map(d => Math.max(d.totalBalance, d.totalAvailable, 0)));
 
   // Determine tick range with headroom
   const rangeSpan = Math.max(100, maxBalRaw - minBalRaw);
@@ -611,9 +611,9 @@ function CashflowSvgChart({
     return { pathData };
   }, [days, hasStashed, yMin, yTotalSpan]);
 
-  const totalWithStashedLinePath = useMemo(() => {
+  const availableLinePath = useMemo(() => {
     if (!hasStashed) return null;
-    const points = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.stashedY1).toFixed(1)}`);
+    const points = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.totalAvailable).toFixed(1)}`);
     return `M ${points.join(' L ')}`;
   }, [days, hasStashed, yMin, yTotalSpan]);
 
@@ -729,10 +729,10 @@ function CashflowSvgChart({
           strokeLinejoin="round"
         />
 
-        {/* Total Funds Curve with Stashed (Dashed muted slate) */}
-        {totalWithStashedLinePath && (
+        {/* Available Cash Curve (Dashed line under stashed layer) */}
+        {availableLinePath && (
           <path
-            d={totalWithStashedLinePath}
+            d={availableLinePath}
             fill="none"
             stroke="#64748B"
             strokeWidth="1.8"
@@ -918,14 +918,8 @@ function CashflowSvgChart({
           <div className="day-card-metrics-strip">
             <div className="day-metric-box">
               <span className="metric-label">AVAILABLE CASH</span>
-              <b className="metric-val" style={{ color: activeDayObj.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-                {money(activeDayObj.totalBalance, mainCurrency)}
-              </b>
-            </div>
-            <div className="day-metric-box">
-              <span className="metric-label">DAY NET CHANGE</span>
-              <b className="metric-val" style={{ color: activeDayObj.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
-                {activeDayObj.netChange >= 0 ? `+${money(activeDayObj.netChange, mainCurrency)}` : money(activeDayObj.netChange, mainCurrency)}
+              <b className="metric-val" style={{ color: activeDayObj.totalAvailable < 0 ? 'var(--bad)' : '#16A34A' }}>
+                {money(activeDayObj.totalAvailable, mainCurrency)}
               </b>
             </div>
             {activeDayObj.totalStashed > 0 && (
@@ -936,6 +930,18 @@ function CashflowSvgChart({
                 </b>
               </div>
             )}
+            <div className="day-metric-box">
+              <span className="metric-label">TOTAL IN ACCOUNTS</span>
+              <b className="metric-val" style={{ color: activeDayObj.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+                {money(activeDayObj.totalBalance, mainCurrency)}
+              </b>
+            </div>
+            <div className="day-metric-box">
+              <span className="metric-label">DAY NET CHANGE</span>
+              <b className="metric-val" style={{ color: activeDayObj.netChange >= 0 ? '#16A34A' : '#DC2626' }}>
+                {activeDayObj.netChange >= 0 ? `+${money(activeDayObj.netChange, mainCurrency)}` : money(activeDayObj.netChange, mainCurrency)}
+              </b>
+            </div>
           </div>
 
           {/* Account breakdown row */}
@@ -943,7 +949,14 @@ function CashflowSvgChart({
             {activeDayObj.accounts.map(ab => (
               <span key={ab.accountId} className="chip">
                 <span className="dot" style={{ background: ab.accountColor }} />
-                <span>{ab.accountName}: <b>{money(ab.balanceOriginal, ab.currency)}</b></span>
+                <span>
+                  {ab.accountName}: <b>{money(ab.availableOriginal, ab.currency)} free</b>
+                  {ab.stashedOriginal > 0 && (
+                    <span style={{ color: 'var(--mute)', fontSize: 11, marginLeft: 4 }}>
+                      ({money(ab.balanceOriginal, ab.currency)} total)
+                    </span>
+                  )}
+                </span>
               </span>
             ))}
             {activeDayObj.stashes?.map(sb => (

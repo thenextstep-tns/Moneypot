@@ -64,11 +64,11 @@ export function CashflowScreen() {
   const colWidth = Math.max(14, (SCREEN_WIDTH - 32) / numDays);
   const chartTotalWidth = Math.max(SCREEN_WIDTH - 32, numDays * colWidth);
 
-  // Maximum cumulative height (Liquid Cash + Stashed funds)
+  // Maximum cumulative height (Accounts Total Cash)
   const maxVal = useMemo(() => {
     let max = 100;
     for (const d of cashflowData) {
-      const top = d.totalBalance + d.totalStashed;
+      const top = Math.max(d.totalBalance, d.totalAvailable, 0);
       if (top > max) max = top;
     }
     return max * 1.1; // 10% breathing room
@@ -121,7 +121,7 @@ export function CashflowScreen() {
           <View style={styles.chartLegend}>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: theme.colors.brand }]} />
-              <Text style={styles.legendText}>Available Cash</Text>
+              <Text style={styles.legendText}>Available to Spend</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: '#9CA3AF' }]} />
@@ -153,13 +153,14 @@ export function CashflowScreen() {
                 const isSelected = d.date === selectedDate;
                 const isTodayDate = d.date === t;
 
-                // Stacked liquid height
-                const liquidY = scaleY(d.totalBalance);
-                const liquidH = Math.max(0, chartInnerHeight - liquidY);
+                // Available spending cash height (base green bar)
+                const availY = scaleY(d.totalAvailable);
+                const availH = Math.max(0, chartInnerHeight - availY);
 
-                // Stacked stashed height (rendered on top of liquid)
-                const stashedTopY = scaleY(d.totalBalance + d.totalStashed);
-                const stashedH = Math.max(0, liquidY - stashedTopY);
+                // Total accounts physical height (top of bar)
+                const totalY = scaleY(d.totalBalance);
+                // Stashed layer sits inside the top of the bar, between availY and totalY
+                const stashedH = Math.max(0, availY - totalY);
 
                 return (
                   <G key={d.date} onPress={() => handleSelectDay(d)}>
@@ -188,21 +189,21 @@ export function CashflowScreen() {
                       />
                     )}
 
-                    {/* Liquid Balance Bar */}
+                    {/* Available Cash Bar */}
                     <Rect
                       x={x + 2}
-                      y={liquidY}
+                      y={availY}
                       width={Math.max(2, colWidth - 4)}
-                      height={liquidH}
+                      height={availH}
                       fill={theme.colors.brand}
-                      rx={2}
+                      rx={d.totalStashed > 0 && stashedH > 0 ? 0 : 2}
                     />
 
-                    {/* Stashed Layer Bar */}
-                    {d.totalStashed > 0 && (
+                    {/* Stashed Layer Bar (Reserved inside account) */}
+                    {d.totalStashed > 0 && stashedH > 0 && (
                       <Rect
                         x={x + 2}
-                        y={stashedTopY}
+                        y={totalY}
                         width={Math.max(2, colWidth - 4)}
                         height={stashedH}
                         fill="url(#stashedGrad)"
@@ -260,14 +261,23 @@ export function CashflowScreen() {
             {/* Total Balance Breakdown */}
             <View style={styles.balanceStrip}>
               <View style={styles.balanceCol}>
-                <Text style={styles.balColLabel}>Available Cash</Text>
-                <Text style={styles.balColVal}>{money(activeDay.totalBalance, settings.currency)}</Text>
+                <Text style={styles.balColLabel}>Available to Spend</Text>
+                <Text style={[styles.balColVal, { color: theme.colors.brandDark }]}>
+                  {money(activeDay.totalAvailable, settings.currency)}
+                </Text>
               </View>
               <View style={styles.balanceDivider} />
               <View style={styles.balanceCol}>
-                <Text style={styles.balColLabel}>🔒 Stashed (Reserved)</Text>
+                <Text style={styles.balColLabel}>🔒 Reserved</Text>
                 <Text style={[styles.balColVal, { color: '#6B7280' }]}>
                   {money(activeDay.totalStashed, settings.currency)}
+                </Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceCol}>
+                <Text style={styles.balColLabel}>Total in Accounts</Text>
+                <Text style={[styles.balColVal, { color: theme.colors.ink }]}>
+                  {money(activeDay.totalBalance, settings.currency)}
                 </Text>
               </View>
             </View>
@@ -279,7 +289,10 @@ export function CashflowScreen() {
                 <View key={acc.accountId} style={styles.accountChip}>
                   <View style={[styles.accChipDot, { backgroundColor: acc.accountColor }]} />
                   <Text style={styles.accChipName}>{acc.accountName}:</Text>
-                  <Text style={styles.accChipAmount}>{money(acc.balanceOriginal, acc.currency)}</Text>
+                  <Text style={styles.accChipAmount}>{money(acc.availableOriginal, acc.currency)} free</Text>
+                  {acc.stashedOriginal > 0 && (
+                    <Text style={{ fontSize: 11, color: theme.colors.mute }}> ({money(acc.balanceOriginal, acc.currency)})</Text>
+                  )}
                 </View>
               ))}
             </View>

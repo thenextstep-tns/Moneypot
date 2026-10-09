@@ -88,6 +88,42 @@ export function calcStashBalance(
   return b;
 }
 
+/** Calculate total stashed / reserved funds sitting inside an account (envelopes within this account) */
+export function calcAccountStashedBalance(
+  a: Account,
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  allAccounts: Account[] = []
+): number {
+  let sum = 0;
+  const isFallbackPrimary = allAccounts.length > 0 && allAccounts[0].id === a.id;
+  for (const s of stashes) {
+    const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+    if (parentAccId === a.id) {
+      const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
+      const inAccCur = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
+      sum += inAccCur;
+    }
+  }
+  return sum;
+}
+
+/** Calculate free / available spending balance of an account (Total balance minus reserved stashes) */
+export function calcAccountAvailableBalance(
+  a: Account,
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  allAccounts: Account[] = []
+): number {
+  const total = calcAccountBalance(a, payments, transfers, plans, stashes);
+  const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, allAccounts);
+  return total - stashed;
+}
+
 /** Map of all account balances keyed by account ID (and stash_ ID for stashes) */
 export function calcAllAccountBalances(
   accounts: Account[],
@@ -311,6 +347,37 @@ export function calcTotalLiquidBalance(
     sum += convert(bal, a.currency, targetCurrency);
   }
   return sum;
+}
+
+/** Total stashed / reserved funds across all accounts converted into target currency */
+export function calcTotalStashedBalance(
+  accounts: Account[],
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  targetCurrency = 'EUR'
+): number {
+  let sum = 0;
+  for (const a of accounts) {
+    const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
+    sum += convert(stashed, a.currency, targetCurrency);
+  }
+  return sum;
+}
+
+/** Total free / available spending cash across all accounts converted into target currency */
+export function calcTotalAvailableBalance(
+  accounts: Account[],
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  targetCurrency = 'EUR'
+): number {
+  const total = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, targetCurrency);
+  const stashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, targetCurrency);
+  return Math.max(0, total - stashed);
 }
 
 /** Check if an account or stash has sufficient balance for a specific payment/expense */

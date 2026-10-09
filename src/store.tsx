@@ -108,23 +108,60 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     // Listen to shared activity (contributions from shared stashes and pots)
     unsubs.push(onSnapshot(collection(db, 'shared_payments'), snap => {
       const incoming = snap.docs.map(x => x.data() as Payment);
-      if (!incoming.length) return;
+      const incomingMap = new Map(incoming.map(p => [p.id, p]));
       setData(d => {
-        const myMap = new Map(d.payments.map(p => [p.id, p]));
-        let changed = false;
-        for (const sp of incoming) {
+        // 1. Reconcile existing payments: update matching shared, purge deleted shared, keep personal
+        const nextPayments: Payment[] = [];
+        for (const p of d.payments) {
+          if (incomingMap.has(p.id)) {
+            nextPayments.push(incomingMap.get(p.id)!);
+            incomingMap.delete(p.id);
+          } else if (p.isShared) {
+            // Document was previously marked shared, but is now removed from shared_payments -> purge it!
+            continue;
+          } else {
+            nextPayments.push(p);
+          }
+        }
+        // 2. Add remaining relevant incoming shared payments
+        for (const sp of incomingMap.values()) {
           const isRelevant = (sp.stashId && d.stashes.some(s => s.id === sp.stashId))
             || (sp.accountId && d.stashes.some(s => `stash_${s.id}` === sp.accountId))
             || (sp.categoryId && d.categories.some(c => c.id === sp.categoryId));
-          if (isRelevant && !myMap.has(sp.id)) {
-            myMap.set(sp.id, sp);
-            changed = true;
+          if (isRelevant) {
+            nextPayments.push(sp);
           }
         }
-        return changed ? { ...d, payments: Array.from(myMap.values()) } : d;
+        return { ...d, payments: nextPayments };
       });
     }, err => {
       console.warn('shared_payments listener error:', err.message);
+    }));
+
+    // Listen to shared stashes for bidirectional renames, target updates, and members sync
+    unsubs.push(onSnapshot(collection(db, 'shared_stashes'), snap => {
+      const incomingStashes = snap.docs.map(x => x.data() as Stash);
+      if (!incomingStashes.length) return;
+      setData(d => {
+        const userEmail = user?.email?.toLowerCase();
+        let changed = false;
+        const nextStashes = d.stashes.map(s => {
+          const remote = incomingStashes.find(x => x.id === s.id);
+          if (remote) {
+            const isParticipant = (remote.sharedWith && remote.sharedWith.map(e => e.toLowerCase()).includes(userEmail || ''))
+              || remote.ownerEmail?.toLowerCase() === userEmail
+              || remote.ownerId === userId;
+            if (isParticipant && (remote.name !== s.name || remote.target !== s.target || remote.emoji !== s.emoji)) {
+              changed = true;
+              return { ...s, ...remote };
+            }
+          }
+          return s;
+        });
+        return changed ? { ...d, stashes: nextStashes } : d;
+      });
+    }, err => {
+      console.warn('shared_stashes listener error:', err.message);
     }));
 
     return () => unsubs.forEach(u => u());
@@ -179,9 +216,15 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
             }
           }
         }
-        // If updating a shared stash or category, also sync to master owner
-        if (c === 'stashes' && o.ownerId && o.ownerId !== userId) {
-          void setDoc(doc(db!, 'users', o.ownerId, 'stashes', o.id), o, { merge: true });
+        // If updating a shared stash or category, sync to shared collections and master owner
+        if (c === 'stashes') {
+          const isShared = (o.sharedWith && o.sharedWith.length > 0) || (o.ownerId && o.ownerId !== userId);
+          if (isShared) {
+            void setDoc(doc(db!, 'shared_stashes', o.id), o, { merge: true });
+          }
+          if (o.ownerId && o.ownerId !== userId) {
+            void setDoc(doc(db!, 'users', o.ownerId, 'stashes', o.id), o, { merge: true });
+          }
         }
         if (c === 'categories' && o.ownerId && o.ownerId !== userId) {
           void setDoc(doc(db!, 'users', o.ownerId, 'categories', o.id), o, { merge: true });
@@ -195,6 +238,16 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         void deleteDoc(doc(db!, 'users', userId!, c, id));
         if (c === 'payments') {
           void deleteDoc(doc(db!, 'shared_payments', id));
+          const p = data.payments.find(x => x.id === id);
+          if (p) {
+            const st = data.stashes.find(s => s.id === p.stashId || `stash_${s.id}` === p.accountId);
+            if (st?.ownerId && st.ownerId !== userId) {
+              void deleteDoc(doc(db!, 'users', st.ownerId, 'payments', id));
+            }
+          }
+        }
+        if (c === 'stashes') {
+          void deleteDoc(doc(db!, 'shared_stashes', id));
         }
       }
     },

@@ -135,11 +135,17 @@ export function StashesScreen() {
 
             // Contributor Breakdown
             const contributors = new Map<string, number>();
+            const ownerLabel = s.ownerEmail
+              ? (s.ownerEmail === user?.email ? 'You (Creator)' : s.ownerEmail.split('@')[0])
+              : 'Initial balance';
+            if (s.startAmount > 0 && !payments.some(p => p.id === `init_stash_${s.id}` && p.status === 'confirmed')) {
+              contributors.set(ownerLabel, (contributors.get(ownerLabel) || 0) + s.startAmount);
+            }
             for (const p of payments) {
               if (p.status !== 'confirmed') continue;
               const isThisStash = p.stashId === s.id || p.accountId === `stash_${s.id}`;
               if (!isThisStash) continue;
-              const cName = p.contributorName || (p.contributorEmail ? p.contributorEmail.split('@')[0] : 'You');
+              const cName = p.contributorName || (p.contributorEmail ? (p.contributorEmail === user?.email ? 'You' : p.contributorEmail.split('@')[0]) : 'You');
               const cur = contributors.get(cName) || 0;
               if (p.kind === 'saving' || p.kind === 'income') {
                 contributors.set(cName, cur + p.amount);
@@ -193,6 +199,14 @@ export function StashesScreen() {
                       {s.isInstantAccess ? '⚡ Instant Access' : '🔒 Dedicated Goal'}
                     </Text>
                   </View>
+
+                  {s.sharedWith && s.sharedWith.length > 0 && (
+                    <View style={[styles.tagBadge, styles.tagShared]}>
+                      <Text style={[styles.tagText, styles.tagTextShared]}>
+                        👥 Shared ({s.sharedWith.length})
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Contributor chips */}
                   {activeContributors.map(([cName, amt]) => (

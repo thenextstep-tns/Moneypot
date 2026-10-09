@@ -27,8 +27,10 @@ export interface AccountDayBalance {
   accountName: string;
   accountColor: string;
   currency: string;
-  balanceOriginal: number; // Available liquid balance
+  balanceOriginal: number; // Total physical balance
   balanceInMain: number;
+  availableOriginal: number; // Free spending balance (balanceOriginal - stashedOriginal)
+  availableInMain: number;
   stashedOriginal: number; // Stashed / reserved funds associated with this account
   stashedInMain: number;
   y0: number; // Bottom of stacked area in main currency
@@ -63,7 +65,8 @@ export interface DayCashflow {
   items: CashflowItem[];
   accounts: AccountDayBalance[];
   stashes: StashDayBalance[];
-  totalBalance: number; // Available liquid balance
+  totalBalance: number; // Total physical liquid balance
+  totalAvailable: number; // Available free cash to spend (totalBalance - totalStashed)
   totalStashed: number; // Total stashed / reserved funds
   stashedY0: number;
   stashedY1: number;
@@ -386,6 +389,8 @@ export function calculateCashflowRange(
       cumulativeY += positiveVal;
 
       const stashedInMain = convert(stashedForAcc, a.currency, mainCurrency);
+      const availableOriginal = Math.max(0, b - stashedForAcc);
+      const availableInMain = Math.max(0, balInMain - stashedInMain);
 
       accountDayBals.push({
         accountId: a.id,
@@ -394,6 +399,8 @@ export function calculateCashflowRange(
         currency: a.currency,
         balanceOriginal: b,
         balanceInMain: balInMain,
+        availableOriginal,
+        availableInMain,
         stashedOriginal: stashedForAcc,
         stashedInMain,
         y0,
@@ -403,8 +410,10 @@ export function calculateCashflowRange(
 
     const totalBalance = accountDayBals.reduce((sum, ab) => sum + ab.balanceInMain, 0);
     const totalStashed = accountDayBals.reduce((sum, ab) => sum + ab.stashedInMain, 0);
-    const stashedY0 = cumulativeY;
-    const stashedY1 = cumulativeY + totalStashed;
+    const totalAvailable = Math.max(0, totalBalance - totalStashed);
+    // Stashed area sits INSIDE the total balance band at the top, never exceeding cumulativeY
+    const stashedY1 = cumulativeY;
+    const stashedY0 = Math.max(0, cumulativeY - totalStashed);
 
     result.push({
       date,
@@ -423,6 +432,7 @@ export function calculateCashflowRange(
       accounts: accountDayBals,
       stashes: stashDayBals,
       totalBalance,
+      totalAvailable,
       totalStashed,
       stashedY0,
       stashedY1,
