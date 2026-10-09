@@ -1,4 +1,9 @@
 <resources>
   <string name="app_name">Moneypot</string>
   <string name="widget_description">Confirm today\'s payments or log expenses</string>
+  <string name="widget_title">Moneypot</string>
+  <string name="widget_status_default">Today\'s payments</string>
+  <string name="widget_btn_confirm">✓ Confirm</string>
+  <string name="widget_btn_add">+ Add</string>
+  <string name="widget_btn_early">⚡ Early</string>
 </resources>
