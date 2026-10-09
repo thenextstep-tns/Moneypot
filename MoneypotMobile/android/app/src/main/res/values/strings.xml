@@ -1,3 +1,4 @@
 <resources>
   <string name="app_name">Moneypot</string>
+  <string name="widget_description">Confirm today\'s payments or log expenses</string>
 </resources>

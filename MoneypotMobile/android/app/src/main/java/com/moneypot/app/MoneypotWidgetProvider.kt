@@ -20,40 +20,44 @@ class MoneypotWidgetProvider : AppWidgetProvider() {
         val amountText = prefs.getString("amount_text", "") ?: ""
 
         for (appWidgetId in appWidgetIds) {
-            val views = RemoteViews(context.packageName, R.layout.moneypot_widget)
+            try {
+                val views = RemoteViews(context.packageName, R.layout.moneypot_widget)
 
-            // Dynamic status and amount text
-            if (pendingCount > 0) {
-                val plural = if (pendingCount > 1) "s" else ""
-                views.setTextViewText(R.id.widget_status_text, "$pendingCount item$plural to confirm")
-                views.setTextViewText(R.id.widget_amount_text, amountText)
-            } else if (pendingCount == 0) {
-                views.setTextViewText(R.id.widget_status_text, "All caught up today 🎉")
-                views.setTextViewText(R.id.widget_amount_text, "")
-            } else {
-                views.setTextViewText(R.id.widget_status_text, "Today's payments")
-                views.setTextViewText(R.id.widget_amount_text, "")
+                // Dynamic status and amount text
+                if (pendingCount > 0) {
+                    val plural = if (pendingCount > 1) "s" else ""
+                    views.setTextViewText(R.id.widget_status_text, "$pendingCount item$plural to confirm")
+                    views.setTextViewText(R.id.widget_amount_text, amountText)
+                } else if (pendingCount == 0) {
+                    views.setTextViewText(R.id.widget_status_text, "All caught up today 🎉")
+                    views.setTextViewText(R.id.widget_amount_text, "")
+                } else {
+                    views.setTextViewText(R.id.widget_status_text, "Today's payments")
+                    views.setTextViewText(R.id.widget_amount_text, "")
+                }
+
+                // PendingIntents for Deep Links
+                views.setOnClickPendingIntent(
+                    R.id.widget_header,
+                    createDeepLinkIntent(context, "moneypot://today", 100)
+                )
+                views.setOnClickPendingIntent(
+                    R.id.widget_btn_confirm,
+                    createDeepLinkIntent(context, "moneypot://confirm-today", 101)
+                )
+                views.setOnClickPendingIntent(
+                    R.id.widget_btn_add,
+                    createDeepLinkIntent(context, "moneypot://add-payment", 102)
+                )
+                views.setOnClickPendingIntent(
+                    R.id.widget_btn_early,
+                    createDeepLinkIntent(context, "moneypot://pay-early", 103)
+                )
+
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                android.util.Log.e("MoneypotWidget", "Error updating widget id $appWidgetId", e)
             }
-
-            // PendingIntents for Deep Links
-            views.setOnClickPendingIntent(
-                R.id.widget_header,
-                createDeepLinkIntent(context, "moneypot://today", 100)
-            )
-            views.setOnClickPendingIntent(
-                R.id.widget_btn_confirm,
-                createDeepLinkIntent(context, "moneypot://confirm-today", 101)
-            )
-            views.setOnClickPendingIntent(
-                R.id.widget_btn_add,
-                createDeepLinkIntent(context, "moneypot://add-payment", 102)
-            )
-            views.setOnClickPendingIntent(
-                R.id.widget_btn_early,
-                createDeepLinkIntent(context, "moneypot://pay-early", 103)
-            )
-
-            appWidgetManager.updateAppWidget(appWidgetId, views)
         }
     }
 
