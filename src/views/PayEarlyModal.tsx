@@ -40,15 +40,15 @@ export function PayEarlyModal({
   }, [upcoming, query, categories]);
 
   return (
-    <Modal title="Pay an Upcoming Bill Early" onClose={onClose}>
+    <Modal title="Pay or Receive Ahead of Schedule" onClose={onClose}>
       <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-        Paid a landlord, bill, or subscription earlier than scheduled? Select it below to register it as paid today — Moneypot will record the payment today and satisfy the upcoming due date so you won’t be asked again.
+        Paid a bill, received an income, or made a transfer earlier than scheduled? Select it below to record it today — Moneypot will satisfy the upcoming due date so you won’t be asked again.
       </p>
 
       <div style={{ marginBottom: 16 }}>
         <input
           type="search"
-          placeholder="Search upcoming bills (e.g. rent, electricity)..."
+          placeholder="Search upcoming bills, income, transfers (e.g. rent, salary)..."
           value={query}
           onChange={e => setQuery(e.target.value)}
           autoFocus
@@ -147,7 +147,7 @@ export function PayEarlyModal({
                     onSelect(o);
                   }}
                 >
-                  ⚡ Pay today
+                  {o.kind === 'income' ? '⚡ Got today' : o.kind === 'transfer' ? '⚡ Move today' : o.kind === 'saving' ? '⚡ Save today' : '⚡ Pay today'}
                 </button>
               </div>
             );

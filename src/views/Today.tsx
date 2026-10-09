@@ -105,7 +105,9 @@ export function Today() {
         <div className={`amt ${inc ? 'in' : ''}`}>{inc ? '+' : ''}{money(o.amount, o.currency)}</div>
         <div className="actions">
           <button className="btn ok" onClick={handleConfirm}>
-            {o.date > t ? '⚡ Pay early' : `✓ ${verb}`}
+            {o.date > t
+              ? `⚡ ${isTransfer ? 'Move early' : inc ? 'Got early' : o.kind === 'saving' ? 'Save early' : 'Pay early'}`
+              : `✓ ${verb}`}
           </button>
           <button className="btn" onClick={() => setAct({ o, mode: 'confirm' })} title="Different amount or account">✎ Edit</button>
           <button className="btn" onClick={() => setAct({ o, mode: 'later' })}>⏰ Later</button>
@@ -380,15 +382,24 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const valid = +amount > 0 && !!accountId && (o.kind !== 'transfer' || (!!toAccountId && toAccountId !== accountId));
   const isPayEarly = mode === 'confirm' && (o.date > t || o.dueDate > t) && date <= t;
 
+  const earlyActionTitle =
+    o.kind === 'income' ? 'Receive early' :
+    o.kind === 'transfer' ? 'Transfer early' :
+    o.kind === 'saving' ? 'Save early' : 'Pay early';
+
   return (
     <Modal
       title={
         mode === 'later'
           ? `Move "${o.name}" to…`
           : isPayEarly
-          ? `⚡ Pay early: "${o.name}" (Due ${dayLabel(o.dueDate || o.date)})`
+          ? `⚡ ${earlyActionTitle}: "${o.name}" (Due ${dayLabel(o.dueDate || o.date)})`
           : o.kind === 'transfer'
           ? `Confirm transfer: "${o.name}"`
+          : o.kind === 'income'
+          ? `Confirm income: "${o.name}"`
+          : o.kind === 'saving'
+          ? `Confirm saving: "${o.name}"`
           : `Confirm payment: "${o.name}"`
       }
       onClose={onClose}
@@ -396,7 +407,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       {mode === 'confirm' && (
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
           {isPayEarly
-            ? `Paying early on ${dayLabel(date)}: this satisfies the upcoming scheduled ${dayLabel(o.dueDate || o.date)} bill so it won't prompt again.`
+            ? `Recording early on ${dayLabel(date)}: this satisfies the upcoming scheduled ${dayLabel(o.dueDate || o.date)} ${o.kind === 'income' ? 'income' : o.kind === 'transfer' ? 'transfer' : 'bill'} so it won't prompt again.`
             : o.kind === 'transfer'
             ? 'Please confirm the amount and accounts for this transfer:'
             : o.kind === 'income'
@@ -684,7 +695,13 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         {mode === 'later'
           ? '⏰ Move it'
           : isPayEarly
-          ? '⚡ Approve & Pay Early Today'
+          ? (o.kind === 'income'
+              ? '⚡ Approve & Receive Early Today'
+              : o.kind === 'transfer'
+              ? '⚡ Approve & Transfer Early Today'
+              : o.kind === 'saving'
+              ? '⚡ Approve & Save Early Today'
+              : '⚡ Approve & Pay Early Today')
           : o.kind === 'transfer'
           ? '✓ Approve & Transfer'
           : selFunds?.isShort

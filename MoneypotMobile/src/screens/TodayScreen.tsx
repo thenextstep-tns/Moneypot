@@ -133,6 +133,18 @@ export function TodayScreen() {
 
     const fundCheck = checkAccountFunds(o.accountId, o.amount, o.currency, accounts, currentBalMap, stashes);
 
+    const isInc = o.kind === 'income';
+    const isTr = o.kind === 'transfer';
+    const isSav = o.kind === 'saving';
+
+    const actionText = isUpcoming
+      ? (isInc ? '⚡ Got early' : isTr ? '⚡ Move early' : isSav ? '⚡ Save early' : '⚡ Pay early')
+      : (isInc ? '✓ Got it' : isTr ? '✓ Moved' : isSav ? '✓ Put aside' : '✓ Paid');
+
+    const actionBtnBg = isUpcoming
+      ? (isInc ? '#166534' : isTr ? '#4338CA' : isSav ? '#0D9488' : '#D97706')
+      : theme.colors.brand;
+
     return (
       <View key={o.key} style={[styles.queueCard, isOverdue && styles.queueCardOverdue]}>
         <View style={styles.cardHeader}>
@@ -177,11 +189,11 @@ export function TodayScreen() {
         {/* Action Row */}
         <View style={styles.cardActions}>
           <TouchableOpacity
-            style={[styles.paidBtn, isUpcoming && styles.payEarlyBtn]}
+            style={[styles.paidBtn, { backgroundColor: actionBtnBg }]}
             onPress={() => (isUpcoming ? setActiveOccurrence(o) : handleDirectPaid(o))}
           >
             <Text style={styles.paidBtnText}>
-              {isUpcoming ? '⚡ Pay early' : '✓ Paid'}
+              {actionText}
             </Text>
           </TouchableOpacity>
 
@@ -215,7 +227,7 @@ export function TodayScreen() {
                 setPayEarlyVisible(true);
               }}
             >
-              <Text style={styles.headerActionBtnEarlyText}>⚡ Pay early</Text>
+              <Text style={styles.headerActionBtnEarlyText}>⚡ Early action</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerActionBtnAdd}

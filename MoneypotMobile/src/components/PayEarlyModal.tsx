@@ -62,9 +62,9 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
         <View style={styles.content}>
           <View style={styles.header}>
             <View style={styles.titleCol}>
-              <Text style={styles.title}>⚡ Pay Bill Early</Text>
+              <Text style={styles.title}>⚡ Early Actions</Text>
               <Text style={styles.subtitle}>
-                Record an upcoming bill as paid today — satisfies the scheduled bill so you won't be asked again.
+                Record an upcoming bill, income, or transfer ahead of time — satisfies the scheduled occurrence so you won't be asked again.
               </Text>
             </View>
             <TouchableOpacity
@@ -149,10 +149,30 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
                         {money(o.amount, o.currency)}
                       </Text>
                       <TouchableOpacity
-                        style={styles.payTodayBtn}
+                        style={[
+                          styles.payTodayBtn,
+                          {
+                            backgroundColor:
+                              o.kind === 'income'
+                                ? '#166534'
+                                : o.kind === 'transfer'
+                                ? '#4338CA'
+                                : o.kind === 'saving'
+                                ? '#0D9488'
+                                : '#D97706',
+                          },
+                        ]}
                         onPress={() => handleSelect(o)}
                       >
-                        <Text style={styles.payTodayBtnText}>⚡ Pay Today</Text>
+                        <Text style={styles.payTodayBtnText}>
+                          {o.kind === 'income'
+                            ? '⚡ Got today'
+                            : o.kind === 'transfer'
+                            ? '⚡ Move today'
+                            : o.kind === 'saving'
+                            ? '⚡ Save today'
+                            : '⚡ Pay today'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </TouchableOpacity>

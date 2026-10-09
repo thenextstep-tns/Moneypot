@@ -124,13 +124,18 @@ export function PaymentActionModal({
   };
 
   const isPayEarly = (occurrence.dueDate > today() || occurrence.date > today()) && dateStr <= today();
+  const isInc = occurrence.kind === 'income';
+  const isTr = occurrence.kind === 'transfer';
+  const isSav = occurrence.kind === 'saving';
+
+  const earlyTitleVerb = isInc ? 'Receive Early' : isTr ? 'Transfer Early' : isSav ? 'Save Early' : 'Pay Early';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.content}>
           <View style={styles.header}>
-            <Text style={styles.title}>{isPayEarly ? `⚡ Pay Early: ${occurrence.name}` : occurrence.name}</Text>
+            <Text style={styles.title}>{isPayEarly ? `⚡ ${earlyTitleVerb}: ${occurrence.name}` : occurrence.name}</Text>
             <TouchableOpacity onPress={onClose}>
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
@@ -231,11 +236,36 @@ export function PaymentActionModal({
               {!postponeMode ? (
                 <>
                   <TouchableOpacity
-                    style={[styles.confirmBtn, isPayEarly && { backgroundColor: '#D97706' }]}
+                    style={[
+                      styles.confirmBtn,
+                      isPayEarly && {
+                        backgroundColor: isInc
+                          ? '#166534'
+                          : isTr
+                          ? '#4338CA'
+                          : isSav
+                          ? '#0D9488'
+                          : '#D97706',
+                      },
+                    ]}
                     onPress={handleConfirm}
                   >
                     <Text style={styles.confirmBtnText}>
-                      {isPayEarly ? '⚡ Pay Early Today' : '✓ Mark as Paid'}
+                      {isPayEarly
+                        ? isInc
+                          ? '⚡ Receive Early Today'
+                          : isTr
+                          ? '⚡ Transfer Early Today'
+                          : isSav
+                          ? '⚡ Save Early Today'
+                          : '⚡ Pay Early Today'
+                        : isInc
+                        ? '✓ Record Income'
+                        : isTr
+                        ? '✓ Record Transfer'
+                        : isSav
+                        ? '✓ Put Aside'
+                        : '✓ Mark as Paid'}
                     </Text>
                   </TouchableOpacity>
 
