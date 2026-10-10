@@ -96,22 +96,45 @@ export function Stashes() {
           const isSharedStash = Boolean((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund');
           const isInstant = s.isInstantAccess !== false && !isSharedStash;
           return (
-            <button key={s.id} className="card click" onClick={() => setEdit(s)}>
-              <div className="big">{s.emoji}</div>
-              <div className="title">
-                {s.name}
-                {isInstant && (
-                  <span className="tag" style={{ background: '#ECFDF5', color: '#065F46', fontSize: 11 }}>⚡ Instant Access</span>
-                )}
-                {isSharedStash && (
-                  <span className="tag shared-tag">👥 Shared{s.sharedWith?.length ? ` (${s.sharedWith.length})` : ''}</span>
-                )}
+            <div
+              key={s.id}
+              className="card stash-card"
+              onClick={() => setEdit(s)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setEdit(s);
+                }
+              }}
+            >
+              <div className="stash-card-head">
+                <div className="big">{s.emoji}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
+                  {isInstant && (
+                    <span className="stash-tag-instant" title="Instant access savings - free to spend when needed">
+                      <span>⚡</span>
+                      <span>Instant Access</span>
+                    </span>
+                  )}
+                  {isSharedStash && (
+                    <span className="tag shared-tag" style={{ whiteSpace: 'nowrap', margin: 0 }}>
+                      👥 Shared{s.sharedWith?.length ? ` (${s.sharedWith.length})` : ''}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              <div className="stash-card-title">
+                {s.name}
+              </div>
+
               <div className="stash-amt"><b>{money(v, s.currency)}</b> <span className="muted">of {money(s.target, s.currency)}</span></div>
               <Bar done={v} total={s.target} color="#2FA36B" />
               <div className="sub">{v >= s.target ? '🎉 Goal reached!' : `${money(s.target - v, s.currency)} to go`}</div>
               {s.sharedWith && s.sharedWith.length > 0 && v > 0 && contribs.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
                   {contribs.map(c => (
                     <span key={c.name} style={{ fontSize: 11, background: '#F1F5F9', padding: '2px 6px', borderRadius: 6, color: 'var(--ink)' }}>
                       👤 {c.name}: <b>{money(c.amount, s.currency)}</b>
@@ -119,33 +142,33 @@ export function Stashes() {
                   ))}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 6, marginTop: 10, justifyContent: 'flex-end', borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-                <span
-                  className="btn ok"
-                  style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+              <div className="stash-actions-row">
+                <button
+                  type="button"
+                  className="stash-btn-topup"
                   onClick={(e) => {
                     e.stopPropagation();
                     setTopUpStash(s);
                   }}
                   title="Top up this stash"
                 >
-                  <span>+</span>
+                  <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1 }}>+</span>
                   <span>Top up</span>
-                </span>
-                <span
-                  className="btn ghost"
-                  style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                </button>
+                <button
+                  type="button"
+                  className="stash-btn-transfer"
                   onClick={(e) => {
                     e.stopPropagation();
                     setTransferStash(s);
                   }}
-                  title="Withdraw to account or deposit into this stash"
+                  title="Transfer or withdraw money to/from this stash"
                 >
-                  <span>⇄</span>
-                  <span>Move / Withdraw</span>
-                </span>
+                  <span style={{ fontSize: 13, lineHeight: 1 }}>⇄</span>
+                  <span>Transfer</span>
+                </button>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
