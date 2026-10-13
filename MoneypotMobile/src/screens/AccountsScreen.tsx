@@ -13,7 +13,8 @@ import {
   calcAccountStashedBalance,
   calcTotalLiquidBalance,
   calcTotalStashedBalance,
-  calcTotalSharedStashedBalance,
+  calcTotalStashedBreakdown,
+  formatStashedBreakdown,
 } from '../domain/balances';
 import { money, today } from '../domain/schedule';
 import { theme } from '../theme';
@@ -46,23 +47,15 @@ export function AccountsScreen() {
     settings.currency
   );
 
-  const totalStashed = calcTotalStashedBalance(
-    accounts,
-    stashes,
-    payments,
-    transfers,
-    plans,
-    settings.currency
-  );
-
-  const totalSharedStashed = calcTotalSharedStashedBalance(
-    stashes,
-    payments,
-    transfers,
-    plans,
-    settings.currency,
-    user?.uid
-  );
+  const { total: totalStashed, personal: totalPersonalStashed, shared: totalSharedStashed } =
+    calcTotalStashedBreakdown(
+      accounts,
+      stashes,
+      payments,
+      transfers,
+      plans,
+      settings.currency
+    );
 
   const totalAvailable = Math.max(0, totalLiquid - totalStashed);
 
@@ -103,8 +96,7 @@ export function AccountsScreen() {
           <Text style={styles.totalValue}>{money(totalAvailable, settings.currency)}</Text>
           <Text style={styles.totalSub}>
             Total: {money(totalLiquid, settings.currency)}
-            {totalStashed > 0 ? ` · 🔒 ${money(totalStashed, settings.currency)} reserved in stashes` : ''}
-            {totalSharedStashed > 0 ? ` · 👥 ${money(totalSharedStashed, settings.currency)} in shared stashes` : ''}
+            {totalStashed > 0 ? ` · ${formatStashedBreakdown(totalStashed, totalPersonalStashed, totalSharedStashed, settings.currency)}` : ''}
           </Text>
         </View>
 

@@ -1,6 +1,6 @@
 import type { Account, Occurrence, Payment, Plan, Stash, Transfer } from './types';
 import { convert } from './fx';
-import { addDays, monthRange, occurrences, shiftMonth, today } from './schedule';
+import { addDays, money, monthRange, occurrences, shiftMonth, today } from './schedule';
 
 /** Helper to resolve the physical account ID of an account or stash */
 export function getPhysicalAccountId(
@@ -154,16 +154,17 @@ export function calcStashBalance(
   return b;
 }
 
-/** Calculate total stashed / reserved funds sitting inside an account (envelopes within this account) */
-export function calcAccountStashedBalance(
+/** Calculate breakdown of stashed funds inside an account: personal vs shared */
+export function calcAccountStashedBreakdown(
   a: Account,
   stashes: Stash[],
   payments: Payment[] = [],
   transfers: Transfer[] = [],
   plans: Plan[] = [],
   allAccounts: Account[] = []
-): number {
-  let sum = 0;
+): { total: number; personal: number; shared: number } {
+  let totalShared = 0;
+  let totalPersonal = 0;
   const isFallbackPrimary = allAccounts.length > 0 && allAccounts[0].id === a.id;
   for (const s of stashes) {
     const hasValidAcc = s.accountId && allAccounts.some(acc => acc.id === s.accountId);
@@ -185,7 +186,11 @@ export function calcAccountStashedBalance(
 
     if (parentAccId === a.id) {
       let sBal = 0;
-      const isShared = Boolean((s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)));
+      const isShared = Boolean(
+        (s.sharedWith && s.sharedWith.length > 0) ||
+        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
+        s.name?.toLowerCase().trim() === 'kinky fund'
+      );
 
       if (!isShared) {
         sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
@@ -216,10 +221,30 @@ export function calcAccountStashedBalance(
       }
 
       const inAccCur = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
-      sum += inAccCur;
+      if (isShared) {
+        totalShared += inAccCur;
+      } else {
+        totalPersonal += inAccCur;
+      }
     }
   }
-  return sum;
+  return {
+    total: totalPersonal + totalShared,
+    personal: totalPersonal,
+    shared: totalShared,
+  };
+}
+
+/** Calculate total stashed / reserved funds sitting inside an account (envelopes within this account) */
+export function calcAccountStashedBalance(
+  a: Account,
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  allAccounts: Account[] = []
+): number {
+  return calcAccountStashedBreakdown(a, stashes, payments, transfers, plans, allAccounts).total;
 }
 
 /** Calculate free / available spending balance of an account (Total balance minus reserved stashes) */
@@ -472,6 +497,46 @@ export function calcTotalLiquidBalance(
   return sum;
 }
 
+/** Calculate breakdown of total stashed funds across all accounts: total, personal, shared */
+export function calcTotalStashedBreakdown(
+  accounts: Account[],
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  targetCurrency = 'EUR'
+): { total: number; personal: number; shared: number } {
+  let totalPersonal = 0;
+  let totalShared = 0;
+  for (const a of accounts) {
+    const bd = calcAccountStashedBreakdown(a, stashes, payments, transfers, plans, accounts);
+    totalPersonal += convert(bd.personal, a.currency, targetCurrency);
+    totalShared += convert(bd.shared, a.currency, targetCurrency);
+  }
+  return {
+    total: totalPersonal + totalShared,
+    personal: totalPersonal,
+    shared: totalShared,
+  };
+}
+
+/** Formats stashed breakdown: "50 € in stashes: 30 € in personal, 👥 20 € in shared" */
+export function formatStashedBreakdown(
+  totalStashed: number,
+  personalStashed: number,
+  sharedStashed: number,
+  currency: string
+): string {
+  if (totalStashed <= 0) return '';
+  if (sharedStashed > 0 && personalStashed > 0) {
+    return `🔒 ${money(totalStashed, currency)} in stashes: ${money(personalStashed, currency)} in personal, 👥 ${money(sharedStashed, currency)} in shared`;
+  }
+  if (sharedStashed > 0) {
+    return `🔒 ${money(totalStashed, currency)} in stashes: 👥 ${money(sharedStashed, currency)} in shared`;
+  }
+  return `🔒 ${money(totalStashed, currency)} in stashes`;
+}
+
 /** Total stashed / reserved funds across all accounts converted into target currency */
 export function calcTotalStashedBalance(
   accounts: Account[],
@@ -481,12 +546,7 @@ export function calcTotalStashedBalance(
   plans: Plan[] = [],
   targetCurrency = 'EUR'
 ): number {
-  let sum = 0;
-  for (const a of accounts) {
-    const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
-    sum += convert(stashed, a.currency, targetCurrency);
-  }
-  return sum;
+  return calcTotalStashedBreakdown(accounts, stashes, payments, transfers, plans, targetCurrency).total;
 }
 
 /** Total funds sitting in shared stashes converted into target currency */

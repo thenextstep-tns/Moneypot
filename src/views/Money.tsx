@@ -14,7 +14,8 @@ import {
   calcProjectedStashBalance,
   calcTotalLiquidBalance,
   calcTotalStashedBalance,
-  calcTotalSharedStashedBalance,
+  calcTotalStashedBreakdown,
+  formatStashedBreakdown,
 } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
@@ -670,8 +671,8 @@ export function Accounts() {
 
   const mainCur = settings.currency || 'EUR';
   const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, mainCur);
-  const totalStashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, mainCur);
-  const totalSharedStashed = calcTotalSharedStashedBalance(stashes, payments, transfers, plans, mainCur, user?.uid);
+  const { total: totalStashed, personal: totalPersonalStashed, shared: totalSharedStashed } =
+    calcTotalStashedBreakdown(accounts, stashes, payments, transfers, plans, mainCur);
   const totalAvailable = Math.max(0, totalLiquid - totalStashed);
 
   return (
@@ -714,8 +715,7 @@ export function Accounts() {
             </div>
             <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
               Total: {money(totalLiquid, mainCur)}
-              {totalStashed > 0 ? ` · 🔒 ${money(totalStashed, mainCur)} reserved in stashes` : ''}
-              {totalSharedStashed > 0 ? ` · 👥 ${money(totalSharedStashed, mainCur)} in shared stashes` : ''}
+              {totalStashed > 0 ? ` · ${formatStashedBreakdown(totalStashed, totalPersonalStashed, totalSharedStashed, mainCur)}` : ''}
             </div>
           </div>
           {accounts.length >= 2 && (
