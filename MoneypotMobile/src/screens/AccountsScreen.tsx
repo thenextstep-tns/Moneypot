@@ -13,6 +13,7 @@ import {
   calcAccountStashedBalance,
   calcTotalLiquidBalance,
   calcTotalStashedBalance,
+  calcTotalSharedStashedBalance,
 } from '../domain/balances';
 import { money, today } from '../domain/schedule';
 import { theme } from '../theme';
@@ -24,7 +25,7 @@ import { QuickTransferModal } from '../components/QuickTransferModal';
 import type { Account } from '../domain/types';
 
 export function AccountsScreen() {
-  const { accounts, payments, transfers, plans, stashes, settings, save } = useData();
+  const { accounts, payments, transfers, plans, stashes, settings, user, save } = useData();
 
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -52,6 +53,15 @@ export function AccountsScreen() {
     transfers,
     plans,
     settings.currency
+  );
+
+  const totalSharedStashed = calcTotalSharedStashedBalance(
+    stashes,
+    payments,
+    transfers,
+    plans,
+    settings.currency,
+    user?.uid
   );
 
   const totalAvailable = Math.max(0, totalLiquid - totalStashed);
@@ -93,7 +103,8 @@ export function AccountsScreen() {
           <Text style={styles.totalValue}>{money(totalAvailable, settings.currency)}</Text>
           <Text style={styles.totalSub}>
             Total: {money(totalLiquid, settings.currency)}
-            {totalStashed > 0 ? ` • 🔒 ${money(totalStashed, settings.currency)} reserved` : ''}
+            {totalStashed > 0 ? ` · 🔒 ${money(totalStashed, settings.currency)} reserved in stashes` : ''}
+            {totalSharedStashed > 0 ? ` · 👥 ${money(totalSharedStashed, settings.currency)} in shared stashes` : ''}
           </Text>
         </View>
 

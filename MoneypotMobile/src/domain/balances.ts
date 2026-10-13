@@ -395,11 +395,8 @@ export function calcProjectedStashBalance(
     }
     const isThisStashSaving = o.kind === 'saving' && (o.stashId === s.id || o.plan?.stashId === s.id);
     const isThisStashPayment = o.accountId === `stash_${s.id}` || o.accountId === s.id;
-    const isSharedStashExpense = Boolean(
-      s.sharedWith && s.sharedWith.length > 0 && s.categoryId && o.categoryId === s.categoryId && o.kind === 'expense'
-    );
 
-    if (!isThisStashSaving && !isThisStashPayment && !isSharedStashExpense) continue;
+    if (!isThisStashSaving && !isThisStashPayment) continue;
 
     const amt = o.currency && o.currency !== s.currency ? convert(o.amount, o.currency, s.currency) : o.amount;
     if (isThisStashSaving) {
@@ -407,8 +404,6 @@ export function calcProjectedStashBalance(
     } else if (isThisStashPayment) {
       if (o.kind === 'income') projected += amt;
       else projected -= amt;
-    } else if (isSharedStashExpense) {
-      projected -= amt;
     }
   }
 
@@ -490,6 +485,30 @@ export function calcTotalStashedBalance(
   for (const a of accounts) {
     const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
     sum += convert(stashed, a.currency, targetCurrency);
+  }
+  return sum;
+}
+
+/** Total funds sitting in shared stashes converted into target currency */
+export function calcTotalSharedStashedBalance(
+  stashes: Stash[],
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  targetCurrency = 'EUR',
+  currentUserId?: string | null
+): number {
+  let sum = 0;
+  for (const s of stashes) {
+    const isShared = Boolean(
+      (s.sharedWith && s.sharedWith.length > 0) ||
+      (s.ownerId && currentUserId && s.ownerId !== currentUserId) ||
+      s.name?.toLowerCase().trim() === 'kinky fund'
+    );
+    if (isShared) {
+      const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
+      sum += convert(sBal, s.currency || targetCurrency, targetCurrency);
+    }
   }
   return sum;
 }

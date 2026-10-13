@@ -14,6 +14,7 @@ import {
   calcProjectedStashBalance,
   calcTotalLiquidBalance,
   calcTotalStashedBalance,
+  calcTotalSharedStashedBalance,
 } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
@@ -661,7 +662,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
 /** Where money lives: cards, Payoneer, cash, savings accounts */
 export function Accounts() {
-  const { accounts, plans, payments, stashes, transfers, settings, save } = useData();
+  const { accounts, plans, payments, stashes, transfers, settings, user, save } = useData();
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -670,6 +671,7 @@ export function Accounts() {
   const mainCur = settings.currency || 'EUR';
   const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, mainCur);
   const totalStashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, mainCur);
+  const totalSharedStashed = calcTotalSharedStashedBalance(stashes, payments, transfers, plans, mainCur, user?.uid);
   const totalAvailable = Math.max(0, totalLiquid - totalStashed);
 
   return (
@@ -713,6 +715,7 @@ export function Accounts() {
             <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
               Total: {money(totalLiquid, mainCur)}
               {totalStashed > 0 ? ` · 🔒 ${money(totalStashed, mainCur)} reserved in stashes` : ''}
+              {totalSharedStashed > 0 ? ` · 👥 ${money(totalSharedStashed, mainCur)} in shared stashes` : ''}
             </div>
           </div>
           {accounts.length >= 2 && (
