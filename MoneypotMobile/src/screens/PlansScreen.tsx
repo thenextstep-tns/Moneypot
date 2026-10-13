@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useData } from '../context/DataContext';
 import { freqLabel, perMonth, money } from '../domain/schedule';
+import { convert } from '../domain/fx';
 import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
@@ -27,17 +28,19 @@ export function PlansScreen() {
     return p.kind === filter;
   });
 
+  const targetCurrency = settings.currency || 'EUR';
+
   const totalMonthlyExpense = plans
     .filter(p => p.kind === 'expense')
-    .reduce((sum, p) => sum + perMonth(p), 0);
+    .reduce((sum, p) => sum + convert(perMonth(p), p.currency || targetCurrency, targetCurrency), 0);
 
   const totalMonthlyIncome = plans
     .filter(p => p.kind === 'income')
-    .reduce((sum, p) => sum + perMonth(p), 0);
+    .reduce((sum, p) => sum + convert(perMonth(p), p.currency || targetCurrency, targetCurrency), 0);
 
   const totalMonthlyTransfer = plans
     .filter(p => p.kind === 'transfer' || p.kind === 'saving')
-    .reduce((sum, p) => sum + perMonth(p), 0);
+    .reduce((sum, p) => sum + convert(perMonth(p), p.currency || targetCurrency, targetCurrency), 0);
 
   const handleOpenAdd = () => {
     triggerHaptic('light');
@@ -98,18 +101,18 @@ export function PlansScreen() {
       <View style={styles.kpiRow}>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Avg Monthly Out</Text>
-          <Text style={styles.kpiVal}>{money(totalMonthlyExpense, settings.currency)}</Text>
+          <Text style={styles.kpiVal}>{money(totalMonthlyExpense, targetCurrency)}</Text>
         </View>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Avg Monthly In</Text>
           <Text style={[styles.kpiVal, { color: theme.colors.brandDark }]}>
-            {money(totalMonthlyIncome, settings.currency)}
+            {money(totalMonthlyIncome, targetCurrency)}
           </Text>
         </View>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Transfers / Mo</Text>
           <Text style={[styles.kpiVal, { color: theme.colors.purple }]}>
-            {money(totalMonthlyTransfer, settings.currency)}
+            {money(totalMonthlyTransfer, targetCurrency)}
           </Text>
         </View>
       </View>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { uid, useData } from '../store';
 import { addDays, dayLabel, dueDates, freqLabel, money, occurrences, perMonth, toPayment, today } from '../schedule';
+import { convert } from '../fx';
 import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance } from '../balances';
 import type { Kind, Plan } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
@@ -65,14 +66,19 @@ export function Plans() {
           if (p.freq === 'once') return showOneOffs;
           return ['daily', 'weekly', 'monthly', 'yearly'].includes(p.freq);
         });
-        const monthly = list.filter(p => p.freq !== 'once').reduce((s, p) => s + perMonth(p), 0);
-        const oneOffTotal = list.filter(p => p.freq === 'once').reduce((s, p) => s + p.amount, 0);
+        const targetCurrency = settings.currency || 'EUR';
+        const monthly = list
+          .filter(p => p.freq !== 'once')
+          .reduce((s, p) => s + convert(perMonth(p), p.currency || targetCurrency, targetCurrency), 0);
+        const oneOffTotal = list
+          .filter(p => p.freq === 'once')
+          .reduce((s, p) => s + convert(p.amount, p.currency || targetCurrency, targetCurrency), 0);
         return (
           <section key={kind}>
             <h2>
               {title}
-              {monthly > 0 && <span className="muted"> · ≈ {money(monthly, settings.currency)} / month</span>}
-              {showOneOffs && oneOffTotal > 0 && <span className="muted"> · +{money(oneOffTotal, settings.currency)} one-off</span>}
+              {monthly > 0 && <span className="muted"> · ≈ {money(monthly, targetCurrency)} / month</span>}
+              {showOneOffs && oneOffTotal > 0 && <span className="muted"> · +{money(oneOffTotal, targetCurrency)} one-off</span>}
             </h2>
             {list.length === 0 && <p className="muted">{hint}</p>}
             {list.map(p => {
@@ -382,32 +388,38 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                     {money(selBals.projected, selParty.currency)}
                   </b>
                 </div>
-                {p.amount > 0 && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
-                    }}
-                  >
-                    <span style={{ color: 'var(--mute)' }}>
-                      After this transfer:
-                    </span>
-                    <b style={{ color: selBals.projected - p.amount < 0 ? '#DC2626' : '#166534' }}>
-                      {money(selBals.projected - p.amount, selParty.currency)}
-                    </b>
-                  </div>
-                )}
+                {p.amount > 0 && (() => {
+                  const effFromAmt = convert(p.amount, p.currency, selParty.currency);
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingTop: 4,
+                        borderTop: '1px dashed #E2E8F0',
+                      }}
+                    >
+                      <span style={{ color: 'var(--mute)' }}>
+                        After this transfer:
+                      </span>
+                      <b style={{ color: selBals.projected - effFromAmt < 0 ? '#DC2626' : '#166534' }}>
+                        {money(selBals.projected - effFromAmt, selParty.currency)}
+                      </b>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
-            {selParty && isFuture && selBals && p.amount > 0 && (selBals.projected - p.amount < 0) && (
-              <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
-                ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(p.amount - selBals.projected, selParty.currency)} short.
-              </div>
-            )}
+            {selParty && isFuture && selBals && p.amount > 0 && (() => {
+              const effFromAmt = convert(p.amount, p.currency, selParty.currency);
+              return selBals.projected - effFromAmt < 0 ? (
+                <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+                  ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(effFromAmt - selBals.projected, selParty.currency)} short.
+                </div>
+              ) : null;
+            })()}
           </Field>
 
           <Field label="To (Destination account / stash)">
@@ -463,7 +475,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                       After receiving transfer:
                     </span>
                     <b style={{ color: '#166534' }}>
-                      {money(toBals.projected + p.amount, toParty.currency)}
+                      {money(toBals.projected + convert(p.toAmount ?? p.amount, p.toCurrency ?? p.currency, toParty.currency), toParty.currency)}
                     </b>
                   </div>
                 )}
@@ -605,46 +617,39 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                     {money(selBals.projected, selParty.currency)}
                   </b>
                 </div>
-                {p.amount > 0 && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
-                    }}
-                  >
-                    <span style={{ color: 'var(--mute)' }}>
-                      After this {p.kind === 'income' ? 'income' : 'expense'}:
-                    </span>
-                    <b
+                {p.amount > 0 && (() => {
+                  const effAmt = convert(p.amount, p.currency, selParty.currency);
+                  const netAfter = p.kind === 'income' ? selBals.projected + effAmt : selBals.projected - effAmt;
+                  return (
+                    <div
                       style={{
-                        color:
-                          (p.kind === 'income'
-                            ? selBals.projected + p.amount
-                            : selBals.projected - p.amount) < 0
-                            ? '#DC2626'
-                            : '#166534',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingTop: 4,
+                        borderTop: '1px dashed #E2E8F0',
                       }}
                     >
-                      {money(
-                        p.kind === 'income'
-                          ? selBals.projected + p.amount
-                          : selBals.projected - p.amount,
-                        selParty.currency
-                      )}
-                    </b>
-                  </div>
-                )}
+                      <span style={{ color: 'var(--mute)' }}>
+                        After this {p.kind === 'income' ? 'income' : 'expense'}:
+                      </span>
+                      <b style={{ color: netAfter < 0 ? '#DC2626' : '#166534' }}>
+                        {money(netAfter, selParty.currency)}
+                      </b>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
-            {selParty && isFuture && selBals && p.kind !== 'income' && p.amount > 0 && (selBals.projected - p.amount < 0) && (
-              <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
-                ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(p.amount - selBals.projected, selParty.currency)} short.
-              </div>
-            )}
+            {selParty && isFuture && selBals && p.kind !== 'income' && p.amount > 0 && (() => {
+              const effAmt = convert(p.amount, p.currency, selParty.currency);
+              return selBals.projected - effAmt < 0 ? (
+                <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+                  ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(effAmt - selBals.projected, selParty.currency)} short.
+                </div>
+              ) : null;
+            })()}
           </Field>
         </>
       )}
