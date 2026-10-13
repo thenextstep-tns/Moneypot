@@ -161,7 +161,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
       kind: k,
       categoryId: '',
       amount: 0,
-      currency: settings.currency,
+      currency: accounts[0]?.currency || settings.currency,
       accountId: accounts[0]?.id || '',
       toAccountId: accounts.find(a => a.id !== accounts[0]?.id)?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''),
       freq: 'monthly',
@@ -350,7 +350,12 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
               stashes={stashes}
               allowStashes={true}
               value={p.accountId}
-              onChange={id => set({ accountId: id })}
+              onChange={id => {
+                const acc = accounts.find(a => a.id === id);
+                const st = id.startsWith('stash_') ? stashes.find(s => s.id === id.replace('stash_', '')) : undefined;
+                const c = acc?.currency || st?.currency;
+                set({ accountId: id, ...(c ? { currency: c } : {}) });
+              }}
               balances={balances}
               targetDate={targetDate}
               projectedBalances={projectedBalances}
@@ -568,7 +573,12 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
               stashes={stashes}
               allowStashes={p.kind !== 'saving'}
               value={p.accountId}
-              onChange={id => set({ accountId: id })}
+              onChange={id => {
+                const acc = accounts.find(a => a.id === id);
+                const st = id.startsWith('stash_') ? stashes.find(s => s.id === id.replace('stash_', '')) : undefined;
+                const c = acc?.currency || st?.currency;
+                set({ accountId: id, ...(c ? { currency: c } : {}) });
+              }}
               balances={balances}
               targetDate={targetDate}
               projectedBalances={projectedBalances}

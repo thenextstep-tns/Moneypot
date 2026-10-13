@@ -122,6 +122,8 @@ export function TodayScreen() {
   };
 
   const handleQuickTemplatePress = async (tmpl: QuickTemplate) => {
+    const targetAcc = accounts.find(a => a.id === (tmpl.accountId || accounts[0]?.id));
+    const tmplCur = tmpl.currency || targetAcc?.currency || settings.currency || 'EUR';
     const paymentId = `p_${uid()}`;
     const pRecord = {
       id: paymentId,
@@ -130,7 +132,7 @@ export function TodayScreen() {
       date: t,
       name: tmpl.name,
       amount: tmpl.amount,
-      currency: tmpl.currency || settings.currency || 'EUR',
+      currency: tmplCur,
       status: 'confirmed' as const,
       kind: tmpl.kind || 'expense',
       accountId: tmpl.accountId || accounts[0]?.id,
@@ -139,7 +141,7 @@ export function TodayScreen() {
       note: 'Quick template',
     };
     await save('payments', pRecord);
-    showToast(`✓ Logged ${tmpl.name} (${money(tmpl.amount, tmpl.currency || settings.currency)})`);
+    showToast(`✓ Logged ${tmpl.name} (${money(tmpl.amount, tmplCur)})`);
   };
 
   const handleDirectPaid = async (o: Occurrence) => {

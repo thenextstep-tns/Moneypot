@@ -56,8 +56,9 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       setName('');
       setKind('expense');
       setAmountStr('');
-      setCurrency(settings.currency || 'EUR');
-      setAccountId(accounts[0]?.id || '');
+      const firstAcc = accounts[0];
+      setCurrency(firstAcc?.currency || settings.currency || 'EUR');
+      setAccountId(firstAcc?.id || '');
       setToAccountId(accounts[1]?.id || '');
       setCategoryId(categories[0]?.id || '');
       setStashId(stashes[0]?.id || '');
@@ -211,6 +212,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                     onPress={() => {
                       triggerHaptic('light');
                       setAccountId(a.id);
+                      if (a.currency) setCurrency(a.currency);
                     }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{a.name}</Text>
@@ -227,6 +229,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                     onPress={() => {
                       triggerHaptic('light');
                       setAccountId(sId);
+                      if (s.currency) setCurrency(s.currency);
                     }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{s.emoji} {s.name}</Text>

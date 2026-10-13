@@ -37,20 +37,37 @@ export function OneOffPaymentModal({
   const expenseCats = categories.filter(c => c.kind === 'expense');
   const incomeCats = categories.filter(c => c.kind === 'income');
 
+  const initAccId = template?.accountId ?? initialFromId ?? accounts[0]?.id ?? '';
+  const initAcc = accounts.find(a => a.id === initAccId);
+  const initStash = initAccId.startsWith('stash_')
+    ? stashes.find(s => s.id === initAccId.replace('stash_', ''))
+    : undefined;
+  const initialCurrency = template?.currency ?? initAcc?.currency ?? initStash?.currency ?? settings.currency ?? 'EUR';
+
   const [name, setName] = useState(template?.name ?? '');
   const [emoji, setEmoji] = useState(template?.emoji ?? (template?.kind === 'income' ? '💰' : expenseCats[0]?.emoji ?? '💸'));
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [amount, setAmount] = useState<number | string>(template?.amount ?? '');
-  const [currency, setCurrency] = useState(template?.currency ?? settings.currency);
+  const [currency, setCurrency] = useState(initialCurrency);
   const [date, setDate] = useState(today());
   const [categoryId, setCategoryId] = useState(
     template?.categoryId || (initialType === 'income' ? (incomeCats[0]?.id || '') : (expenseCats[0]?.id || ''))
   );
   const [subcategory, setSubcategory] = useState<string | undefined>(template?.subcategory);
-  const [accountId, setAccountId] = useState(template?.accountId ?? initialFromId ?? accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState(initAccId);
   const [note, setNote] = useState(template?.note ?? '');
   const [addingSub, setAddingSub] = useState(false);
   const [newSubVal, setNewSubVal] = useState('');
+
+  const handleAccountChange = (newAccId: string) => {
+    setAccountId(newAccId);
+    const acc = accounts.find(a => a.id === newAccId);
+    const st = newAccId.startsWith('stash_') ? stashes.find(s => s.id === newAccId.replace('stash_', '')) : undefined;
+    const c = acc?.currency || st?.currency;
+    if (c) {
+      setCurrency(c);
+    }
+  };
 
   // Transfer specific state
   const [fromId, setFromId] = useState(initialFromId || accounts[0]?.id || '');
@@ -69,7 +86,7 @@ export function OneOffPaymentModal({
     if (initialType) setOpType(initialType);
     if (initialFromId) {
       setFromId(initialFromId);
-      setAccountId(initialFromId);
+      handleAccountChange(initialFromId);
     }
     if (initialToId) setToId(initialToId);
   }, [initialType, initialFromId, initialToId]);
@@ -592,7 +609,7 @@ export function OneOffPaymentModal({
                   type="button"
                   className={`btn ${isUsingStash ? 'ok' : 'ghost'}`}
                   style={{ fontSize: 11, padding: '3px 8px' }}
-                  onClick={() => setAccountId(`stash_${sharedStashForCat.id}`)}
+                  onClick={() => handleAccountChange(`stash_${sharedStashForCat.id}`)}
                 >
                   {isUsingStash ? '✓ Paid from Shared Stash' : 'Pay from Shared Stash'}
                 </button>
@@ -605,7 +622,7 @@ export function OneOffPaymentModal({
               accounts={accounts}
               stashes={stashes}
               value={accountId}
-              onChange={id => setAccountId(id)}
+              onChange={handleAccountChange}
               balances={balances}
               targetDate={date}
               projectedBalances={projectedBalances}
@@ -678,7 +695,7 @@ export function OneOffPaymentModal({
                         type="button"
                         className="btn"
                         style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, background: '#FFFFFF', border: '1px solid #F8B4B4', color: '#9B1C1C', cursor: 'pointer' }}
-                        onClick={() => setAccountId(`stash_${s.id}`)}
+                        onClick={() => handleAccountChange(`stash_${s.id}`)}
                       >
                         <span>{s.emoji} Pay from {s.name} ({money(sBal, s.currency)})</span>
                       </button>
@@ -882,7 +899,7 @@ export function OneOffPaymentModal({
               accounts={accounts}
               stashes={stashes}
               value={accountId}
-              onChange={id => setAccountId(id)}
+              onChange={handleAccountChange}
               balances={balances}
               targetDate={date}
               projectedBalances={projectedBalances}
@@ -1219,13 +1236,20 @@ export function TemplateModal({
   const { categories, accounts, stashes, settings, save, remove } = useData();
   const expenseCats = categories.filter(c => c.kind === 'expense');
 
+  const initAccId = template?.accountId ?? accounts[0]?.id ?? '';
+  const initAcc = accounts.find(a => a.id === initAccId);
+  const initStash = initAccId.startsWith('stash_')
+    ? stashes.find(s => s.id === initAccId.replace('stash_', ''))
+    : undefined;
+  const initialCurrency = template?.currency ?? initAcc?.currency ?? initStash?.currency ?? settings.currency ?? 'EUR';
+
   const [name, setName] = useState(template?.name ?? '');
   const [emoji, setEmoji] = useState(template?.emoji ?? '⚡');
   const [amount, setAmount] = useState<number | string>(template?.amount ?? '');
-  const [currency, setCurrency] = useState(template?.currency ?? settings.currency);
+  const [currency, setCurrency] = useState(initialCurrency);
   const [categoryId, setCategoryId] = useState(template?.categoryId || expenseCats[0]?.id || '');
   const [subcategory, setSubcategory] = useState<string | undefined>(template?.subcategory);
-  const [accountId, setAccountId] = useState(template?.accountId ?? accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState(initAccId);
   const [note, setNote] = useState(template?.note ?? '');
   const [addingSub, setAddingSub] = useState(false);
   const [newSubVal, setNewSubVal] = useState('');
@@ -1366,7 +1390,13 @@ export function TemplateModal({
           accounts={accounts}
           stashes={stashes}
           value={accountId}
-          onChange={id => setAccountId(id)}
+          onChange={id => {
+            setAccountId(id);
+            const acc = accounts.find(a => a.id === id);
+            const st = id.startsWith('stash_') ? stashes.find(s => s.id === id.replace('stash_', '')) : undefined;
+            const c = acc?.currency || st?.currency;
+            if (c) setCurrency(c);
+          }}
         />
       </Field>
 

@@ -107,10 +107,41 @@ export function OneOffPaymentModal({
   const [transferToAmountStr, setTransferToAmountStr] = useState('');
   const [transferNote, setTransferNote] = useState('');
 
+  // Sync state when modal becomes visible or initial props change
+  useEffect(() => {
+    if (visible) {
+      if (initialType) setOpType(initialType);
+      const accId = initialFromId || accounts[0]?.id || '';
+      setSelectedAccountId(accId);
+      setTransferFromId(accId);
+      if (initialToId) setTransferToId(initialToId);
+      if (initialType === 'income') {
+        setSelectedCategoryId(incomeCats[0]?.id || categories[0]?.id || '');
+      } else {
+        setSelectedCategoryId(expenseCats[0]?.id || categories[0]?.id || '');
+      }
+    }
+  }, [visible, initialType, initialFromId, initialToId]);
+
+  useEffect(() => {
+    if (opType === 'income') {
+      if (!incomeCats.some(c => c.id === selectedCategoryId)) {
+        setSelectedCategoryId(incomeCats[0]?.id || '');
+      }
+    } else if (opType === 'expense') {
+      if (!expenseCats.some(c => c.id === selectedCategoryId)) {
+        setSelectedCategoryId(expenseCats[0]?.id || '');
+      }
+    }
+  }, [opType]);
+
+  const selectedAccount = accountOptions.find(a => a.id === selectedAccountId) || accounts.find(a => a.id === selectedAccountId);
+  const operationCurrency = selectedAccount?.currency || settings.currency || 'EUR';
+
   const fundCheck = useMemo(() => {
     const amt = parseFloat(amountStr.replace(',', '.')) || 0;
-    return checkAccountFunds(selectedAccountId, amt, settings.currency || 'EUR', accounts, currentBalMap, stashes);
-  }, [selectedAccountId, amountStr, settings.currency, accounts, currentBalMap, stashes]);
+    return checkAccountFunds(selectedAccountId, amt, operationCurrency, accounts, currentBalMap, stashes);
+  }, [selectedAccountId, amountStr, operationCurrency, accounts, currentBalMap, stashes]);
 
   const fromSource = selectableSources.find(s => s.id === transferFromId) || selectableSources[0];
   const toSource = selectableSources.find(s => s.id === transferToId) || selectableSources[1] || selectableSources[0];
@@ -136,7 +167,8 @@ export function OneOffPaymentModal({
     triggerHaptic('success');
     const paymentId = `p_${uid()}`;
     const t = today();
-    const cur = settings.currency || 'EUR';
+    const cur = operationCurrency;
+    const targetStashId = selectedAccountId.startsWith('stash_') ? selectedAccountId.replace('stash_', '') : undefined;
 
     await save('payments', {
       id: paymentId,
@@ -149,6 +181,7 @@ export function OneOffPaymentModal({
       status: 'confirmed',
       kind: 'expense',
       accountId: selectedAccountId,
+      stashId: targetStashId,
       categoryId: selectedCategoryId || undefined,
       note: note.trim() || undefined,
     });
@@ -193,7 +226,8 @@ export function OneOffPaymentModal({
     triggerHaptic('success');
     const paymentId = `p_${uid()}`;
     const t = today();
-    const cur = settings.currency || 'EUR';
+    const cur = operationCurrency;
+    const targetStashId = selectedAccountId.startsWith('stash_') ? selectedAccountId.replace('stash_', '') : undefined;
 
     await save('payments', {
       id: paymentId,
@@ -206,6 +240,7 @@ export function OneOffPaymentModal({
       status: 'confirmed',
       kind: 'income',
       accountId: selectedAccountId,
+      stashId: targetStashId,
       categoryId: selectedCategoryId || undefined,
       note: note.trim() || undefined,
     });
@@ -338,7 +373,7 @@ export function OneOffPaymentModal({
                     onChangeText={setAmountStr}
                     keyboardType="decimal-pad"
                   />
-                  <Text style={styles.currencyBadge}>{settings.currency || 'EUR'}</Text>
+                  <Text style={styles.currencyBadge}>{operationCurrency}</Text>
                 </View>
 
                 <Text style={styles.fieldLabel}>Paid From Account</Text>
@@ -463,7 +498,7 @@ export function OneOffPaymentModal({
                     onChangeText={setAmountStr}
                     keyboardType="decimal-pad"
                   />
-                  <Text style={styles.currencyBadge}>{settings.currency || 'EUR'}</Text>
+                  <Text style={styles.currencyBadge}>{operationCurrency}</Text>
                 </View>
 
                 <Text style={styles.fieldLabel}>Deposit Into Account</Text>
@@ -480,7 +515,7 @@ export function OneOffPaymentModal({
                         }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                          {acc.name}
+                          {acc.name} · {acc.stashedAmt > 0 ? `${money(acc.freeBal, acc.currency)} free` : money(acc.bal, acc.currency)}
                         </Text>
                       </TouchableOpacity>
                     );
