@@ -590,6 +590,8 @@ export function findAccountShortfalls(
 export interface MonthBalanceProjection {
   accountBalances: Map<string, number>;
   totalLiquid: number;
+  totalStashed: number;
+  totalAvailable: number;
 }
 
 /**
@@ -611,11 +613,15 @@ export function calcMonthStartingBalances(
 ): MonthBalanceProjection {
   const curYm = todayDate.slice(0, 7);
   const liveBalances = calcAllAccountBalances(accounts, payments, transfers, plans, stashes);
+  const totalStashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, targetCurrency);
 
   if (targetYm === curYm) {
+    const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, targetCurrency);
     return {
       accountBalances: liveBalances,
-      totalLiquid: calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, targetCurrency),
+      totalLiquid,
+      totalStashed,
+      totalAvailable: Math.max(0, totalLiquid - totalStashed),
     };
   }
 
@@ -701,6 +707,8 @@ export function calcMonthStartingBalances(
     return {
       accountBalances: accBals,
       totalLiquid: projectedTotal,
+      totalStashed,
+      totalAvailable: Math.max(0, projectedTotal - totalStashed),
     };
   }
 
@@ -751,5 +759,7 @@ export function calcMonthStartingBalances(
   return {
     accountBalances: accBals,
     totalLiquid: histTotal,
+    totalStashed,
+    totalAvailable: Math.max(0, histTotal - totalStashed),
   };
 }

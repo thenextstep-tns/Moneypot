@@ -35,7 +35,9 @@ export function Pots() {
     () => calcMonthStartingBalances(accounts, payments, transfers, plans, stashes, ym, cur),
     [accounts, payments, transfers, plans, stashes, ym, cur]
   );
-  const displayStartBalance = monthProjection.totalLiquid;
+  const displayStartBalance = monthProjection.totalAvailable;
+  const displayTotalLiquid = monthProjection.totalLiquid;
+  const displayTotalStashed = monthProjection.totalStashed;
   const monthBalances = monthProjection.accountBalances;
 
   const shortfalls = useMemo(
@@ -55,10 +57,13 @@ export function Pots() {
   const outPending = sum(outgoing.filter(o => o.status === 'pending'), cur);
 
   const flowNet = inPlan - outPlan;
-  // Month-end outlook: starting funds + pending/done net cash flow
+  // Month-end outlook: starting available funds + pending/done net cash flow
   const projectedMonthEnd = isPastMonth
     ? displayStartBalance + inDone - outDone
     : displayStartBalance + inPending - outPending;
+  const projectedTotalMonthEnd = isPastMonth
+    ? displayTotalLiquid + inDone - outDone
+    : displayTotalLiquid + inPending - outPending;
   const isShortfall = projectedMonthEnd < 0;
   const isCoveredByBalance = !isShortfall && flowNet < 0;
 
@@ -105,13 +110,13 @@ export function Pots() {
 
       <div className="summary">
         <div>
-          <span>{isCurrentMonth ? 'In accounts now' : isFutureMonth ? 'Projected starting balance' : 'Starting balance'}</span>
+          <span>{isCurrentMonth ? 'Available in accounts' : isFutureMonth ? 'Projected available starting' : 'Starting available balance'}</span>
           <b>{money(displayStartBalance, cur)}</b>
           <small>
             {isCurrentMonth
-              ? `${accounts.length} account${accounts.length === 1 ? '' : 's'} connected`
+              ? `Total: ${money(displayTotalLiquid, cur)}${displayTotalStashed > 0 ? ` · 🔒 ${money(displayTotalStashed, cur)} reserved` : ''}`
               : isFutureMonth
-              ? `Adjusted for ${monthLabel(shiftMonth(ym, -1))} plans`
+              ? `Adjusted for ${monthLabel(shiftMonth(ym, -1))} plans${displayTotalStashed > 0 ? ` · 🔒 ${money(displayTotalStashed, cur)} reserved` : ''}`
               : `Balance at start of ${monthLabel(ym)}`}
           </small>
         </div>
@@ -141,9 +146,7 @@ export function Pots() {
           <span>
             {isShortfall
               ? isFutureMonth ? 'Projected shortfall' : 'Short by'
-              : isCoveredByBalance
-              ? 'Covered by balance'
-              : isFutureMonth ? 'Projected month-end' : 'Left over at end'}
+              : 'Month-end outlook'}
           </span>
           <b>{money(isShortfall ? Math.abs(projectedMonthEnd) : projectedMonthEnd, cur)}</b>
           <small>
@@ -152,8 +155,8 @@ export function Pots() {
                 ? "Starting balance + planned income won't cover plans"
                 : "Accounts + pending income won't cover plans"
               : isCoveredByBalance
-              ? `Plans exceed income by ${money(Math.abs(flowNet), cur)}, fully covered`
-              : `+${money(flowNet, cur)} net surplus this month`}
+              ? `Covers ${money(Math.abs(flowNet), cur)} deficit${displayTotalStashed > 0 ? ` · Total: ${money(projectedTotalMonthEnd, cur)}` : ''}`
+              : `+${money(flowNet, cur)} net surplus this month${displayTotalStashed > 0 ? ` · Total: ${money(projectedTotalMonthEnd, cur)}` : ''}`}
           </small>
         </div>
       </div>

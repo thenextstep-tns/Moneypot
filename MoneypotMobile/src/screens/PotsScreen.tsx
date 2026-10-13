@@ -45,7 +45,9 @@ export function PotsScreen() {
     selectedYm,
     settings.currency
   );
-  const startingBalance = startingProjection.totalLiquid;
+  const startingAvailable = startingProjection.totalAvailable;
+  const startingTotalLiquid = startingProjection.totalLiquid;
+  const startingTotalStashed = startingProjection.totalStashed;
 
   // 2. Coming in (Income) & 3. Going out (Expense & Saving, strictly excluding internal transfers)
   let incomePaid = 0;
@@ -68,10 +70,23 @@ export function PotsScreen() {
 
   const totalComingIn = incomePaid + incomePlanned;
   const totalGoingOut = expensePaid + expensePlanned;
-  const monthEndOutlook = startingBalance + totalComingIn - totalGoingOut;
+  const flowNet = totalComingIn - totalGoingOut;
 
   const isFutureMonth = selectedYm > currentYm;
   const isPastMonth = selectedYm < currentYm;
+
+  // Month-end outlook (available to spend at month end):
+  // For current month: starting available + pending in - pending out
+  // For past month: starting available + paid in - paid out
+  // For future month: starting available + planned in - planned out (all pending)
+  const monthEndAvailable = isPastMonth
+    ? startingAvailable + incomePaid - expensePaid
+    : startingAvailable + incomePlanned - expensePlanned;
+  const monthEndTotal = isPastMonth
+    ? startingTotalLiquid + incomePaid - expensePaid
+    : startingTotalLiquid + incomePlanned - expensePlanned;
+  const isShortfall = monthEndAvailable < 0;
+  const isCoveredByBalance = !isShortfall && flowNet < 0;
 
   const handlePrevMonth = () => {
     triggerHaptic('light');
@@ -143,9 +158,16 @@ export function PotsScreen() {
       <View style={styles.kpiGrid}>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>
-            {selectedYm === currentYm ? 'In accounts now' : 'Starting funds'}
+            {selectedYm === currentYm ? 'Available in accounts' : isFutureMonth ? 'Projected available' : 'Starting balance'}
           </Text>
-          <Text style={styles.kpiValue}>{money(startingBalance, settings.currency)}</Text>
+          <Text style={styles.kpiValue}>{money(startingAvailable, settings.currency)}</Text>
+          <Text style={styles.kpiSub}>
+            {selectedYm === currentYm
+              ? `Total: ${money(startingTotalLiquid, settings.currency)}${startingTotalStashed > 0 ? ` · 🔒 ${money(startingTotalStashed, settings.currency)}` : ''}`
+              : isFutureMonth
+              ? `Prior plans factored${startingTotalStashed > 0 ? ` · 🔒 ${money(startingTotalStashed, settings.currency)}` : ''}`
+              : `Total: ${money(startingTotalLiquid, settings.currency)}`}
+          </Text>
         </View>
 
         <View style={styles.kpiCard}>
@@ -153,7 +175,10 @@ export function PotsScreen() {
           <Text style={[styles.kpiValue, { color: theme.colors.brandDark }]}>
             +{money(totalComingIn, settings.currency)}
           </Text>
-          <Text style={styles.kpiSub}>Paid: {money(incomePaid, settings.currency)}</Text>
+          <Text style={styles.kpiSub}>
+            {incomePaid > 0 ? `Paid: ${money(incomePaid, settings.currency)}` : '0 paid'}
+            {incomePlanned > 0 ? ` · ${money(incomePlanned, settings.currency)} left` : ''}
+          </Text>
         </View>
 
         <View style={styles.kpiCard}>
@@ -161,21 +186,30 @@ export function PotsScreen() {
           <Text style={[styles.kpiValue, { color: theme.colors.ink }]}>
             −{money(totalGoingOut, settings.currency)}
           </Text>
-          <Text style={styles.kpiSub}>Left: {money(expensePlanned, settings.currency)}</Text>
+          <Text style={styles.kpiSub}>
+            {expensePaid > 0 ? `Paid: ${money(expensePaid, settings.currency)}` : '0 paid'}
+            {expensePlanned > 0 ? ` · ${money(expensePlanned, settings.currency)} left` : ''}
+          </Text>
         </View>
 
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Month-end outlook</Text>
+          <Text style={styles.kpiLabel}>
+            {isShortfall ? 'Projected shortfall' : 'Month-end outlook'}
+          </Text>
           <Text
             style={[
               styles.kpiValue,
-              monthEndOutlook >= 0 ? { color: theme.colors.brandDark } : { color: theme.colors.bad },
+              isShortfall ? { color: theme.colors.bad } : { color: theme.colors.brandDark },
             ]}
           >
-            {money(monthEndOutlook, settings.currency)}
+            {money(isShortfall ? Math.abs(monthEndAvailable) : monthEndAvailable, settings.currency)}
           </Text>
           <Text style={styles.kpiSub}>
-            {monthEndOutlook >= 0 ? 'Comfortably covered' : 'Projected shortfall'}
+            {isShortfall
+              ? 'Short of budget'
+              : isCoveredByBalance
+              ? `Covers ${money(Math.abs(flowNet), settings.currency)} deficit`
+              : `+${money(flowNet, settings.currency)} net surplus`}
           </Text>
         </View>
       </View>

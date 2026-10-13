@@ -143,7 +143,7 @@ export function PaymentActionModal({
 
           <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
             {/* Low balance shortfall warning */}
-            {fundCheck.isShort && (
+            {!isInc && fundCheck.isShort && (
               <View style={styles.warningCard}>
                 <View style={styles.warningHeader}>
                   <Text style={styles.warningTitle}>⚠️ Low Balance Warning</Text>

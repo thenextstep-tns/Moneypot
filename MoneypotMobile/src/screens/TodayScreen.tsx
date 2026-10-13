@@ -156,12 +156,13 @@ export function TodayScreen() {
 
     const icon = o.kind === 'saving' ? (stash?.emoji || '🌱') : (cat?.emoji || (o.kind === 'income' ? '💰' : '💸'));
     const accName = acc?.name || (stash ? `${stash.emoji} ${stash.name}` : 'Unassigned account');
-
-    const fundCheck = checkAccountFunds(o.accountId, o.amount, o.currency, accounts, currentBalMap, stashes);
-
     const isInc = o.kind === 'income';
     const isTr = o.kind === 'transfer';
     const isSav = o.kind === 'saving';
+
+    const fundCheck = !isInc
+      ? checkAccountFunds(o.accountId, o.amount, o.currency, accounts, currentBalMap, stashes)
+      : { isShort: false, shortBy: 0, balance: 0, accountName: '', accountCurrency: o.currency };
 
     const actionText = isUpcoming
       ? (isInc ? '⚡ Got early' : (isTr || isSav) ? '⚡ Move early' : '⚡ Pay early')
@@ -194,10 +195,10 @@ export function TodayScreen() {
         </View>
 
         {/* Low balance warning */}
-        {fundCheck.isShort && (
+        {!isInc && fundCheck.isShort && (
           <View style={styles.shortfallBox}>
             <Text style={styles.shortfallText}>
-              ⚠️ Low balance: {fundCheck.accountName} is short by {money(fundCheck.shortBy, fundCheck.accountCurrency)}.
+              ⚠️ Low balance: {fundCheck.accountName} is short by {money(fundCheck.shortBy, fundCheck.accountCurrency || o.currency)}.
             </Text>
             <TouchableOpacity
               style={styles.moveMoneyPill}
