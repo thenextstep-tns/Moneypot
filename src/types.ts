@@ -134,6 +134,9 @@ export interface Transfer extends Owned {
   createdAt?: number;
   planId?: string;
   dueDate?: string;
+  isShared?: boolean;
+  contributorEmail?: string;
+  contributorName?: string;
 }
 
 export interface Settings { currency: string }

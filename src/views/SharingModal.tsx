@@ -427,7 +427,6 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
         try {
           const coll = found.targetType === 'pot' ? 'categories' : 'stashes';
           await setDoc(doc(db, 'users', found.ownerId, coll, found.targetId), {
-            ...(masterData ?? {}),
             sharedWith: nextShared,
             ownerEmail: found.inviterEmail,
           }, { merge: true });

@@ -3,15 +3,28 @@ import { convert } from './fx';
 import { addDays, monthRange, occurrences, shiftMonth, today } from './schedule';
 
 /** Helper to resolve the physical account ID of an account or stash */
-export function getPhysicalAccountId(id?: string, stashes: Stash[] = [], defaultAccountId?: string): string | undefined {
+export function getPhysicalAccountId(
+  id?: string,
+  stashes: Stash[] = [],
+  defaultAccountId?: string,
+  accounts: Account[] = []
+): string | undefined {
   if (!id) return undefined;
   if (id.startsWith('stash_')) {
     const sId = id.replace('stash_', '');
     const s = stashes.find(x => x.id === sId);
-    return s?.accountId || defaultAccountId;
+    if (s?.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
+      return s.accountId;
+    }
+    return defaultAccountId;
   }
   const s = stashes.find(x => x.id === id);
-  if (s) return s.accountId || defaultAccountId;
+  if (s) {
+    if (s.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
+      return s.accountId;
+    }
+    return defaultAccountId;
+  }
   return id;
 }
 
@@ -42,6 +55,37 @@ export function calcAccountBalance(
   for (const t of transfers) {
     if (t.status === 'cancelled') continue;
     if (t.date && t.date > today()) continue;
+
+    const isToStash = Boolean(t.toAccountId?.startsWith('stash_') || stashes.some(s => s.id === t.toAccountId));
+    const isFromStash = Boolean(t.fromAccountId?.startsWith('stash_') || stashes.some(s => s.id === t.fromAccountId));
+
+    // Stash transfer handling:
+    // If transferring from account a into a stash:
+    // The money stays in account a's envelope unless the stash is explicitly held in a different known account of ours.
+    if (isToStash && t.fromAccountId === a.id) {
+      const sId = t.toAccountId.startsWith('stash_') ? t.toAccountId.replace('stash_', '') : t.toAccountId;
+      const s = stashes.find(x => x.id === sId);
+      // Only deduct if stash explicitly belongs to another distinct account of ours
+      if (s?.accountId && s.accountId !== a.id) {
+        // Stash is kept in another account of ours -> physical cash transferred across accounts
+        const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
+        b -= amt;
+      }
+      // Otherwise, remains sitting in this physical account (reserved inside stash)
+      continue;
+    }
+
+    // If transferring from a stash back into account a:
+    if (isFromStash && t.toAccountId === a.id) {
+      const sId = t.fromAccountId.startsWith('stash_') ? t.fromAccountId.replace('stash_', '') : t.fromAccountId;
+      const s = stashes.find(x => x.id === sId);
+      if (s?.accountId && s.accountId !== a.id) {
+        const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
+        b += amt;
+      }
+      continue;
+    }
+
     const physFrom = getPhysicalAccountId(t.fromAccountId, stashes, a.id);
     const physTo = getPhysicalAccountId(t.toAccountId, stashes, a.id);
 
@@ -63,7 +107,7 @@ export function calcAccountBalance(
   return b;
 }
 
-/** Calculate live balance of a stash considering saving payments, withdrawals, transfers, and expenses */
+/** Calculate live balance of a stash considering saving payments, withdrawals, and transfers */
 export function calcStashBalance(
   s: Stash,
   payments: Payment[] = [],
@@ -80,12 +124,8 @@ export function calcStashBalance(
     if (kind === 'transfer') continue; // Handled via transfers collection
     const isThisStashSaving = kind === 'saving' && ((p.stashId && p.stashId === s.id) || (plan?.stashId && plan.stashId === s.id));
     const isThisStashPayment = p.accountId === `stash_${s.id}` || p.accountId === s.id;
-    // Shared stash with associated pot: expenses in that pot
-    const isSharedStashExpense = Boolean(
-      s.sharedWith && s.sharedWith.length > 0 && s.categoryId && p.categoryId === s.categoryId && kind === 'expense'
-    );
 
-    if (!isThisStashSaving && !isThisStashPayment && !isSharedStashExpense) continue;
+    if (!isThisStashSaving && !isThisStashPayment) continue;
 
     const amt = p.currency && p.currency !== s.currency ? convert(p.amount, p.currency, s.currency) : p.amount;
 
@@ -94,8 +134,6 @@ export function calcStashBalance(
     } else if (isThisStashPayment) {
       if (kind === 'income') b += amt;
       else b -= amt;
-    } else if (isSharedStashExpense) {
-      b -= amt;
     }
   }
 
@@ -128,9 +166,55 @@ export function calcAccountStashedBalance(
   let sum = 0;
   const isFallbackPrimary = allAccounts.length > 0 && allAccounts[0].id === a.id;
   for (const s of stashes) {
-    const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+    const hasValidAcc = s.accountId && allAccounts.some(acc => acc.id === s.accountId);
+    let parentAccId = hasValidAcc ? s.accountId : undefined;
+
+    // If stash accountId is not set or foreign, check if account a funded it via transfers
+    if (!parentAccId) {
+      const fundedFromThis = transfers.some(t =>
+        t.status !== 'cancelled' &&
+        (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) &&
+        t.fromAccountId === a.id
+      );
+      if (fundedFromThis) {
+        parentAccId = a.id;
+      } else if (isFallbackPrimary) {
+        parentAccId = a.id;
+      }
+    }
+
     if (parentAccId === a.id) {
-      const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
+      let sBal = 0;
+      const isShared = Boolean((s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)));
+
+      if (!isShared) {
+        sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
+      } else {
+        // For shared stashes, reserve the portion funded from this specific account:
+        for (const t of transfers) {
+          if (t.status === 'cancelled') continue;
+          if (t.date && t.date > today()) continue;
+          if ((t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) && t.fromAccountId === a.id) {
+            const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
+            sBal += amt;
+          }
+          if ((t.fromAccountId === `stash_${s.id}` || t.fromAccountId === s.id) && t.toAccountId === a.id) {
+            const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
+            sBal -= amt;
+          }
+        }
+        if (s.accountId === a.id && s.startAmount) {
+          sBal += s.startAmount;
+        }
+        for (const p of payments) {
+          if (p.status !== 'confirmed') continue;
+          if (p.kind === 'saving' && p.stashId === s.id && p.accountId === a.id) {
+            sBal += (p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount);
+          }
+        }
+        sBal = Math.max(0, sBal);
+      }
+
       const inAccCur = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
       sum += inAccCur;
     }

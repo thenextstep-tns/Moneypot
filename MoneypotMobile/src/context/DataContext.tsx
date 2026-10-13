@@ -282,9 +282,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
             const isParticipant = (remote.sharedWith && remote.sharedWith.map(e => e.toLowerCase()).includes(userEmail || ''))
               || remote.ownerEmail?.toLowerCase() === userEmail
               || remote.ownerId === user?.uid;
-            if (isParticipant && (remote.name !== s.name || remote.target !== s.target || remote.emoji !== s.emoji)) {
+            if (isParticipant) {
               changed = true;
-              return { ...s, ...remote };
+              // Never overwrite local user's accountId with remote!
+              const { accountId, ...remoteRest } = remote;
+              return { ...s, ...remoteRest };
             }
           }
           return s;
@@ -295,10 +297,84 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.warn('shared_stashes listener error:', err.message);
     }));
 
+    // Listen to shared transfers (contributions and withdrawals from shared stashes)
+    unsubs.push(onSnapshot(collection(db, 'shared_transfers'), snap => {
+      const incoming = snap.docs.map(x => x.data() as Transfer);
+      const incomingMap = new Map(incoming.map(t => [t.id, t]));
+      setData(prev => {
+        const nextTransfers: Transfer[] = [];
+        for (const t of prev.transfers) {
+          if (incomingMap.has(t.id)) {
+            nextTransfers.push(incomingMap.get(t.id)!);
+            incomingMap.delete(t.id);
+          } else if (t.isShared) {
+            continue; // Purged from shared_transfers
+          } else {
+            nextTransfers.push(t);
+          }
+        }
+        for (const st of incomingMap.values()) {
+          const isRelevant = prev.stashes.some(s =>
+            st.fromAccountId === `stash_${s.id}` || st.fromAccountId === s.id ||
+            st.toAccountId === `stash_${s.id}` || st.toAccountId === s.id
+          );
+          if (isRelevant) {
+            nextTransfers.push(st);
+          }
+        }
+        return { ...prev, transfers: nextTransfers };
+      });
+    }, err => {
+      console.warn('shared_transfers listener error:', err.message);
+    }));
+
     return () => {
       unsubs.forEach(u => u());
     };
   }, [loaded, isDemoMode, user?.uid]);
+
+  // Auto-sync existing transfers on shared stashes and auto-heal accountId if clobbered
+  useEffect(() => {
+    const userId = user?.uid;
+    if (!userId || !db || isDemoMode || !data.stashes.length) return;
+
+    // 1. Sync transfers for shared stashes
+    for (const t of data.transfers) {
+      if (!t.isShared) {
+        const stashId = t.fromAccountId?.startsWith('stash_') ? t.fromAccountId.replace('stash_', '')
+          : t.toAccountId?.startsWith('stash_') ? t.toAccountId.replace('stash_', '')
+          : undefined;
+        const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
+        if (st && ((st.sharedWith && st.sharedWith.length > 0) || (st.ownerId && st.ownerId !== userId))) {
+          const sharedT = { ...t, isShared: true };
+          void setDoc(doc(db, 'shared_transfers', t.id), sharedT);
+          if (st.ownerId && st.ownerId !== userId) {
+            void setDoc(doc(db, 'users', st.ownerId, 'transfers', t.id), sharedT);
+          }
+        }
+      }
+    }
+
+    // 2. Auto-heal owner stash accountId if missing or invalid
+    if (data.accounts.length > 0) {
+      for (const s of data.stashes) {
+        const isOwner = !s.ownerId || s.ownerId === userId;
+        if (isOwner) {
+          const hasValidAcc = s.accountId && data.accounts.some(a => a.id === s.accountId);
+          if (!hasValidAcc) {
+            const fundingTransfer = data.transfers.find(t =>
+              (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) &&
+              data.accounts.some(a => a.id === t.fromAccountId)
+            );
+            const recoveredAccId = fundingTransfer?.fromAccountId || data.accounts[0]?.id;
+            if (recoveredAccId) {
+              void setDoc(doc(db, 'users', userId, 'stashes', s.id), { accountId: recoveredAccId }, { merge: true });
+            }
+          }
+        }
+      }
+    }
+  }, [user?.uid, isDemoMode, data.stashes, data.transfers, data.accounts]);
 
   // Persist demo mode updates to AsyncStorage
   useEffect(() => {
@@ -312,7 +388,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const local = isDemoMode || !userId || !db;
     const o: any = { ...raw, ownerId: (raw as any).ownerId ?? userId ?? 'local' };
 
-    if (c === 'payments') {
+    if (c === 'payments' || c === 'transfers') {
       if (!o.contributorEmail && user?.email) o.contributorEmail = user.email;
       if (!o.contributorName) {
         o.contributorName = user?.displayName ?? (user?.email ? user.email.split('@')[0] : 'You');
@@ -330,6 +406,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const st = data.stashes.find(s => s.id === stashId);
         const cat = data.categories.find(k => k.id === o.categoryId);
         if (st?.sharedWith?.length || cat?.sharedWith?.length) {
+          o.isShared = true;
+        }
+      }
+      if (c === 'transfers') {
+        const stashId = o.fromAccountId?.startsWith('stash_') ? o.fromAccountId.replace('stash_', '')
+          : o.toAccountId?.startsWith('stash_') ? o.toAccountId.replace('stash_', '')
+          : undefined;
+        const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
+        if (st?.sharedWith?.length || (st?.ownerId && st.ownerId !== userId)) {
           o.isShared = true;
         }
       }
@@ -357,14 +442,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         }
       }
+      // If it's a transfer involving a shared stash, sync to shared_transfers & owner
+      if (c === 'transfers') {
+        const stashId = o.fromAccountId?.startsWith('stash_') ? o.fromAccountId.replace('stash_', '')
+          : o.toAccountId?.startsWith('stash_') ? o.toAccountId.replace('stash_', '')
+          : undefined;
+        const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
+        const isSharedStash = Boolean(st && ((st.sharedWith && st.sharedWith.length > 0) || (st.ownerId && st.ownerId !== userId)));
+        if (isSharedStash) {
+          o.isShared = true;
+          await setDoc(doc(db!, 'shared_transfers', o.id), o);
+          if (st?.ownerId && st.ownerId !== userId) {
+            await setDoc(doc(db!, 'users', st.ownerId, 'transfers', o.id), o);
+          }
+        }
+      }
       // If updating a shared stash or category, sync to shared collections and master owner
       if (c === 'stashes') {
         const isShared = Boolean((o.sharedWith && o.sharedWith.length > 0) || (o.ownerId && o.ownerId !== userId));
         if (isShared) {
-          await setDoc(doc(db!, 'shared_stashes', o.id), o, { merge: true });
+          // Strip out accountId from shared_stashes so members never overwrite each other's accounts
+          const { accountId, ...sharedStashData } = o;
+          await setDoc(doc(db!, 'shared_stashes', o.id), sharedStashData, { merge: true });
         }
         if (o.ownerId && o.ownerId !== userId) {
-          await setDoc(doc(db!, 'users', o.ownerId, 'stashes', o.id), o, { merge: true });
+          // Collaborator updating owner stash: never overwrite master owner's accountId!
+          const { accountId, ...safeOwnerStash } = o;
+          await setDoc(doc(db!, 'users', o.ownerId, 'stashes', o.id), safeOwnerStash, { merge: true });
         }
       }
       if (c === 'categories' && o.ownerId && o.ownerId !== userId) {
@@ -390,6 +494,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const st = data.stashes.find(s => s.id === p.stashId || `stash_${s.id}` === p.accountId);
           if (st?.ownerId && st.ownerId !== userId) {
             await deleteDoc(doc(db!, 'users', st.ownerId, 'payments', id));
+          }
+        }
+      }
+      if (c === 'transfers') {
+        await deleteDoc(doc(db!, 'shared_transfers', id));
+        const t = data.transfers.find(x => x.id === id);
+        if (t) {
+          const stashId = t.fromAccountId?.startsWith('stash_') ? t.fromAccountId.replace('stash_', '')
+            : t.toAccountId?.startsWith('stash_') ? t.toAccountId.replace('stash_', '')
+            : undefined;
+          const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
+          if (st?.ownerId && st.ownerId !== userId) {
+            await deleteDoc(doc(db!, 'users', st.ownerId, 'transfers', id));
           }
         }
       }
