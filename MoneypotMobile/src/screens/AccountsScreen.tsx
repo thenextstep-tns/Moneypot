@@ -24,7 +24,10 @@ import { AccountEditModal } from '../components/AccountEditModal';
 import { BalanceCorrectionModal } from '../components/BalanceCorrectionModal';
 import { QuickTransferModal } from '../components/QuickTransferModal';
 import { GripVerticalIcon } from '../components/GripVerticalIcon';
-import { ReorderModal } from '../components/ReorderModal';
+import DraggableFlatList, {
+  ScaleDecorator,
+  RenderItemParams,
+} from 'react-native-draggable-flatlist';
 import type { Account } from '../domain/types';
 
 const TYPE_ICONS: Record<Account['type'], string> = {
@@ -42,23 +45,11 @@ export function AccountsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [transferVisible, setTransferVisible] = useState(false);
   const [defaultTransferAccId, setDefaultTransferAccId] = useState<string | undefined>(undefined);
-  const [reorderAccId, setReorderAccId] = useState<string | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<{
     type: 'account';
     item: Account;
     currentBalance: number;
   } | null>(null);
-
-  const reorderIndex = reorderAccId ? accounts.findIndex(a => a.id === reorderAccId) : -1;
-  const reorderAcc = reorderIndex >= 0 ? accounts[reorderIndex] : null;
-
-  const moveAccount = (fromIdx: number, toIdx: number) => {
-    if (toIdx < 0 || toIdx >= accounts.length || fromIdx === toIdx) return;
-    const next = [...accounts];
-    const [removed] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, removed);
-    reorder('accounts', next);
-  };
 
   const totalLiquid = calcTotalLiquidBalance(
     accounts,
@@ -127,82 +118,96 @@ export function AccountsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.sectionHeading}>Your Accounts ({accounts.length})</Text>
-
-        {accounts.map(acc => {
+      <DraggableFlatList
+        data={accounts}
+        keyExtractor={item => item.id}
+        onDragBegin={() => triggerHaptic('medium')}
+        onDragEnd={({ data }) => {
+          triggerHaptic('light');
+          reorder('accounts', data);
+        }}
+        containerStyle={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        ListHeaderComponent={
+          <Text style={styles.sectionHeading}>Your Accounts ({accounts.length})</Text>
+        }
+        renderItem={({ item: acc, drag, isActive }: RenderItemParams<Account>) => {
           const totalBal = calcAccountBalance(acc, payments, transfers, plans, stashes);
           const stashedBal = calcAccountStashedBalance(acc, stashes, payments, transfers, plans, accounts);
           const freeBal = Math.max(0, totalBal - stashedBal);
+
           return (
-            <View key={acc.id} style={styles.accountCard}>
-              <TouchableOpacity
-                style={styles.cardMainClick}
-                onPress={() => handleAccountPress(acc)}
-              >
-                <View style={styles.accLeft}>
+            <ScaleDecorator>
+              <View style={[styles.accountCard, isActive && styles.cardActive]}>
+                <TouchableOpacity
+                  style={styles.cardMainClick}
+                  onPress={() => handleAccountPress(acc)}
+                  disabled={isActive}
+                >
+                  <View style={styles.accLeft}>
+                    <TouchableOpacity
+                      style={styles.dragHandle}
+                      onPressIn={drag}
+                      disabled={isActive}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      <GripVerticalIcon size={18} color={isActive ? theme.colors.brand : '#9CA3AF'} />
+                    </TouchableOpacity>
+                    <View style={[styles.avatarCircle, { backgroundColor: acc.color || theme.colors.brand }]}>
+                      <Text style={styles.avatarIcon}>{TYPE_ICONS[acc.type] || '💳'}</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.accName}>{acc.name}</Text>
+                      <Text style={styles.accSub}>
+                        {acc.institution ? `${acc.institution} • ` : ''}
+                        {acc.currency}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.accRight}>
+                    <Text style={[styles.accBalance, freeBal < 0 && styles.negativeBalance]}>
+                      {money(freeBal, acc.currency)}
+                    </Text>
+                    <Text style={styles.accFreeLabel}>free to spend</Text>
+                    {stashedBal > 0 && (
+                      <Text style={styles.accStashedSub}>
+                        Total: {money(totalBal, acc.currency)} • 🔒 {money(stashedBal, acc.currency)}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+
+                {/* Action shortcuts */}
+                <View style={styles.actionRow}>
                   <TouchableOpacity
-                    style={styles.dragHandle}
+                    style={styles.actionPill}
+                    disabled={isActive}
                     onPress={() => {
                       triggerHaptic('light');
-                      setReorderAccId(acc.id);
+                      setCorrectionTarget({
+                        type: 'account',
+                        item: acc,
+                        currentBalance: totalBal,
+                      });
                     }}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
-                    <GripVerticalIcon size={18} color="#9CA3AF" />
+                    <Text style={styles.actionPillText}>⚖️ Balance Correction</Text>
                   </TouchableOpacity>
-                  <View style={[styles.avatarCircle, { backgroundColor: acc.color || theme.colors.brand }]}>
-                    <Text style={styles.avatarIcon}>{TYPE_ICONS[acc.type] || '💳'}</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.accName}>{acc.name}</Text>
-                    <Text style={styles.accSub}>
-                      {acc.institution ? `${acc.institution} • ` : ''}
-                      {acc.currency}
-                    </Text>
-                  </View>
+
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    disabled={isActive}
+                    onPress={() => handleOpenTransfer(acc.id)}
+                  >
+                    <Text style={styles.actionPillText}>⇄ Transfer</Text>
+                  </TouchableOpacity>
                 </View>
-
-                <View style={styles.accRight}>
-                  <Text style={[styles.accBalance, freeBal < 0 && styles.negativeBalance]}>
-                    {money(freeBal, acc.currency)}
-                  </Text>
-                  <Text style={styles.accFreeLabel}>free to spend</Text>
-                  {stashedBal > 0 && (
-                    <Text style={styles.accStashedSub}>
-                      Total: {money(totalBal, acc.currency)} • 🔒 {money(stashedBal, acc.currency)}
-                    </Text>
-                  )}
-                </View>
-              </TouchableOpacity>
-
-              {/* Action shortcuts */}
-              <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={styles.actionPill}
-                  onPress={() => {
-                    triggerHaptic('light');
-                    setCorrectionTarget({
-                      type: 'account',
-                      item: acc,
-                      currentBalance: totalBal,
-                    });
-                  }}
-                >
-                  <Text style={styles.actionPillText}>⚖️ Balance Correction</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionPill}
-                  onPress={() => handleOpenTransfer(acc.id)}
-                >
-                  <Text style={styles.actionPillText}>⇄ Transfer</Text>
-                </TouchableOpacity>
               </View>
-            </View>
+            </ScaleDecorator>
           );
-        })}
-      </ScrollView>
+        }}
+      />
 
       {/* Account Edit Modal */}
       <AccountEditModal
@@ -228,23 +233,6 @@ export function AccountsScreen() {
         onClose={() => setCorrectionTarget(null)}
         target={correctionTarget}
       />
-
-      {/* Reorder Modal */}
-      {reorderAcc && (
-        <ReorderModal
-          visible={!!reorderAcc}
-          onClose={() => setReorderAccId(null)}
-          title="Rearrange Accounts"
-          itemName={reorderAcc.name}
-          itemEmoji={TYPE_ICONS[reorderAcc.type] || '💳'}
-          currentIndex={reorderIndex}
-          totalCount={accounts.length}
-          onMoveUp={() => moveAccount(reorderIndex, reorderIndex - 1)}
-          onMoveDown={() => moveAccount(reorderIndex, reorderIndex + 1)}
-          onMoveToTop={() => moveAccount(reorderIndex, 0)}
-          onMoveToBottom={() => moveAccount(reorderIndex, accounts.length - 1)}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -328,6 +316,14 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 10,
     ...theme.shadowCard,
+  },
+  cardActive: {
+    opacity: 0.95,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   cardMainClick: {
     flexDirection: 'row',

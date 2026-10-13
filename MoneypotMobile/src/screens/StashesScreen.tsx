@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
@@ -20,7 +19,10 @@ import { StashEditModal } from '../components/StashEditModal';
 import { BalanceCorrectionModal } from '../components/BalanceCorrectionModal';
 import { OneOffPaymentModal } from '../components/OneOffPaymentModal';
 import { GripVerticalIcon } from '../components/GripVerticalIcon';
-import { ReorderModal } from '../components/ReorderModal';
+import DraggableFlatList, {
+  ScaleDecorator,
+  RenderItemParams,
+} from 'react-native-draggable-flatlist';
 import type { Stash } from '../domain/types';
 
 export function StashesScreen() {
@@ -29,23 +31,11 @@ export function StashesScreen() {
   const [activeStash, setActiveStash] = useState<Stash | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [topUpStash, setTopUpStash] = useState<Stash | null>(null);
-  const [reorderStashId, setReorderStashId] = useState<string | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<{
     type: 'stash';
     item: Stash;
     currentBalance: number;
   } | null>(null);
-
-  const reorderIndex = reorderStashId ? stashes.findIndex(s => s.id === reorderStashId) : -1;
-  const reorderStash = reorderIndex >= 0 ? stashes[reorderIndex] : null;
-
-  const moveStash = (fromIdx: number, toIdx: number) => {
-    if (toIdx < 0 || toIdx >= stashes.length || fromIdx === toIdx) return;
-    const next = [...stashes];
-    const [removed] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, removed);
-    reorder('stashes', next);
-  };
 
   // Total stashed amount converted to main currency
   const totalStashedMain = stashes.reduce((sum, s) => {
@@ -114,8 +104,17 @@ export function StashesScreen() {
         <Text style={styles.totalBannerEmoji}>🐷</Text>
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        {stashes.length === 0 ? (
+      <DraggableFlatList
+        data={stashes}
+        keyExtractor={item => item.id}
+        onDragBegin={() => triggerHaptic('medium')}
+        onDragEnd={({ data }) => {
+          triggerHaptic('light');
+          reorder('stashes', data);
+        }}
+        containerStyle={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        ListEmptyComponent={
           <View style={styles.emptyCard}>
             <Text style={styles.emptyEmoji}>🌱</Text>
             <Text style={styles.emptyTitle}>No Savings Stashes Yet</Text>
@@ -123,8 +122,8 @@ export function StashesScreen() {
               Create a stash for an Emergency Cushion, Summer Vacation, or New Gadget!
             </Text>
           </View>
-        ) : (
-          stashes.map(s => {
+        }
+        renderItem={({ item: s, drag, isActive }: RenderItemParams<Stash>) => {
             const currentBal = calcStashBalance(s, payments, transfers, plans);
             const parentAcc = accounts.find(a => a.id === s.accountId);
             const target = s.target || 0;
@@ -156,20 +155,19 @@ export function StashesScreen() {
             );
 
             return (
-              <View key={s.id} style={styles.stashCard}>
-                <TouchableOpacity onPress={() => handleStashPress(s)}>
-                  <View style={styles.stashHeader}>
-                    <View style={styles.stashTitleRow}>
-                      <TouchableOpacity
-                        style={styles.dragHandle}
-                        onPress={() => {
-                          triggerHaptic('light');
-                          setReorderStashId(s.id);
-                        }}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      >
-                        <GripVerticalIcon size={18} color="#9CA3AF" />
-                      </TouchableOpacity>
+              <ScaleDecorator>
+                <View style={[styles.stashCard, isActive && styles.cardActive]}>
+                  <TouchableOpacity onPress={() => handleStashPress(s)} disabled={isActive}>
+                    <View style={styles.stashHeader}>
+                      <View style={styles.stashTitleRow}>
+                        <TouchableOpacity
+                          style={styles.dragHandle}
+                          onPressIn={drag}
+                          disabled={isActive}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        >
+                          <GripVerticalIcon size={18} color={isActive ? theme.colors.brand : '#9CA3AF'} />
+                        </TouchableOpacity>
                       <Text style={styles.stashEmoji}>{s.emoji}</Text>
                       <View>
                         <Text style={styles.stashName}>{s.name}</Text>
@@ -259,10 +257,10 @@ export function StashesScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            );
-          })
-        )}
-      </ScrollView>
+            </ScaleDecorator>
+          );
+        }}
+      />
 
       {/* Edit Stash Modal */}
       <StashEditModal
@@ -290,23 +288,6 @@ export function StashesScreen() {
           initialFromId={topUpStash.accountId || accounts[0]?.id}
           initialToId={`stash_${topUpStash.id}`}
           onClose={() => setTopUpStash(null)}
-        />
-      )}
-
-      {/* Reorder Modal */}
-      {reorderStash && (
-        <ReorderModal
-          visible={!!reorderStash}
-          onClose={() => setReorderStashId(null)}
-          title="Rearrange Stashes"
-          itemName={reorderStash.name}
-          itemEmoji={reorderStash.emoji || '🎯'}
-          currentIndex={reorderIndex}
-          totalCount={stashes.length}
-          onMoveUp={() => moveStash(reorderIndex, reorderIndex - 1)}
-          onMoveDown={() => moveStash(reorderIndex, reorderIndex + 1)}
-          onMoveToTop={() => moveStash(reorderIndex, 0)}
-          onMoveToBottom={() => moveStash(reorderIndex, stashes.length - 1)}
         />
       )}
     </SafeAreaView>
@@ -371,6 +352,14 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     ...theme.shadowCard,
+  },
+  cardActive: {
+    opacity: 0.95,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   stashHeader: {
     flexDirection: 'row',

@@ -1,4 +1,5 @@
 import React from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   View,
   Text,
@@ -167,12 +168,14 @@ function MainApp() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <DataProvider>
-        <StatusBar style="dark" />
-        <MainApp />
-      </DataProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <DataProvider>
+          <StatusBar style="dark" />
+          <MainApp />
+        </DataProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
@@ -23,7 +22,10 @@ import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { CategoryEditModal } from '../components/CategoryEditModal';
 import { GripVerticalIcon } from '../components/GripVerticalIcon';
-import { ReorderModal } from '../components/ReorderModal';
+import DraggableFlatList, {
+  ScaleDecorator,
+  RenderItemParams,
+} from 'react-native-draggable-flatlist';
 import type { Category } from '../domain/types';
 
 export function PotsScreen() {
@@ -33,18 +35,6 @@ export function PotsScreen() {
   const [selectedYm, setSelectedYm] = useState<string>(currentYm);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [reorderCatId, setReorderCatId] = useState<string | null>(null);
-
-  const reorderIndex = reorderCatId ? categories.findIndex(c => c.id === reorderCatId) : -1;
-  const reorderCat = reorderIndex >= 0 ? categories[reorderIndex] : null;
-
-  const moveCat = (fromIdx: number, toIdx: number) => {
-    if (toIdx < 0 || toIdx >= categories.length || fromIdx === toIdx) return;
-    const next = [...categories];
-    const [removed] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, removed);
-    reorder('categories', next);
-  };
 
   const [monthStart, monthEnd] = monthRange(selectedYm);
   const monthOccurrences = occurrences(plans, payments, monthStart, monthEnd);
@@ -229,10 +219,20 @@ export function PotsScreen() {
       </View>
 
       {/* Pots Grid */}
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.sectionTitle}>Budget Pots ({categories.length})</Text>
-
-        {categories.map(cat => {
+      <DraggableFlatList
+        data={categories}
+        keyExtractor={item => item.id}
+        onDragBegin={() => triggerHaptic('medium')}
+        onDragEnd={({ data }) => {
+          triggerHaptic('light');
+          reorder('categories', data);
+        }}
+        containerStyle={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        ListHeaderComponent={
+          <Text style={styles.sectionTitle}>Budget Pots ({categories.length})</Text>
+        }
+        renderItem={({ item: cat, drag, isActive }: RenderItemParams<Category>) => {
           const catOccurrences = monthOccurrences.filter(o => o.categoryId === cat.id);
           let paidAmt = 0;
           let plannedAmt = 0;
@@ -247,65 +247,66 @@ export function PotsScreen() {
           const progressPercent = totalExpected > 0 ? Math.min(100, Math.round((paidAmt / totalExpected) * 100)) : 0;
 
           return (
-            <TouchableOpacity
-              key={cat.id}
-              style={styles.potCard}
-              onPress={() => handleCategoryPress(cat)}
-            >
-              <View style={styles.potHeader}>
-                <View style={styles.potLeft}>
-                  <TouchableOpacity
-                    style={styles.dragHandle}
-                    onPress={() => {
-                      triggerHaptic('light');
-                      setReorderCatId(cat.id);
-                    }}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  >
-                    <GripVerticalIcon size={18} color="#9CA3AF" />
-                  </TouchableOpacity>
-                  <View style={[styles.potEmojiCircle, { backgroundColor: cat.color ? `${cat.color}20` : theme.colors.bg }]}>
-                    <Text style={styles.potEmoji}>{cat.emoji}</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.potName}>{cat.name}</Text>
-                    <Text style={styles.potKind}>
-                      {cat.kind === 'income' ? 'Income Pot' : cat.kind === 'saving' ? 'Savings Pot' : 'Spending Pot'}
-                    </Text>
-                  </View>
-                </View>
+            <ScaleDecorator>
+              <View style={[styles.potCard, isActive && styles.cardActive]}>
+                <TouchableOpacity
+                  onPress={() => handleCategoryPress(cat)}
+                  disabled={isActive}
+                >
+                  <View style={styles.potHeader}>
+                    <View style={styles.potLeft}>
+                      <TouchableOpacity
+                        style={styles.dragHandle}
+                        onPressIn={drag}
+                        disabled={isActive}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      >
+                        <GripVerticalIcon size={18} color={isActive ? theme.colors.brand : '#9CA3AF'} />
+                      </TouchableOpacity>
+                      <View style={[styles.potEmojiCircle, { backgroundColor: cat.color ? `${cat.color}20` : theme.colors.bg }]}>
+                        <Text style={styles.potEmoji}>{cat.emoji}</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.potName}>{cat.name}</Text>
+                        <Text style={styles.potKind}>
+                          {cat.kind === 'income' ? 'Income Pot' : cat.kind === 'saving' ? 'Savings Pot' : 'Spending Pot'}
+                        </Text>
+                      </View>
+                    </View>
 
-                <View style={styles.potRight}>
-                  <Text style={styles.potTotal}>{money(totalExpected, settings.currency)}</Text>
-                  <Text style={styles.potPaidSub}>Paid: {money(paidAmt, settings.currency)}</Text>
-                </View>
-              </View>
-
-              {/* Progress Bar */}
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${progressPercent}%`,
-                      backgroundColor: cat.color || theme.colors.brand,
-                    },
-                  ]}
-                />
-              </View>
-
-              <View style={styles.potFooter}>
-                <Text style={styles.potFooterText}>{progressPercent}% realized this month</Text>
-                {cat.sharedWith && cat.sharedWith.length > 0 && (
-                  <View style={styles.sharedBadge}>
-                    <Text style={styles.sharedBadgeText}>👥 Shared</Text>
+                    <View style={styles.potRight}>
+                      <Text style={styles.potTotal}>{money(totalExpected, settings.currency)}</Text>
+                      <Text style={styles.potPaidSub}>Paid: {money(paidAmt, settings.currency)}</Text>
+                    </View>
                   </View>
-                )}
+
+                  {/* Progress Bar */}
+                  <View style={styles.progressBarTrack}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${progressPercent}%`,
+                          backgroundColor: cat.color || theme.colors.brand,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  <View style={styles.potFooter}>
+                    <Text style={styles.potFooterText}>{progressPercent}% realized this month</Text>
+                    {cat.sharedWith && cat.sharedWith.length > 0 && (
+                      <View style={styles.sharedBadge}>
+                        <Text style={styles.sharedBadgeText}>👥 Shared</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            </ScaleDecorator>
           );
-        })}
-      </ScrollView>
+        }}
+      />
 
       {/* Category Edit Modal */}
       <CategoryEditModal
@@ -313,23 +314,6 @@ export function PotsScreen() {
         onClose={() => setModalVisible(false)}
         categoryToEdit={activeCategory}
       />
-
-      {/* Reorder Modal */}
-      {reorderCat && (
-        <ReorderModal
-          visible={!!reorderCat}
-          onClose={() => setReorderCatId(null)}
-          title="Rearrange Pots"
-          itemName={reorderCat.name}
-          itemEmoji={reorderCat.emoji || '🫙'}
-          currentIndex={reorderIndex}
-          totalCount={categories.length}
-          onMoveUp={() => moveCat(reorderIndex, reorderIndex - 1)}
-          onMoveDown={() => moveCat(reorderIndex, reorderIndex + 1)}
-          onMoveToTop={() => moveCat(reorderIndex, 0)}
-          onMoveToBottom={() => moveCat(reorderIndex, categories.length - 1)}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -450,6 +434,14 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 10,
     ...theme.shadowCard,
+  },
+  cardActive: {
+    opacity: 0.95,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   potHeader: {
     flexDirection: 'row',
