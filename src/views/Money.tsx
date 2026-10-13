@@ -3,7 +3,7 @@ import { uid, useData } from '../store';
 import { addDays, dayLabel, money, occurrences, today } from '../schedule';
 import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
-import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, Empty, Field, HelpButton, Modal, Seg } from '../ui';
+import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, DragHandle, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
 import {
   calcAccountBalance,
@@ -27,12 +27,23 @@ const ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cas
 
 /** Savings goals */
 export function Stashes() {
-  const { user, accounts, stashes, plans, payments, transfers } = useData();
+  const { user, accounts, stashes, plans, payments, transfers, reorder } = useData();
   const [edit, setEdit] = useState<Stash | 'new' | null>(null);
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [transferStash, setTransferStash] = useState<Stash | null>(null);
   const [topUpStash, setTopUpStash] = useState<Stash | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [draggedStashIdx, setDraggedStashIdx] = useState<number | null>(null);
+  const [dragOverStashIdx, setDragOverStashIdx] = useState<number | null>(null);
+
+  const moveStash = (from: number, to: number) => {
+    if (from < 0 || to < 0 || from >= stashes.length || to >= stashes.length || from === to) return;
+    const next = [...stashes];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    void reorder('stashes', next);
+  };
+
   const saved = (s: Stash) => calcStashBalance(s, payments, transfers, plans);
 
   const getStashContributors = (s: Stash) => {
@@ -92,7 +103,7 @@ export function Stashes() {
       </header>
       {stashes.length === 0 && <Empty emoji="🐷" title="No stashes yet" text="A safety cushion of 3 months of expenses is a great first goal." />}
       <div className="grid">
-        {stashes.map(s => {
+        {stashes.map((s, index) => {
           const v = saved(s);
           const contribs = getStashContributors(s);
           const isSharedStash = Boolean((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund');
@@ -100,7 +111,30 @@ export function Stashes() {
           return (
             <div
               key={s.id}
-              className="card stash-card"
+              className={`card stash-card ${draggedStashIdx === index ? 'dragging' : ''} ${dragOverStashIdx === index ? 'drag-over' : ''}`}
+              draggable
+              onDragStart={e => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(index));
+                setDraggedStashIdx(index);
+              }}
+              onDragOver={e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverStashIdx !== index) setDragOverStashIdx(index);
+              }}
+              onDrop={e => {
+                e.preventDefault();
+                if (draggedStashIdx !== null && draggedStashIdx !== index) {
+                  moveStash(draggedStashIdx, index);
+                }
+                setDraggedStashIdx(null);
+                setDragOverStashIdx(null);
+              }}
+              onDragEnd={() => {
+                setDraggedStashIdx(null);
+                setDragOverStashIdx(null);
+              }}
               onClick={() => setEdit(s)}
               role="button"
               tabIndex={0}
@@ -112,7 +146,15 @@ export function Stashes() {
               }}
             >
               <div className="stash-card-head">
-                <div className="big">{s.emoji}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <DragHandle
+                    canMoveUp={index > 0}
+                    canMoveDown={index < stashes.length - 1}
+                    onMoveUp={() => moveStash(index, index - 1)}
+                    onMoveDown={() => moveStash(index, index + 1)}
+                  />
+                  <div className="big">{s.emoji}</div>
+                </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
                   {isInstant && (
                     <span className="stash-tag-instant" title="Instant access savings - free to spend when needed">
@@ -663,11 +705,21 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
 /** Where money lives: cards, Payoneer, cash, savings accounts */
 export function Accounts() {
-  const { accounts, plans, payments, stashes, transfers, settings, user, save } = useData();
+  const { accounts, plans, payments, stashes, transfers, settings, user, save, reorder } = useData();
   const [edit, setEdit] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [expandedAccId, setExpandedAccId] = useState<string | null>(null);
+  const [draggedAccIdx, setDraggedAccIdx] = useState<number | null>(null);
+  const [dragOverAccIdx, setDragOverAccIdx] = useState<number | null>(null);
+
+  const moveAcc = (from: number, to: number) => {
+    if (from < 0 || to < 0 || from >= accounts.length || to >= accounts.length || from === to) return;
+    const next = [...accounts];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    void reorder('accounts', next);
+  };
 
   const mainCur = settings.currency || 'EUR';
   const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, mainCur);
@@ -725,7 +777,7 @@ export function Accounts() {
       )}
 
       <div className="grid">
-        {accounts.map(a => {
+        {accounts.map((a, index) => {
           const isExpanded = expandedAccId === a.id;
           const from = today();
           const to = addDays(today(), 60);
@@ -739,8 +791,31 @@ export function Accounts() {
           return (
             <div
               key={a.id}
-              className={`card acc ${isExpanded ? 'acc-open' : ''}`}
+              className={`card acc ${isExpanded ? 'acc-open' : ''} ${draggedAccIdx === index ? 'dragging' : ''} ${dragOverAccIdx === index ? 'drag-over' : ''}`}
               style={{ ['--c' as string]: a.color, position: 'relative', cursor: 'pointer' }}
+              draggable
+              onDragStart={e => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(index));
+                setDraggedAccIdx(index);
+              }}
+              onDragOver={e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverAccIdx !== index) setDragOverAccIdx(index);
+              }}
+              onDrop={e => {
+                e.preventDefault();
+                if (draggedAccIdx !== null && draggedAccIdx !== index) {
+                  moveAcc(draggedAccIdx, index);
+                }
+                setDraggedAccIdx(null);
+                setDragOverAccIdx(null);
+              }}
+              onDragEnd={() => {
+                setDraggedAccIdx(null);
+                setDragOverAccIdx(null);
+              }}
               onClick={() => setExpandedAccId(isExpanded ? null : a.id)}
             >
               {/* Three dots top right corner for edit modal */}
@@ -756,7 +831,15 @@ export function Accounts() {
                 ⋮
               </button>
 
-              <div className="big">{ICONS[a.type]}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <DragHandle
+                  canMoveUp={index > 0}
+                  canMoveDown={index < accounts.length - 1}
+                  onMoveUp={() => moveAcc(index, index - 1)}
+                  onMoveDown={() => moveAcc(index, index + 1)}
+                />
+                <div className="big">{ICONS[a.type]}</div>
+              </div>
               <div className="title" style={{ paddingRight: 24 }}>{a.name}</div>
               <div className="sub">{a.institution ?? a.type} · {a.currency}</div>
               <div className="stash-amt">

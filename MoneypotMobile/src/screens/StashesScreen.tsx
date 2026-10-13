@@ -19,19 +19,33 @@ import { TopHeader } from '../components/TopHeader';
 import { StashEditModal } from '../components/StashEditModal';
 import { BalanceCorrectionModal } from '../components/BalanceCorrectionModal';
 import { OneOffPaymentModal } from '../components/OneOffPaymentModal';
+import { GripVerticalIcon } from '../components/GripVerticalIcon';
+import { ReorderModal } from '../components/ReorderModal';
 import type { Stash } from '../domain/types';
 
 export function StashesScreen() {
-  const { stashes, payments, transfers, plans, accounts, settings, save, user } = useData();
+  const { stashes, payments, transfers, plans, accounts, settings, save, user, reorder } = useData();
 
   const [activeStash, setActiveStash] = useState<Stash | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [topUpStash, setTopUpStash] = useState<Stash | null>(null);
+  const [reorderStashId, setReorderStashId] = useState<string | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<{
     type: 'stash';
     item: Stash;
     currentBalance: number;
   } | null>(null);
+
+  const reorderIndex = reorderStashId ? stashes.findIndex(s => s.id === reorderStashId) : -1;
+  const reorderStash = reorderIndex >= 0 ? stashes[reorderIndex] : null;
+
+  const moveStash = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= stashes.length || fromIdx === toIdx) return;
+    const next = [...stashes];
+    const [removed] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, removed);
+    reorder('stashes', next);
+  };
 
   // Total stashed amount converted to main currency
   const totalStashedMain = stashes.reduce((sum, s) => {
@@ -146,6 +160,16 @@ export function StashesScreen() {
                 <TouchableOpacity onPress={() => handleStashPress(s)}>
                   <View style={styles.stashHeader}>
                     <View style={styles.stashTitleRow}>
+                      <TouchableOpacity
+                        style={styles.dragHandle}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setReorderStashId(s.id);
+                        }}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      >
+                        <GripVerticalIcon size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
                       <Text style={styles.stashEmoji}>{s.emoji}</Text>
                       <View>
                         <Text style={styles.stashName}>{s.name}</Text>
@@ -268,6 +292,23 @@ export function StashesScreen() {
           onClose={() => setTopUpStash(null)}
         />
       )}
+
+      {/* Reorder Modal */}
+      {reorderStash && (
+        <ReorderModal
+          visible={!!reorderStash}
+          onClose={() => setReorderStashId(null)}
+          title="Rearrange Stashes"
+          itemName={reorderStash.name}
+          itemEmoji={reorderStash.emoji || '🎯'}
+          currentIndex={reorderIndex}
+          totalCount={stashes.length}
+          onMoveUp={() => moveStash(reorderIndex, reorderIndex - 1)}
+          onMoveDown={() => moveStash(reorderIndex, reorderIndex + 1)}
+          onMoveToTop={() => moveStash(reorderIndex, 0)}
+          onMoveToBottom={() => moveStash(reorderIndex, stashes.length - 1)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -339,7 +380,13 @@ const styles = StyleSheet.create({
   stashTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+  },
+  dragHandle: {
+    paddingRight: 4,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   stashEmoji: {
     fontSize: 30,

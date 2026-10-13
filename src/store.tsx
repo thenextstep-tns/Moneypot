@@ -30,6 +30,16 @@ interface Ctx extends Data {
   save: <C extends Coll>(c: C, o: Data[C][number]) => void;
   remove: (c: Coll, id: string) => void;
   setSettings: (s: Settings) => void;
+  reorder: <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: Data[C]) => Promise<void>;
+}
+
+export function sortByOrder<T extends { id: string; order?: number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aOrder = typeof a.order === 'number' ? a.order : 999999;
+    const bOrder = typeof b.order === 'number' ? b.order : 999999;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return 0;
+  });
 }
 
 const empty: Data = {
@@ -73,10 +83,19 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     if (!userId || !db) {
       const saved = localStorage.getItem(LS);
       const parsed = saved ? JSON.parse(saved) : null;
-      if (parsed?.stashes?.length) {
-        parsed.stashes = parsed.stashes.map((s: Stash) => normalizeStash(s, 'local'));
+      if (parsed) {
+        if (parsed.stashes?.length) {
+          parsed.stashes = parsed.stashes.map((s: Stash) => normalizeStash(s, 'local'));
+        }
+        if (parsed.accounts) parsed.accounts = sortByOrder(parsed.accounts);
+        if (parsed.categories) parsed.categories = sortByOrder(parsed.categories);
+        if (parsed.stashes) parsed.stashes = sortByOrder(parsed.stashes);
       }
-      setData(parsed ? { ...empty, ...parsed, templates: parsed.templates?.length ? parsed.templates : DEFAULT_TEMPLATES } : { ...empty, categories: DEFAULT_CATEGORIES, ...DEMO });
+      setData(
+        parsed
+          ? { ...empty, ...parsed, templates: parsed.templates?.length ? parsed.templates : DEFAULT_TEMPLATES }
+          : { ...empty, ...DEMO, categories: sortByOrder(DEFAULT_CATEGORIES), accounts: sortByOrder(DEMO.accounts), stashes: sortByOrder(DEMO.stashes) }
+      );
       return;
     }
     const base = doc(db, 'users', userId);
@@ -85,8 +104,8 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
       if (s.exists()) return;
       const b = writeBatch(db!);
       b.set(base, { currency: 'EUR', createdAt: Date.now() });
-      DEFAULT_CATEGORIES.forEach(c => b.set(doc(base, 'categories', c.id), { ...c, ownerId: userId }));
-      DEFAULT_ACCOUNTS.forEach(a => b.set(doc(base, 'accounts', a.id), { ...a, ownerId: userId }));
+      DEFAULT_CATEGORIES.forEach((c, idx) => b.set(doc(base, 'categories', c.id), { ...c, order: idx, ownerId: userId }));
+      DEFAULT_ACCOUNTS.forEach((a, idx) => b.set(doc(base, 'accounts', a.id), { ...a, order: idx, ownerId: userId }));
       DEFAULT_TEMPLATES.forEach(t => b.set(doc(base, 'templates', t.id), { ...t, ownerId: userId }));
       await b.commit();
     });
@@ -100,6 +119,9 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
           }
           return norm;
         });
+      }
+      if (c === 'accounts' || c === 'categories' || c === 'stashes') {
+        docs = sortByOrder(docs as any);
       }
       setData(d => ({ ...d, [c]: docs }));
     }));
@@ -368,6 +390,22 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
       }
     },
     setSettings: s => local ? setData(d => ({ ...d, settings: s })) : void setDoc(doc(db!, 'users', userId!), s, { merge: true }),
+    reorder: async <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: Data[C]) => {
+      const ordered = items.map((item, index) => ({ ...item, order: index })) as Data[C];
+      setData(d => ({ ...d, [c]: ordered }));
+      if (local) {
+        const saved = localStorage.getItem(LS);
+        const parsed = saved ? JSON.parse(saved) : {};
+        parsed[c] = ordered;
+        localStorage.setItem(LS, JSON.stringify(parsed));
+      } else if (userId && db) {
+        const b = writeBatch(db);
+        for (const item of ordered) {
+          b.set(doc(db, 'users', userId, c, (item as any).id), { order: (item as any).order }, { merge: true });
+        }
+        await b.commit();
+      }
+    },
   };
   return <DataCtx.Provider value={ctx}>{children}</DataCtx.Provider>;
 }

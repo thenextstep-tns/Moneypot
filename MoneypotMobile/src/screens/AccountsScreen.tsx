@@ -23,20 +23,42 @@ import { TopHeader } from '../components/TopHeader';
 import { AccountEditModal } from '../components/AccountEditModal';
 import { BalanceCorrectionModal } from '../components/BalanceCorrectionModal';
 import { QuickTransferModal } from '../components/QuickTransferModal';
+import { GripVerticalIcon } from '../components/GripVerticalIcon';
+import { ReorderModal } from '../components/ReorderModal';
 import type { Account } from '../domain/types';
 
+const TYPE_ICONS: Record<Account['type'], string> = {
+  card: '💳',
+  bank: '🏦',
+  cash: '💵',
+  wallet: '👛',
+  savings: '🐷',
+};
+
 export function AccountsScreen() {
-  const { accounts, payments, transfers, plans, stashes, settings, user, save } = useData();
+  const { accounts, payments, transfers, plans, stashes, settings, user, save, reorder } = useData();
 
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [transferVisible, setTransferVisible] = useState(false);
   const [defaultTransferAccId, setDefaultTransferAccId] = useState<string | undefined>(undefined);
+  const [reorderAccId, setReorderAccId] = useState<string | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<{
     type: 'account';
     item: Account;
     currentBalance: number;
   } | null>(null);
+
+  const reorderIndex = reorderAccId ? accounts.findIndex(a => a.id === reorderAccId) : -1;
+  const reorderAcc = reorderIndex >= 0 ? accounts[reorderIndex] : null;
+
+  const moveAccount = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= accounts.length || fromIdx === toIdx) return;
+    const next = [...accounts];
+    const [removed] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, removed);
+    reorder('accounts', next);
+  };
 
   const totalLiquid = calcTotalLiquidBalance(
     accounts,
@@ -112,14 +134,6 @@ export function AccountsScreen() {
           const totalBal = calcAccountBalance(acc, payments, transfers, plans, stashes);
           const stashedBal = calcAccountStashedBalance(acc, stashes, payments, transfers, plans, accounts);
           const freeBal = Math.max(0, totalBal - stashedBal);
-          const typeIcons: Record<Account['type'], string> = {
-            card: '💳',
-            bank: '🏦',
-            cash: '💵',
-            wallet: '👛',
-            savings: '🐷',
-          };
-
           return (
             <View key={acc.id} style={styles.accountCard}>
               <TouchableOpacity
@@ -127,8 +141,18 @@ export function AccountsScreen() {
                 onPress={() => handleAccountPress(acc)}
               >
                 <View style={styles.accLeft}>
+                  <TouchableOpacity
+                    style={styles.dragHandle}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setReorderAccId(acc.id);
+                    }}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <GripVerticalIcon size={18} color="#9CA3AF" />
+                  </TouchableOpacity>
                   <View style={[styles.avatarCircle, { backgroundColor: acc.color || theme.colors.brand }]}>
-                    <Text style={styles.avatarIcon}>{typeIcons[acc.type] || '💳'}</Text>
+                    <Text style={styles.avatarIcon}>{TYPE_ICONS[acc.type] || '💳'}</Text>
                   </View>
                   <View>
                     <Text style={styles.accName}>{acc.name}</Text>
@@ -204,6 +228,23 @@ export function AccountsScreen() {
         onClose={() => setCorrectionTarget(null)}
         target={correctionTarget}
       />
+
+      {/* Reorder Modal */}
+      {reorderAcc && (
+        <ReorderModal
+          visible={!!reorderAcc}
+          onClose={() => setReorderAccId(null)}
+          title="Rearrange Accounts"
+          itemName={reorderAcc.name}
+          itemEmoji={TYPE_ICONS[reorderAcc.type] || '💳'}
+          currentIndex={reorderIndex}
+          totalCount={accounts.length}
+          onMoveUp={() => moveAccount(reorderIndex, reorderIndex - 1)}
+          onMoveDown={() => moveAccount(reorderIndex, reorderIndex + 1)}
+          onMoveToTop={() => moveAccount(reorderIndex, 0)}
+          onMoveToBottom={() => moveAccount(reorderIndex, accounts.length - 1)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -296,7 +337,13 @@ const styles = StyleSheet.create({
   accLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+  },
+  dragHandle: {
+    paddingRight: 4,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   avatarCircle: {
     width: 44,

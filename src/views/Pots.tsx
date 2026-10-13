@@ -4,7 +4,7 @@ import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisM
 import { convert } from '../fx';
 import { calcAllAccountBalances, calcMonthStartingBalances, findAccountShortfalls } from '../balances';
 import type { Category, Occurrence } from '../types';
-import { Bar, Empty, HelpButton } from '../ui';
+import { Bar, DragHandle, Empty, HelpButton } from '../ui';
 import { CategoryModal } from './CategoryModal';
 import { TransferModal } from './Money';
 import { ScreenHelpModal } from './ScreenHelpModal';
@@ -14,7 +14,7 @@ const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + con
 
 /** MAIN FLOW #2 — monthly pots: planned vs done vs still needed */
 export function Pots() {
-  const { plans, payments, transfers, stashes, accounts, categories, settings } = useData();
+  const { plans, payments, transfers, stashes, accounts, categories, settings, reorder } = useData();
   const [ym, setYm] = useState(thisMonth());
   const [open, setOpen] = useState<string | null>(null);
   const [editingCat, setEditingCat] = useState<Category | 'new' | null>(null);
@@ -22,7 +22,37 @@ export function Pots() {
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [sharingItem, setSharingItem] = useState<Category | null>(null);
+  const [draggedCatId, setDraggedCatId] = useState<string | null>(null);
+  const [dragOverCatId, setDragOverCatId] = useState<string | null>(null);
   const cur = settings.currency;
+
+  const moveCat = (catId: string, direction: -1 | 1) => {
+    const idx = categories.findIndex(c => c.id === catId);
+    if (idx < 0) return;
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= categories.length) return;
+    const next = [...categories];
+    const [item] = next.splice(idx, 1);
+    next.splice(targetIdx, 0, item);
+    void reorder('categories', next);
+  };
+
+  const handleDropCat = (targetCatId: string) => {
+    if (!draggedCatId || draggedCatId === targetCatId) {
+      setDraggedCatId(null);
+      setDragOverCatId(null);
+      return;
+    }
+    const fromIdx = categories.findIndex(c => c.id === draggedCatId);
+    const toIdx = categories.findIndex(c => c.id === targetCatId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = [...categories];
+    const [item] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, item);
+    void reorder('categories', next);
+    setDraggedCatId(null);
+    setDragOverCatId(null);
+  };
 
   const occ = useMemo(() => occurrences(plans, payments, ...monthRange(ym)).filter(o => o.status !== 'cancelled'), [plans, payments, ym]);
 
@@ -201,45 +231,101 @@ export function Pots() {
       )}
 
       <div className="pots">
-        {activePots.map(({ c, items }) => (
-          <Pot
-            key={c.id}
-            c={c}
-            items={items}
-            cur={cur}
-            open={open === c.id}
-            toggle={() => setOpen(open === c.id ? null : c.id)}
-            onEdit={() => setEditingCat(c)}
-            onShare={() => setSharingItem(c)}
-          />
-        ))}
+        {activePots.map(({ c, items }, idx) => {
+          const catIndex = categories.findIndex(cat => cat.id === c.id);
+          return (
+            <Pot
+              key={c.id}
+              c={c}
+              items={items}
+              cur={cur}
+              open={open === c.id}
+              toggle={() => setOpen(open === c.id ? null : c.id)}
+              onEdit={() => setEditingCat(c)}
+              onShare={() => setSharingItem(c)}
+              canMoveUp={catIndex > 0}
+              canMoveDown={catIndex < categories.length - 1}
+              onMoveUp={() => moveCat(c.id, -1)}
+              onMoveDown={() => moveCat(c.id, 1)}
+              isDragging={draggedCatId === c.id}
+              isDragOver={dragOverCatId === c.id}
+              onDragStart={e => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', c.id);
+                setDraggedCatId(c.id);
+              }}
+              onDragOver={e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverCatId !== c.id) setDragOverCatId(c.id);
+              }}
+              onDrop={e => {
+                e.preventDefault();
+                handleDropCat(c.id);
+              }}
+              onDragEnd={() => {
+                setDraggedCatId(null);
+                setDragOverCatId(null);
+              }}
+            />
+          );
+        })}
       </div>
 
       {unusedPots.length > 0 && (
         <section style={{ marginTop: 36 }}>
           <h2>Other pots <span className="muted">· no expenses this month</span></h2>
           <div className="grid">
-            {unusedPots.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                className="card click"
-                style={{ ['--c' as string]: c.color, borderLeft: `4px solid ${c.color}` }}
-                onClick={() => setEditingCat(c)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="big" style={{ fontSize: 28 }}>{c.emoji}</span>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {c.sharedWith && c.sharedWith.length > 0 && <span className="tag shared-tag">👥 Shared</span>}
-                    <span className="pill">{c.kind === 'saving' ? 'Saving' : 'Expense'}</span>
+            {unusedPots.map(c => {
+              const catIndex = categories.findIndex(cat => cat.id === c.id);
+              return (
+                <div
+                  key={c.id}
+                  className={`card click ${draggedCatId === c.id ? 'dragging' : ''} ${dragOverCatId === c.id ? 'drag-over' : ''}`}
+                  style={{ ['--c' as string]: c.color, borderLeft: `4px solid ${c.color}`, cursor: 'pointer' }}
+                  draggable
+                  onDragStart={e => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', c.id);
+                    setDraggedCatId(c.id);
+                  }}
+                  onDragOver={e => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dragOverCatId !== c.id) setDragOverCatId(c.id);
+                  }}
+                  onDrop={e => {
+                    e.preventDefault();
+                    handleDropCat(c.id);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedCatId(null);
+                    setDragOverCatId(null);
+                  }}
+                  onClick={() => setEditingCat(c)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <DragHandle
+                        canMoveUp={catIndex > 0}
+                        canMoveDown={catIndex < categories.length - 1}
+                        onMoveUp={() => moveCat(c.id, -1)}
+                        onMoveDown={() => moveCat(c.id, 1)}
+                      />
+                      <span className="big" style={{ fontSize: 28 }}>{c.emoji}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {c.sharedWith && c.sharedWith.length > 0 && <span className="tag shared-tag">👥 Shared</span>}
+                      <span className="pill">{c.kind === 'saving' ? 'Saving' : 'Expense'}</span>
+                    </div>
+                  </div>
+                  <div className="title" style={{ marginTop: 4 }}>{c.name}</div>
+                  <div className="sub">
+                    {c.subcategories?.length ? `${c.subcategories.length} subcategories` : 'No subcategories'}
                   </div>
                 </div>
-                <div className="title" style={{ marginTop: 4 }}>{c.name}</div>
-                <div className="sub">
-                  {c.subcategories?.length ? `${c.subcategories.length} subcategories` : 'No subcategories'}
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -271,7 +357,43 @@ export function Pots() {
   );
 }
 
-function Pot({ c, items, cur, open, toggle, onEdit, onShare }: { c: Category; items: Occurrence[]; cur: string; open: boolean; toggle: () => void; onEdit: () => void; onShare: () => void }) {
+function Pot({
+  c,
+  items,
+  cur,
+  open,
+  toggle,
+  onEdit,
+  onShare,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  c: Category;
+  items: Occurrence[];
+  cur: string;
+  open: boolean;
+  toggle: () => void;
+  onEdit: () => void;
+  onShare: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: () => void;
+}) {
   const planned = sum(items, cur);
   const doneItems = items.filter(o => o.status === 'confirmed');
   const left = items.filter(o => o.status === 'pending');
@@ -289,8 +411,25 @@ function Pot({ c, items, cur, open, toggle, onEdit, onShare }: { c: Category; it
   }, [items, cur]);
 
   return (
-    <div className={`pot ${open ? 'open' : ''}`} style={{ ['--c' as string]: c.color }} onClick={toggle}>
+    <div
+      className={`pot ${open ? 'open' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
+      style={{ ['--c' as string]: c.color }}
+      onClick={toggle}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
       <div className="pot-head">
+        {onMoveUp && onMoveDown && (
+          <DragHandle
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+          />
+        )}
         <div className="emoji">{c.emoji}</div>
         <div className="grow">
           <div className="title">

@@ -1836,5 +1836,71 @@ input[type="date"] {
   transform: scale(0.97);
 }
 
+/* Drag handle & card reordering */
+.card-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mute);
+  cursor: grab;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all .15s ease;
+  user-select: none;
+  position: relative;
+  flex-shrink: 0;
+}
+.card-drag-handle:active {
+  cursor: grabbing;
+}
+.card-drag-handle:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.05);
+}
+.drag-handle-arrows {
+  display: none;
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+  z-index: 10;
+}
+.card-drag-handle:hover .drag-handle-arrows,
+.card-drag-handle:focus-within .drag-handle-arrows {
+  display: flex;
+}
+.drag-arrow-btn {
+  background: transparent;
+  border: none;
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ink);
+  line-height: 1;
+}
+.drag-arrow-btn:hover:not(:disabled) {
+  background: var(--bg);
+}
+.drag-arrow-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.card.dragging, .pot.dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+.card.drag-over, .pot.drag-over {
+  outline: 2px dashed var(--accent, #6366f1);
+  outline-offset: 3px;
+}
+
 
 

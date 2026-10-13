@@ -506,3 +506,81 @@ export function HelpButton({ onClick, title = 'How this works' }: { onClick: () 
     </button>
   );
 }
+
+/** 6-dot drag grip handle icon */
+export function GripVerticalIcon({ size = 16, className = '', color = 'currentColor' }: { size?: number; className?: string; color?: string }) {
+  return (
+    <svg
+      width={Math.round(size * (10 / 16))}
+      height={size}
+      viewBox="0 0 10 16"
+      fill={color}
+      className={className}
+      style={{ display: 'inline-block', verticalAlign: 'middle', pointerEvents: 'none' }}
+    >
+      <circle cx="2.5" cy="2.5" r="1.5" />
+      <circle cx="7.5" cy="2.5" r="1.5" />
+      <circle cx="2.5" cy="8" r="1.5" />
+      <circle cx="7.5" cy="8" r="1.5" />
+      <circle cx="2.5" cy="13.5" r="1.5" />
+      <circle cx="7.5" cy="13.5" r="1.5" />
+    </svg>
+  );
+}
+
+/** Drag handle wrapper with accessible move up/down controls */
+export function DragHandle({
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = true,
+  canMoveDown = true,
+  title = 'Drag to rearrange',
+}: {
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  title?: string;
+}) {
+  return (
+    <div
+      className="card-drag-handle"
+      title={title}
+      onClick={e => e.stopPropagation()}
+    >
+      <GripVerticalIcon size={16} />
+      {(onMoveUp || onMoveDown) && (
+        <div className="drag-handle-arrows" onClick={e => e.stopPropagation()}>
+          {onMoveUp && (
+            <button
+              type="button"
+              className="drag-arrow-btn"
+              title="Move up"
+              disabled={!canMoveUp}
+              onClick={e => {
+                e.stopPropagation();
+                onMoveUp();
+              }}
+            >
+              ▲
+            </button>
+          )}
+          {onMoveDown && (
+            <button
+              type="button"
+              className="drag-arrow-btn"
+              title="Move down"
+              disabled={!canMoveDown}
+              onClick={e => {
+                e.stopPropagation();
+                onMoveDown();
+              }}
+            >
+              ▼
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

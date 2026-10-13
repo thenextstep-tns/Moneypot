@@ -46,6 +46,7 @@ export interface DataContextValue extends DataState {
   remove: (c: Coll, id: string) => Promise<void>;
   setSettings: (s: Settings) => Promise<void>;
   resetDemoData: () => Promise<void>;
+  reorder: <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: DataState[C]) => Promise<void>;
 }
 
 const emptyData: DataState = {
@@ -79,6 +80,15 @@ export function normalizeStash(st: Stash, currentUserId?: string | null): Stash 
     ...st,
     isInstantAccess: shouldBeInstant,
   };
+}
+
+export function sortByOrder<T extends { id: string; order?: number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aOrder = typeof a.order === 'number' ? a.order : 999999;
+    const bOrder = typeof b.order === 'number' ? b.order : 999999;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return 0;
+  });
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -167,8 +177,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const saved = await AsyncStorage.getItem(LS_KEY);
           if (saved) {
             const parsed = JSON.parse(saved);
-            if (parsed?.stashes?.length) {
-              parsed.stashes = parsed.stashes.map((s: Stash) => normalizeStash(s, 'local'));
+            if (parsed) {
+              if (parsed.stashes?.length) {
+                parsed.stashes = parsed.stashes.map((s: Stash) => normalizeStash(s, 'local'));
+              }
+              if (parsed.accounts) parsed.accounts = sortByOrder(parsed.accounts);
+              if (parsed.categories) parsed.categories = sortByOrder(parsed.categories);
+              if (parsed.stashes) parsed.stashes = sortByOrder(parsed.stashes);
             }
             setData({
               ...emptyData,
@@ -178,15 +193,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
           } else {
             setData({
               ...emptyData,
-              categories: DEFAULT_CATEGORIES,
               ...DEMO,
+              categories: sortByOrder(DEFAULT_CATEGORIES),
+              accounts: sortByOrder(DEMO.accounts),
+              stashes: sortByOrder(DEMO.stashes),
             });
           }
         } catch {
           setData({
             ...emptyData,
-            categories: DEFAULT_CATEGORIES,
             ...DEMO,
+            categories: sortByOrder(DEFAULT_CATEGORIES),
+            accounts: sortByOrder(DEMO.accounts),
+            stashes: sortByOrder(DEMO.stashes),
           });
         }
       })();
@@ -202,8 +221,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (s.exists()) return;
       const b = writeBatch(db!);
       b.set(base, { currency: 'EUR', createdAt: Date.now() });
-      DEFAULT_CATEGORIES.forEach(c => b.set(doc(base, 'categories', c.id), { ...c, ownerId: userId }));
-      DEFAULT_ACCOUNTS.forEach(a => b.set(doc(base, 'accounts', a.id), { ...a, ownerId: userId }));
+      DEFAULT_CATEGORIES.forEach((c, idx) => b.set(doc(base, 'categories', c.id), { ...c, order: idx, ownerId: userId }));
+      DEFAULT_ACCOUNTS.forEach((a, idx) => b.set(doc(base, 'accounts', a.id), { ...a, order: idx, ownerId: userId }));
       DEFAULT_TEMPLATES.forEach(t => b.set(doc(base, 'templates', t.id), { ...t, ownerId: userId }));
       await b.commit();
     }).catch(err => {
@@ -220,6 +239,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
           return norm;
         });
+      }
+      if (c === 'accounts' || c === 'categories' || c === 'stashes') {
+        docs = sortByOrder(docs as any);
       }
       setData(prev => ({ ...prev, [c]: docs }));
     }, err => {
@@ -535,6 +557,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const reorder = async <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: DataState[C]): Promise<void> => {
+    const ordered = items.map((item, index) => ({ ...item, order: index })) as DataState[C];
+    setData(prev => ({ ...prev, [c]: ordered }));
+    const userId = user?.uid;
+    const local = isDemoMode || !userId || !db;
+    if (local) {
+      try {
+        const stored = await AsyncStorage.getItem(LS_KEY);
+        const parsed = stored ? JSON.parse(stored) : {};
+        parsed[c] = ordered;
+        await AsyncStorage.setItem(LS_KEY, JSON.stringify(parsed));
+      } catch (e) {
+        console.warn('AsyncStorage reorder error:', e);
+      }
+    } else {
+      const b = writeBatch(db!);
+      for (const item of ordered) {
+        b.set(doc(db!, 'users', userId, c, (item as any).id), { order: (item as any).order }, { merge: true });
+      }
+      await b.commit();
+    }
+  };
+
   const value: DataContextValue = {
     ...data,
     user,
@@ -555,6 +600,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     remove,
     setSettings,
     resetDemoData,
+    reorder,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

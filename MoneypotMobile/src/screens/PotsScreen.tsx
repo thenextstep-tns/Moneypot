@@ -22,15 +22,29 @@ import { theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { CategoryEditModal } from '../components/CategoryEditModal';
+import { GripVerticalIcon } from '../components/GripVerticalIcon';
+import { ReorderModal } from '../components/ReorderModal';
 import type { Category } from '../domain/types';
 
 export function PotsScreen() {
-  const { categories, plans, payments, accounts, stashes, transfers, settings } = useData();
+  const { categories, plans, payments, accounts, stashes, transfers, settings, reorder } = useData();
 
   const currentYm = thisMonth();
   const [selectedYm, setSelectedYm] = useState<string>(currentYm);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [reorderCatId, setReorderCatId] = useState<string | null>(null);
+
+  const reorderIndex = reorderCatId ? categories.findIndex(c => c.id === reorderCatId) : -1;
+  const reorderCat = reorderIndex >= 0 ? categories[reorderIndex] : null;
+
+  const moveCat = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= categories.length || fromIdx === toIdx) return;
+    const next = [...categories];
+    const [removed] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, removed);
+    reorder('categories', next);
+  };
 
   const [monthStart, monthEnd] = monthRange(selectedYm);
   const monthOccurrences = occurrences(plans, payments, monthStart, monthEnd);
@@ -240,6 +254,16 @@ export function PotsScreen() {
             >
               <View style={styles.potHeader}>
                 <View style={styles.potLeft}>
+                  <TouchableOpacity
+                    style={styles.dragHandle}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setReorderCatId(cat.id);
+                    }}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <GripVerticalIcon size={18} color="#9CA3AF" />
+                  </TouchableOpacity>
                   <View style={[styles.potEmojiCircle, { backgroundColor: cat.color ? `${cat.color}20` : theme.colors.bg }]}>
                     <Text style={styles.potEmoji}>{cat.emoji}</Text>
                   </View>
@@ -289,6 +313,23 @@ export function PotsScreen() {
         onClose={() => setModalVisible(false)}
         categoryToEdit={activeCategory}
       />
+
+      {/* Reorder Modal */}
+      {reorderCat && (
+        <ReorderModal
+          visible={!!reorderCat}
+          onClose={() => setReorderCatId(null)}
+          title="Rearrange Pots"
+          itemName={reorderCat.name}
+          itemEmoji={reorderCat.emoji || '🫙'}
+          currentIndex={reorderIndex}
+          totalCount={categories.length}
+          onMoveUp={() => moveCat(reorderIndex, reorderIndex - 1)}
+          onMoveDown={() => moveCat(reorderIndex, reorderIndex + 1)}
+          onMoveToTop={() => moveCat(reorderIndex, 0)}
+          onMoveToBottom={() => moveCat(reorderIndex, categories.length - 1)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -418,7 +459,13 @@ const styles = StyleSheet.create({
   potLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+  },
+  dragHandle: {
+    paddingRight: 4,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   potEmojiCircle: {
     width: 44,

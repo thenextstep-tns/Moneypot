@@ -14,6 +14,7 @@ export interface Account extends Owned {
   currency: string;             // ISO code, "EUR"
   startBalance: number;         // balance when added; live balance = start + confirmed flows
   color: string;
+  order?: number;
 }
 
 /** A "pot": a bucket of spending (or income / saving) */
@@ -26,6 +27,7 @@ export interface Category extends Owned {
   subcategories?: string[];     // user-defined subcategories for this pot
   sharedWith?: string[];        // emails of confirmed members
   ownerEmail?: string;          // email of the creator
+  order?: number;
 }
 
 /** A recurring (or one-off) money movement the user expects */
@@ -70,6 +72,7 @@ export interface Stash extends Owned {
   categoryId?: string;          // default pot for this stash (e.g. 'savings')
   subcategory?: string;         // default subcategory (e.g. stash name)
   isInstantAccess?: boolean;    // true = allows paying directly from this stash (default true for personal stashes)
+  order?: number;
 }
 
 /** Invitation to share a pot or stash with an email and one-off masked access code */
