@@ -118,7 +118,10 @@ export function OneOffPaymentModal({
     if (!v || !selCat) return;
     const currentSubs = selCat.subcategories ?? [];
     if (!currentSubs.includes(v)) {
-      save('categories', { ...selCat, subcategories: [...currentSubs, v] });
+      save('categories', {
+        ...selCat,
+        subcategories: [...currentSubs, v].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
+      });
     }
     setSubcategory(v);
     setNewSubVal('');
@@ -552,7 +555,7 @@ export function OneOffPaymentModal({
                 >
                   General
                 </button>
-                {(selCat.subcategories ?? []).map(s => (
+                {[...(selCat.subcategories ?? [])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => (
                   <button
                     type="button"
                     key={s}
@@ -854,7 +857,7 @@ export function OneOffPaymentModal({
                 >
                   General
                 </button>
-                {(selCat.subcategories ?? []).map(s => (
+                {[...(selCat.subcategories ?? [])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => (
                   <button
                     type="button"
                     key={s}
@@ -1262,7 +1265,10 @@ export function TemplateModal({
     if (!v || !selCat) return;
     const currentSubs = selCat.subcategories ?? [];
     if (!currentSubs.includes(v)) {
-      save('categories', { ...selCat, subcategories: [...currentSubs, v] });
+      save('categories', {
+        ...selCat,
+        subcategories: [...currentSubs, v].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
+      });
     }
     setSubcategory(v);
     setNewSubVal('');
@@ -1345,7 +1351,7 @@ export function TemplateModal({
             >
               General
             </button>
-            {(selCat.subcategories ?? []).map(s => (
+            {[...(selCat.subcategories ?? [])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => (
               <button
                 type="button"
                 key={s}

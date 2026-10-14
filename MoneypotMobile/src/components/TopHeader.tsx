@@ -25,6 +25,7 @@ interface TopHeaderProps {
 }
 
 const REPORT_TABS = [
+  { id: 'Spending', icon: '📊', label: 'Spending Breakdown' },
   { id: 'Logbook', icon: '📜', label: 'Logbook' },
   { id: 'Cashflow', icon: '📈', label: 'Cashflow' },
 ] as const;

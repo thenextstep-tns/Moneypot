@@ -26,7 +26,7 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
     if (!val) return;
     const existing = c.subcategories ?? [];
     if (!existing.includes(val)) {
-      set({ subcategories: [...existing, val] });
+      set({ subcategories: [...existing, val].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })) });
     }
     setNewSub('');
   };
@@ -43,7 +43,9 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
     if (!updated) return;
     if (original !== updated) {
       set({
-        subcategories: (c.subcategories ?? []).map(s => (s === original ? updated : s)),
+        subcategories: (c.subcategories ?? [])
+          .map(s => (s === original ? updated : s))
+          .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
       });
       // Cascade rename across plans, payments, and templates
       if (category) {
@@ -70,7 +72,8 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
 
   const submit = () => {
     if (!c.name.trim()) return;
-    save('categories', { ...c, name: c.name.trim() });
+    const sortedSubs = (c.subcategories ?? []).slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    save('categories', { ...c, name: c.name.trim(), subcategories: sortedSubs });
     onClose();
   };
 
@@ -115,7 +118,7 @@ export function CategoryModal({ category, defaultKind = 'expense', onClose }: { 
         </div>
 
         <div className="subcat-list">
-          {(c.subcategories ?? []).map(s => {
+          {[...(c.subcategories ?? [])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => {
             const isEditing = editingSub?.original === s;
             if (isEditing) {
               return (

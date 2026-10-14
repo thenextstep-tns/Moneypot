@@ -429,7 +429,7 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
                 >
                   General
                 </button>
-                {curCat.subcategories.map(s => (
+                {[...curCat.subcategories].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => (
                   <button
                     key={s}
                     type="button"

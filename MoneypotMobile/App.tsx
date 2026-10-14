@@ -24,6 +24,7 @@ import { StashesScreen } from './src/screens/StashesScreen';
 import { AccountsScreen } from './src/screens/AccountsScreen';
 import { LogbookScreen } from './src/screens/LogbookScreen';
 import { CashflowScreen } from './src/screens/CashflowScreen';
+import { SpendingScreen } from './src/screens/SpendingScreen';
 import { theme } from './src/theme';
 import { triggerHaptic } from './src/utils/haptics';
 
@@ -93,13 +94,15 @@ function MainApp() {
         return <LogbookScreen />;
       case 'Cashflow':
         return <CashflowScreen />;
+      case 'Spending':
+        return <SpendingScreen />;
       case 'Today':
       default:
         return <TodayScreen />;
     }
   };
 
-  const isReportsActive = activeTab === 'Logbook' || activeTab === 'Cashflow';
+  const isReportsActive = activeTab === 'Logbook' || activeTab === 'Cashflow' || activeTab === 'Spending';
 
   return (
     <View style={styles.mainContainer}>

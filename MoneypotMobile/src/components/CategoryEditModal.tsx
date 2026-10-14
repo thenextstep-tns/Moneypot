@@ -47,7 +47,7 @@ export function CategoryEditModal({
       setEmoji(categoryToEdit.emoji || '🍏');
       setKind(categoryToEdit.kind || 'expense');
       setColor(categoryToEdit.color || '#6C8EF5');
-      setSubcategories(categoryToEdit.subcategories || []);
+      setSubcategories((categoryToEdit.subcategories || []).slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })));
     } else {
       setName('');
       setEmoji('🍏');
@@ -58,9 +58,13 @@ export function CategoryEditModal({
   }, [categoryToEdit, visible]);
 
   const handleAddSubcat = () => {
-    if (!newSubcatText.trim()) return;
+    const val = newSubcatText.trim();
+    if (!val) return;
     triggerHaptic('light');
-    setSubcategories(prev => [...prev, newSubcatText.trim()]);
+    setSubcategories(prev => {
+      if (prev.includes(val)) return prev;
+      return [...prev, val].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    });
     setNewSubcatText('');
   };
 
@@ -77,13 +81,14 @@ export function CategoryEditModal({
 
     triggerHaptic('success');
     const catId = categoryToEdit ? categoryToEdit.id : `cat_${uid()}`;
+    const sortedSubs = subcategories.slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     const newCategory: Category = {
       id: catId,
       name: name.trim(),
       emoji: emoji || '🍏',
       kind,
       color,
-      subcategories: subcategories.length ? subcategories : undefined,
+      subcategories: sortedSubs.length ? sortedSubs : undefined,
       sharedWith: categoryToEdit?.sharedWith,
       ownerEmail: categoryToEdit?.ownerEmail,
     };

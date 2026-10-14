@@ -274,7 +274,10 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
     if (!v || !currentCat) return;
     const currentSubs = currentCat.subcategories ?? [];
     if (!currentSubs.includes(v)) {
-      save('categories', { ...currentCat, subcategories: [...currentSubs, v] });
+      save('categories', {
+        ...currentCat,
+        subcategories: [...currentSubs, v].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
+      });
     }
     set({ subcategory: v });
     setNewSubVal('');
@@ -537,7 +540,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                     >
                       General
                     </button>
-                    {(categories.find(c => c.id === categoryId)?.subcategories ?? []).map(s => (
+                    {[...(categories.find(c => c.id === categoryId)?.subcategories ?? [])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => (
                       <button
                         key={s}
                         type="button"

@@ -1,6 +1,6 @@
 import { Modal } from '../ui';
 
-export type ScreenHelpKey = 'today' | 'pots' | 'plan' | 'accounts' | 'stashes' | 'logbook';
+export type ScreenHelpKey = 'today' | 'pots' | 'plan' | 'accounts' | 'stashes' | 'logbook' | 'spending';
 
 interface HelpData {
   emoji: string;
@@ -68,6 +68,17 @@ const HELP_MAP: Record<ScreenHelpKey, HelpData> = {
       { icon: '🔍', title: 'Search & Filters', text: 'Quickly find any past expense, income, saving, or transfer.' },
       { icon: '↩️', title: 'Cancel & Revert Money', text: 'Cancelling any operation automatically refunds the money back to the account.' },
       { icon: '✎', title: 'Edit Past Transactions', text: 'Change the amount, pot, subcategory, or notes anytime.' }
+    ]
+  },
+  spending: {
+    emoji: '📊',
+    title: 'How Spending Breakdown works',
+    desc: 'An analytical look at what you spend money on across pots and subcategories for any period.',
+    tips: [
+      { icon: '🥧', title: 'Interactive Pie / Donut', text: 'Visualizes your spending divided by pot into subcategories. Hover over any slice to see its percentage, sum, and average.' },
+      { icon: '📈', title: 'Average per Operation', text: 'Calculates the total spent divided by the number of transactions for each subcategory.' },
+      { icon: '📋', title: 'Ranked List', text: 'Ranks all subcategories starting with the highest percentage of spending down to the smallest.' },
+      { icon: '💱', title: 'Multi-Currency', text: 'All operations in different currencies are automatically converted into your main currency.' },
     ]
   }
 };

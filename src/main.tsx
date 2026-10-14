@@ -9,6 +9,7 @@ import { Pots } from './views/Pots';
 import { Plans } from './views/Plans';
 import { Accounts, Stashes } from './views/Money';
 import { LogBook } from './views/LogBook';
+import { SpendingReport } from './views/SpendingReport';
 import { AcceptInviteModal } from './views/SharingModal';
 import { OnboardingModal } from './views/OnboardingModal';
 import { CurrencySelect } from './ui';
@@ -23,6 +24,7 @@ const PRIMARY_TABS = [
 ] as const;
 
 const REPORT_TABS = [
+  ['spending', '📊', 'Spending Breakdown', SpendingReport],
   ['logbook', '📜', 'Logbook', LogBook],
   ['cashflow', '📈', 'Cashflow', Cashflow],
 ] as const;

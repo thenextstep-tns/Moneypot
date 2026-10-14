@@ -667,7 +667,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                     >
                       General
                     </button>
-                    {currentCat.subcategories.map(s => (
+                    {[...currentCat.subcategories].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map(s => (
                       <button
                         key={s}
                         type="button"
