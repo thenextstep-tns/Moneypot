@@ -3,7 +3,7 @@
     "name": "Moneypot",
     "slug": "moneypot",
     "scheme": "moneypot",
-    "version": "1.0.0",
+    "version": "0.9.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

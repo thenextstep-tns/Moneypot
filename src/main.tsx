@@ -13,6 +13,7 @@ import { SpendingReport } from './views/SpendingReport';
 import { AcceptInviteModal } from './views/SharingModal';
 import { OnboardingModal } from './views/OnboardingModal';
 import { CurrencySelect, ThemeSelect } from './ui';
+import { APP_VERSION, APK_FILENAME } from './version';
 import './styles.css';
 
 const PRIMARY_TABS = [
@@ -114,12 +115,12 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
             <span className="nav-label">How it works</span>
           </button>
           <a
-            href="./moneypot.apk"
-            download="moneypot.apk"
+            href={`./${APK_FILENAME}`}
+            download={APK_FILENAME}
             className="nav-extra-btn nav-download-link"
           >
             <span className="nav-icon">📱</span>
-            <span className="nav-label">Download Android App</span>
+            <span className="nav-label">Download App (v{APP_VERSION})</span>
           </a>
         </div>
 
@@ -235,15 +236,15 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
                 </button>
 
                 <a
-                  href="./moneypot.apk"
-                  download="moneypot.apk"
+                  href={`./${APK_FILENAME}`}
+                  download={APK_FILENAME}
                   className="mobile-menu-item mobile-menu-download"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   <span className="menu-item-icon">📥</span>
                   <div className="download-label-group">
                     <span className="menu-item-label">Download Android App</span>
-                    <span className="download-subtext">Native .apk package</span>
+                    <span className="download-subtext">v{APP_VERSION} (.apk package)</span>
                   </div>
                 </a>
               </div>
@@ -339,8 +340,8 @@ function Login({ onDemo }: { onDemo: () => void }) {
           Try it without an account
         </button>
         <div className="login-apk-row" style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-          <a href="./moneypot.apk" download="moneypot.apk" className="btn ghost wide" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-            <span>📱</span> Download Android App (.apk)
+          <a href={`./${APK_FILENAME}`} download={APK_FILENAME} className="btn ghost wide" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <span>📱</span> Download Android App (v{APP_VERSION})
           </a>
         </div>
         {!isConfigured && (

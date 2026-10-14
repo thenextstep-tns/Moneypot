@@ -17,6 +17,7 @@ import { useData } from '../context/DataContext';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { OnboardingModal } from './OnboardingModal';
+import { APP_VERSION } from '../version';
 
 interface TopHeaderProps {
   title?: string;
@@ -324,6 +325,8 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                     {isDemoMode ? '🚪 Exit demo mode' : '🚪 Log out'}
                   </Text>
                 </TouchableOpacity>
+
+                <Text style={styles.versionFootText}>Moneypot v{APP_VERSION}</Text>
               </View>
             </ScrollView>
           </View>
@@ -577,5 +580,12 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: theme.colors.bad,
+  },
+  versionFootText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.colors.mute,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });
