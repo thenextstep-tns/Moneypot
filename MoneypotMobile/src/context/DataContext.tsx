@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import { db, auth, logout } from '../services/firebase';
 import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_TEMPLATES, DEMO } from '../domain/defaults';
+import { normalizeStash } from '../domain/balances';
 import type { Account, Category, Payment, Plan, QuickTemplate, Settings, ShareInvite, Stash, Transfer } from '../domain/types';
 
 export const COLLS = ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites', 'templates'] as const;
@@ -72,7 +73,7 @@ export const uid = () => {
   return 'id_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 };
 
-export { normalizeStash } from '../domain/balances';
+export { normalizeStash };
 
 export function sortByOrder<T extends { id: string; order?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
