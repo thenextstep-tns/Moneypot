@@ -12,7 +12,7 @@ import { LogBook } from './views/LogBook';
 import { SpendingReport } from './views/SpendingReport';
 import { AcceptInviteModal } from './views/SharingModal';
 import { OnboardingModal } from './views/OnboardingModal';
-import { CurrencySelect } from './ui';
+import { CurrencySelect, ThemeSelect } from './ui';
 import './styles.css';
 
 const PRIMARY_TABS = [
@@ -128,6 +128,10 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
           <label className="muted">
             Main currency{' '}
             <CurrencySelect value={settings.currency} onChange={c => setSettings({ currency: c })} />
+          </label>
+          <label className="muted">
+            Theme{' '}
+            <ThemeSelect value={settings.theme} onChange={t => setSettings({ theme: t })} />
           </label>
           <div className="muted auth-user-label">{demo ? 'Demo mode' : user?.displayName ?? user?.email}</div>
           {demo && (
@@ -253,6 +257,14 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
                   <CurrencySelect
                     value={settings.currency}
                     onChange={c => setSettings({ currency: c })}
+                  />
+                </div>
+
+                <div className="mobile-currency-row">
+                  <span className="muted">Theme:</span>
+                  <ThemeSelect
+                    value={settings.theme}
+                    onChange={t => setSettings({ theme: t })}
                   />
                 </div>
 

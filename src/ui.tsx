@@ -52,6 +52,26 @@ export const CurrencySelect = ({ value, onChange }: { value: string; onChange: (
   <select value={value} onChange={e => onChange(e.target.value)}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select>
 );
 
+export const THEMES = [
+  { id: 'light', label: '☀️ Light' },
+  { id: 'dark', label: '🌙 Dark' },
+  { id: 'system', label: '💻 Auto (System)' },
+] as const;
+
+export const ThemeSelect = ({
+  value = 'system',
+  onChange,
+}: {
+  value?: 'light' | 'dark' | 'system';
+  onChange: (v: 'light' | 'dark' | 'system') => void;
+}) => (
+  <select value={value || 'system'} onChange={e => onChange(e.target.value as any)}>
+    {THEMES.map(t => (
+      <option key={t.id} value={t.id}>{t.label}</option>
+    ))}
+  </select>
+);
+
 export const ACC_ICONS: Record<Account['type'], string> = { card: '💳', bank: '🏦', cash: '💵', wallet: '👛', savings: '🐷' };
 
 /** Reusable account form modal */

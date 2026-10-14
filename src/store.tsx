@@ -29,7 +29,7 @@ interface Ctx extends Data {
   user: CurrentUser | null;
   save: <C extends Coll>(c: C, o: Data[C][number]) => void;
   remove: (c: Coll, id: string) => void;
-  setSettings: (s: Settings) => void;
+  setSettings: (s: Partial<Settings>) => void;
   reorder: <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: Data[C]) => Promise<void>;
 }
 
@@ -42,6 +42,20 @@ export function sortByOrder<T extends { id: string; order?: number }>(items: T[]
   });
 }
 
+export function applyTheme(theme?: 'light' | 'dark' | 'system') {
+  const t = theme || (typeof localStorage !== 'undefined' ? (localStorage.getItem('moneypot-theme') as any) : null) || 'system';
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('moneypot-theme', t);
+  }
+  let resolved = t;
+  if (t === 'system') {
+    resolved = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', resolved);
+  }
+}
+
 const empty: Data = {
   accounts: [],
   categories: [],
@@ -51,7 +65,10 @@ const empty: Data = {
   transfers: [],
   invites: [],
   templates: [],
-  settings: { currency: 'EUR' },
+  settings: {
+    currency: 'EUR',
+    theme: (typeof localStorage !== 'undefined' ? (localStorage.getItem('moneypot-theme') as any) : null) || 'system',
+  },
 };
 
 const DataCtx = createContext<Ctx>(null!);
@@ -80,6 +97,22 @@ export function normalizeStash(st: Stash, currentUserId?: string | null): Stash 
 export function DataProvider({ user, children }: { user: CurrentUser | null; children: ReactNode }) {
   const userId = user?.uid ?? null;
   const [data, setData] = useState<Data>(empty);
+
+  useEffect(() => {
+    applyTheme(data.settings.theme);
+  }, [data.settings.theme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      if (data.settings.theme === 'system' || !data.settings.theme) {
+        applyTheme('system');
+      }
+    };
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [data.settings.theme]);
 
   useEffect(() => {
     if (!userId || !db) {
@@ -181,7 +214,13 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         return nextState;
       });
     }));
-    unsubs.push(onSnapshot(base, s => s.exists() && setData(d => ({ ...d, settings: { currency: s.data().currency ?? 'EUR' } }))));
+    unsubs.push(onSnapshot(base, s => {
+      if (!s.exists()) return;
+      const dSettings = s.data();
+      const theme = dSettings.theme ?? (localStorage.getItem('moneypot-theme') as any) ?? 'system';
+      applyTheme(theme);
+      setData(d => ({ ...d, settings: { currency: dSettings.currency ?? 'EUR', theme } }));
+    }));
 
     // Listen to shared activity (contributions from shared stashes and pots)
     unsubs.push(onSnapshot(collection(db, 'shared_payments'), snap => {
@@ -458,7 +497,18 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         }
       }
     },
-    setSettings: s => local ? setData(d => ({ ...d, settings: s })) : void setDoc(doc(db!, 'users', userId!), s, { merge: true }),
+    setSettings: s => {
+      if (s.theme) applyTheme(s.theme);
+      setData(d => ({ ...d, settings: { ...d.settings, ...s } }));
+      if (local) {
+        const saved = localStorage.getItem(LS);
+        const parsed = saved ? JSON.parse(saved) : {};
+        parsed.settings = { ...(parsed.settings || {}), ...s };
+        localStorage.setItem(LS, JSON.stringify(parsed));
+      } else if (userId && db) {
+        void setDoc(doc(db, 'users', userId), s, { merge: true });
+      }
+    },
     reorder: async <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: Data[C]) => {
       const ordered = items.map((item, index) => ({ ...item, order: index })) as Data[C];
       setData(d => ({ ...d, [c]: ordered }));
