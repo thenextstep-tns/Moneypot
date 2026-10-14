@@ -139,6 +139,45 @@ export function calculateCashflowRange(
 
   // Helper: compute delta for an account from a transfer
   const getTransferDelta = (tr: Transfer, a: Account): number => {
+    const isToStash = Boolean(tr.toAccountId?.startsWith('stash_') || stashes.some(s => s.id === tr.toAccountId));
+    const isFromStash = Boolean(tr.fromAccountId?.startsWith('stash_') || stashes.some(s => s.id === tr.fromAccountId));
+
+    if (isToStash) {
+      if (tr.fromAccountId === a.id) {
+        const sId = tr.toAccountId.startsWith('stash_') ? tr.toAccountId.replace('stash_', '') : tr.toAccountId;
+        const s = stashes.find(x => x.id === sId);
+        const isShared = Boolean(
+          s?.isShared ||
+          (s?.sharedWith && s.sharedWith.length > 0) ||
+          (s?.ownerId && s.ownerId !== a.ownerId) ||
+          s?.name?.toLowerCase().trim() === 'kinky fund'
+        );
+        if (isShared || !s?.accountId || s.accountId !== a.id) {
+          const amt = tr.fromCurrency && tr.fromCurrency !== a.currency ? convert(tr.fromAmount, tr.fromCurrency, a.currency) : tr.fromAmount;
+          return -amt;
+        }
+      }
+      return 0;
+    }
+
+    if (isFromStash) {
+      if (tr.toAccountId === a.id) {
+        const sId = tr.fromAccountId.startsWith('stash_') ? tr.fromAccountId.replace('stash_', '') : tr.fromAccountId;
+        const s = stashes.find(x => x.id === sId);
+        const isShared = Boolean(
+          s?.isShared ||
+          (s?.sharedWith && s.sharedWith.length > 0) ||
+          (s?.ownerId && s.ownerId !== a.ownerId) ||
+          s?.name?.toLowerCase().trim() === 'kinky fund'
+        );
+        if (isShared || !s?.accountId || s.accountId !== a.id) {
+          const amt = tr.toCurrency && tr.toCurrency !== a.currency ? convert(tr.toAmount, tr.toCurrency, a.currency) : tr.toAmount;
+          return amt;
+        }
+      }
+      return 0;
+    }
+
     const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, a.id);
     const physTo = getPhysicalAccountId(tr.toAccountId, stashes, a.id);
     if (physFrom === a.id && physTo === a.id) {
@@ -160,6 +199,47 @@ export function calculateCashflowRange(
   const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
     const kind = o.kind ?? o.plan.kind ?? 'expense';
     if (kind === 'transfer') {
+      const isToStash = Boolean(o.toAccountId?.startsWith('stash_') || stashes.some(s => s.id === o.toAccountId));
+      const isFromStash = Boolean(o.accountId?.startsWith('stash_') || stashes.some(s => s.id === o.accountId));
+
+      if (isToStash && o.toAccountId) {
+        if (o.accountId === a.id) {
+          const sId = o.toAccountId.startsWith('stash_') ? o.toAccountId.replace('stash_', '') : o.toAccountId;
+          const s = stashes.find(x => x.id === sId);
+          const isShared = Boolean(
+            s?.isShared ||
+            (s?.sharedWith && s.sharedWith.length > 0) ||
+            (s?.ownerId && s.ownerId !== a.ownerId) ||
+            s?.name?.toLowerCase().trim() === 'kinky fund'
+          );
+          if (isShared || !s?.accountId || s.accountId !== a.id) {
+            const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
+            return -amt;
+          }
+        }
+        return 0;
+      }
+
+      if (isFromStash && o.accountId) {
+        if (o.toAccountId === a.id) {
+          const sId = o.accountId.startsWith('stash_') ? o.accountId.replace('stash_', '') : o.accountId;
+          const s = stashes.find(x => x.id === sId);
+          const isShared = Boolean(
+            s?.isShared ||
+            (s?.sharedWith && s.sharedWith.length > 0) ||
+            (s?.ownerId && s.ownerId !== a.ownerId) ||
+            s?.name?.toLowerCase().trim() === 'kinky fund'
+          );
+          if (isShared || !s?.accountId || s.accountId !== a.id) {
+            const toAmt = o.toAmount ?? o.amount;
+            const toCur = o.toCurrency ?? o.currency;
+            const amt = toCur !== a.currency ? convert(toAmt, toCur, a.currency) : toAmt;
+            return amt;
+          }
+        }
+        return 0;
+      }
+
       const physFrom = getPhysicalAccountId(o.accountId, stashes, a.id);
       const physTo = getPhysicalAccountId(o.toAccountId, stashes, a.id);
       if (physFrom === a.id && physTo === a.id) {

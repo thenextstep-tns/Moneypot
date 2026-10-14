@@ -370,6 +370,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
           return s;
         });
+
+        // Add any shared stashes user participates in that are not yet in local stashes collection
+        const existingIds = new Set(prev.stashes.map(s => s.id));
+        for (const remote of incomingStashes) {
+          if (!existingIds.has(remote.id)) {
+            const isParticipant = (remote.sharedWith && remote.sharedWith.map(e => e.toLowerCase()).includes(userEmail || ''))
+              || remote.ownerEmail?.toLowerCase() === userEmail
+              || remote.ownerId === user?.uid;
+            if (isParticipant) {
+              changed = true;
+              const { accountId, ...remoteRest } = remote;
+              nextStashes.push({ ...remoteRest, isShared: true, isInstantAccess: false } as Stash);
+            }
+          }
+        }
+
         return changed ? { ...prev, stashes: nextStashes } : prev;
       });
     }, err => {
@@ -394,13 +410,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         }
         for (const st of incomingMap.values()) {
-          const isRelevant = prev.stashes.some(s =>
-            st.fromAccountId === `stash_${s.id}` || st.fromAccountId === s.id ||
-            st.toAccountId === `stash_${s.id}` || st.toAccountId === s.id
-          );
-          if (isRelevant) {
-            nextTransfers.push(st);
-          }
+          nextTransfers.push(st);
         }
         return { ...prev, transfers: nextTransfers };
       });
