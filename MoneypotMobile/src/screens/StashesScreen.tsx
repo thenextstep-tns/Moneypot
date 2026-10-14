@@ -205,10 +205,10 @@ export function StashesScreen() {
                     </Text>
                   </View>
 
-                  {s.sharedWith && s.sharedWith.length > 0 && (
+                  {(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && s.ownerId !== user?.uid)) && (
                     <View style={[styles.tagBadge, styles.tagShared]}>
                       <Text style={[styles.tagText, styles.tagTextShared]}>
-                        👥 Shared ({s.sharedWith.length})
+                        👥 Shared{s.sharedWith && s.sharedWith.length > 0 ? ` (${s.sharedWith.length})` : ''}
                       </Text>
                     </View>
                   )}

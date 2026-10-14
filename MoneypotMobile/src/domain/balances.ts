@@ -187,6 +187,7 @@ export function calcAccountStashedBreakdown(
     if (parentAccId === a.id) {
       let sBal = 0;
       const isShared = Boolean(
+        s.isShared ||
         (s.sharedWith && s.sharedWith.length > 0) ||
         (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
         s.name?.toLowerCase().trim() === 'kinky fund'
@@ -561,6 +562,7 @@ export function calcTotalSharedStashedBalance(
   let sum = 0;
   for (const s of stashes) {
     const isShared = Boolean(
+      s.isShared ||
       (s.sharedWith && s.sharedWith.length > 0) ||
       (s.ownerId && currentUserId && s.ownerId !== currentUserId) ||
       s.name?.toLowerCase().trim() === 'kinky fund'

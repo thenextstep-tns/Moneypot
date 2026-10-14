@@ -56,6 +56,7 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
     if (type === 'stash' && stashItem) {
       const updatedStash: Stash = {
         ...stashItem,
+        isShared: true,
         isInstantAccess: false,
         categoryId: selectedPotId,
         subcategory: stashItem.subcategory || stashItem.name,
@@ -465,9 +466,21 @@ export function AcceptInviteModal({ initialInviteId, initialCode, onClose }: { i
           ownerId: found.ownerId,
           categoryId: masterData?.categoryId,
           subcategory: masterData?.subcategory,
+          isShared: true,
           isInstantAccess: false,
         };
         save('stashes', newStash);
+        if (db) {
+          try {
+            await setDoc(doc(db, 'shared_stashes', found.targetId), {
+              ...newStash,
+              isShared: true,
+              sharedWith: nextShared,
+            }, { merge: true });
+          } catch (e) {
+            console.warn('Could not sync to shared_stashes on accept:', e);
+          }
+        }
       }
 
       setStatus('success');

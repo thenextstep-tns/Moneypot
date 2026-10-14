@@ -1,4 +1,20 @@
-import type { ShareInvite } from './types';
+import type { ShareInvite, Stash } from './types';
+
+/** Determine if a stash is shared across users or collective */
+export function isSharedStash(
+  s?: Partial<Stash> | null,
+  currentUserId?: string | null,
+  currentUserEmail?: string | null
+): boolean {
+  if (!s) return false;
+  if (s.name?.toLowerCase().trim() === 'kinky fund') return true;
+  if (s.isShared) return true;
+  if (Array.isArray(s.sharedWith) && s.sharedWith.length > 0) return true;
+  if (Array.isArray(s.invitedEmails) && s.invitedEmails.length > 0) return true;
+  if (s.ownerId && currentUserId && s.ownerId !== currentUserId && currentUserId !== 'local') return true;
+  if (s.ownerEmail && currentUserEmail && s.ownerEmail.toLowerCase() !== currentUserEmail.toLowerCase()) return true;
+  return false;
+}
 
 /** Generate a formatted, human-friendly one-off masked access code (e.g. MP-8492-31) */
 export function generateMaskedCode(): string {

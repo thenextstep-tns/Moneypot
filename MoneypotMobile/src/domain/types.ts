@@ -72,6 +72,7 @@ export interface Stash extends Owned {
   categoryId?: string;          // default pot for this stash (e.g. 'savings')
   subcategory?: string;         // default subcategory (e.g. stash name)
   isInstantAccess?: boolean;    // true = allows paying directly from this stash (default true for personal stashes)
+  isShared?: boolean;           // part of a shared stash
   order?: number;
 }
 

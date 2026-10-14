@@ -63,6 +63,7 @@ const LS = 'pots-demo';
 export function normalizeStash(st: Stash, currentUserId?: string | null): Stash {
   const isKinkyFund = st.name?.toLowerCase().trim() === 'kinky fund';
   const isShared = isKinkyFund || Boolean(
+    st.isShared ||
     (st.sharedWith && st.sharedWith.length > 0) ||
     (st.invitedEmails && st.invitedEmails.length > 0) ||
     (st.ownerId && currentUserId && st.ownerId !== currentUserId && currentUserId !== 'local')
@@ -70,6 +71,7 @@ export function normalizeStash(st: Stash, currentUserId?: string | null): Stash 
   const shouldBeInstant = !isShared;
   return {
     ...st,
+    isShared,
     isInstantAccess: shouldBeInstant,
   };
 }
@@ -109,27 +111,82 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
       DEFAULT_TEMPLATES.forEach(t => b.set(doc(base, 'templates', t.id), { ...t, ownerId: userId }));
       await b.commit();
     });
+
+    let latestSharedPayments: Payment[] = [];
+    let latestSharedTransfers: Transfer[] = [];
+    let latestSharedStashes: Stash[] = [];
+
     const unsubs = COLLS.map(c => onSnapshot(collection(base, c), snap => {
       let docs = snap.docs.map(x => x.data());
       if (c === 'stashes') {
         docs = docs.map((x: any) => {
           const norm = normalizeStash(x, userId);
-          if (x.isInstantAccess !== norm.isInstantAccess) {
-            void setDoc(doc(db!, 'users', userId!, 'stashes', norm.id), { isInstantAccess: norm.isInstantAccess }, { merge: true });
+          if (x.isInstantAccess !== norm.isInstantAccess || x.isShared !== norm.isShared) {
+            void setDoc(doc(db!, 'users', userId!, 'stashes', norm.id), { isInstantAccess: norm.isInstantAccess, isShared: norm.isShared }, { merge: true });
           }
           return norm;
         });
+        if (latestSharedStashes.length) {
+          const userEmail = user?.email?.toLowerCase();
+          docs = docs.map((s: any) => {
+            const remote = latestSharedStashes.find(x => x.id === s.id);
+            if (remote) {
+              const isParticipant = (remote.sharedWith && remote.sharedWith.map(e => e.toLowerCase()).includes(userEmail || ''))
+                || remote.ownerEmail?.toLowerCase() === userEmail
+                || remote.ownerId === userId;
+              if (isParticipant) {
+                const { accountId, ...remoteRest } = remote;
+                return { ...s, ...remoteRest, isShared: true, isInstantAccess: false };
+              }
+            }
+            return s;
+          });
+        }
       }
       if (c === 'accounts' || c === 'categories' || c === 'stashes') {
         docs = sortByOrder(docs as any);
       }
-      setData(d => ({ ...d, [c]: docs }));
+      setData(d => {
+        const nextState: any = { ...d, [c]: docs };
+        if (c === 'stashes' && latestSharedTransfers.length) {
+          const curStashes: Stash[] = docs as any;
+          const trMap = new Map((d.transfers || []).map(t => [t.id, t]));
+          for (const st of latestSharedTransfers) {
+            if (curStashes.some(s => st.fromAccountId === `stash_${s.id}` || st.fromAccountId === s.id || st.toAccountId === `stash_${s.id}` || st.toAccountId === s.id)) {
+              trMap.set(st.id, st);
+            }
+          }
+          nextState.transfers = Array.from(trMap.values());
+        }
+        if (c === 'transfers' && latestSharedTransfers.length) {
+          const curTransfers: Transfer[] = docs as any;
+          const trMap = new Map(curTransfers.map(t => [t.id, t]));
+          for (const st of latestSharedTransfers) {
+            if (d.stashes.some(s => st.fromAccountId === `stash_${s.id}` || st.fromAccountId === s.id || st.toAccountId === `stash_${s.id}` || st.toAccountId === s.id)) {
+              trMap.set(st.id, st);
+            }
+          }
+          nextState.transfers = Array.from(trMap.values());
+        }
+        if (c === 'stashes' && latestSharedPayments.length) {
+          const curStashes: Stash[] = docs as any;
+          const pMap = new Map((d.payments || []).map(p => [p.id, p]));
+          for (const sp of latestSharedPayments) {
+            if ((sp.stashId && curStashes.some(s => s.id === sp.stashId)) || (sp.accountId && curStashes.some(s => `stash_${s.id}` === sp.accountId))) {
+              pMap.set(sp.id, sp);
+            }
+          }
+          nextState.payments = Array.from(pMap.values());
+        }
+        return nextState;
+      });
     }));
     unsubs.push(onSnapshot(base, s => s.exists() && setData(d => ({ ...d, settings: { currency: s.data().currency ?? 'EUR' } }))));
 
     // Listen to shared activity (contributions from shared stashes and pots)
     unsubs.push(onSnapshot(collection(db, 'shared_payments'), snap => {
       const incoming = snap.docs.map(x => x.data() as Payment);
+      latestSharedPayments = incoming;
       const incomingMap = new Map(incoming.map(p => [p.id, p]));
       setData(d => {
         // 1. Reconcile existing payments: update matching shared, purge deleted shared, keep personal
@@ -163,6 +220,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     // Listen to shared stashes for bidirectional renames, target updates, and members sync
     unsubs.push(onSnapshot(collection(db, 'shared_stashes'), snap => {
       const incomingStashes = snap.docs.map(x => x.data() as Stash);
+      latestSharedStashes = incomingStashes;
       if (!incomingStashes.length) return;
       setData(d => {
         const userEmail = user?.email?.toLowerCase();
@@ -177,7 +235,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
               changed = true;
               // Never overwrite local user's accountId with remote!
               const { accountId, ...remoteRest } = remote;
-              return { ...s, ...remoteRest };
+              return { ...s, ...remoteRest, isShared: true, isInstantAccess: false };
             }
           }
           return s;
@@ -191,6 +249,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
     // Listen to shared transfers (contributions and withdrawals from shared stashes)
     unsubs.push(onSnapshot(collection(db, 'shared_transfers'), snap => {
       const incoming = snap.docs.map(x => x.data() as Transfer);
+      latestSharedTransfers = incoming;
       const incomingMap = new Map(incoming.map(t => [t.id, t]));
       setData(d => {
         const nextTransfers: Transfer[] = [];

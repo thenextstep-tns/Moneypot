@@ -106,7 +106,7 @@ export function Stashes() {
         {stashes.map((s, index) => {
           const v = saved(s);
           const contribs = getStashContributors(s);
-          const isSharedStash = Boolean((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund');
+          const isSharedStash = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund' || (s.ownerId && user?.uid && s.ownerId !== user.uid));
           const isInstant = s.isInstantAccess !== false && !isSharedStash;
           return (
             <div
@@ -241,7 +241,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   const [transferring, setTransferring] = useState(false);
   const [topUp, setTopUp] = useState(false);
 
-  const isSharedStash = Boolean((stash?.sharedWith && stash.sharedWith.length > 0) || stash?.name?.toLowerCase().trim() === 'kinky fund');
+  const isSharedStash = Boolean(stash?.isShared || (stash?.sharedWith && stash.sharedWith.length > 0) || stash?.name?.toLowerCase().trim() === 'kinky fund' || (stash?.ownerId && user?.uid && stash.ownerId !== user.uid));
   const initialInstant = stash
     ? (stash.isInstantAccess !== false && !isSharedStash)
     : true;
