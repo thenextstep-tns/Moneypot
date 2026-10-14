@@ -10,20 +10,26 @@ export function getPhysicalAccountId(
   accounts: Account[] = []
 ): string | undefined {
   if (!id) return undefined;
-  if (id.startsWith('stash_')) {
-    const sId = id.replace('stash_', '');
-    const s = stashes.find(x => x.id === sId);
+  const isStashId = id.startsWith('stash_');
+  const sId = isStashId ? id.replace('stash_', '') : id;
+  const s = isStashId ? stashes.find(x => x.id === sId) : stashes.find(x => x.id === id);
+  if (s || isStashId) {
+    const isShared = Boolean(
+      s?.isShared ||
+      (s?.sharedWith && s.sharedWith.length > 0) ||
+      (s?.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s?.accountId)) ||
+      s?.name?.toLowerCase().trim() === 'kinky fund'
+    );
+    if (isShared) {
+      if (s?.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
+        return s.accountId;
+      }
+      return undefined;
+    }
     if (s?.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
       return s.accountId;
     }
-    return undefined;
-  }
-  const s = stashes.find(x => x.id === id);
-  if (s) {
-    if (s.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
-      return s.accountId;
-    }
-    return undefined;
+    return defaultAccountId;
   }
   return id;
 }
@@ -56,53 +62,8 @@ export function calcAccountBalance(
     if (t.status === 'cancelled') continue;
     if (t.date && t.date > today()) continue;
 
-    const isToStash = Boolean(t.toAccountId?.startsWith('stash_') || stashes.some(s => s.id === t.toAccountId));
-    const isFromStash = Boolean(t.fromAccountId?.startsWith('stash_') || stashes.some(s => s.id === t.fromAccountId));
-
-    // Stash transfer handling:
-    // If transferring from account a into a stash:
-    // The money stays in account a's envelope unless the stash is explicitly held in a different known account of ours.
-    if (isToStash) {
-      if (t.fromAccountId === a.id) {
-        const sId = t.toAccountId.startsWith('stash_') ? t.toAccountId.replace('stash_', '') : t.toAccountId;
-        const s = stashes.find(x => x.id === sId);
-        const isShared = Boolean(
-          s?.isShared ||
-          (s?.sharedWith && s.sharedWith.length > 0) ||
-          (s?.ownerId && s.ownerId !== a.ownerId) ||
-          s?.name?.toLowerCase().trim() === 'kinky fund'
-        );
-        // Shared stash money is removed from the account.
-        // Personal stash money is removed from account a only if housed in another account or external.
-        if (isShared || !s?.accountId || s.accountId !== a.id) {
-          const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
-          b -= amt;
-        }
-      }
-      continue;
-    }
-
-    // If transferring from a stash back into account a:
-    if (isFromStash) {
-      if (t.toAccountId === a.id) {
-        const sId = t.fromAccountId.startsWith('stash_') ? t.fromAccountId.replace('stash_', '') : t.fromAccountId;
-        const s = stashes.find(x => x.id === sId);
-        const isShared = Boolean(
-          s?.isShared ||
-          (s?.sharedWith && s.sharedWith.length > 0) ||
-          (s?.ownerId && s.ownerId !== a.ownerId) ||
-          s?.name?.toLowerCase().trim() === 'kinky fund'
-        );
-        if (isShared || !s?.accountId || s.accountId !== a.id) {
-          const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
-          b += amt;
-        }
-      }
-      continue;
-    }
-
-    const physFrom = getPhysicalAccountId(t.fromAccountId, stashes, a.id);
-    const physTo = getPhysicalAccountId(t.toAccountId, stashes, a.id);
+    const physFrom = getPhysicalAccountId(t.fromAccountId, stashes, a.id, [a]);
+    const physTo = getPhysicalAccountId(t.toAccountId, stashes, a.id, [a]);
 
     // If transfer is internal to this account (e.g. into or out of a stash held in this account),
     // the total physical balance remains in this account.
@@ -182,41 +143,78 @@ export function calcAccountStashedBreakdown(
   let totalPersonal = 0;
   const isFallbackPrimary = allAccounts.length > 0 && allAccounts[0].id === a.id;
   for (const s of stashes) {
-    const isShared = Boolean(
-      s.isShared ||
-      (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
-      s.name?.toLowerCase().trim() === 'kinky fund'
-    );
-    // Shared stashes are removed from the account, not envelopes inside it.
-    if (isShared) continue;
-
     const hasValidAcc = s.accountId && allAccounts.some(acc => acc.id === s.accountId);
     let parentAccId = hasValidAcc ? s.accountId : undefined;
+
+    // If stash accountId is not set or foreign, check if account a funded it via transfers
     if (!parentAccId) {
+      const isSharedStash = Boolean(
+        s.isShared ||
+        (s.sharedWith && s.sharedWith.length > 0) ||
+        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
+        s.name?.toLowerCase().trim() === 'kinky fund'
+      );
       const fundedFromThis = transfers.some(t =>
         t.status !== 'cancelled' &&
         (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) &&
         t.fromAccountId === a.id
       );
-      if (fundedFromThis || (allAccounts.length > 0 && allAccounts[0].id === a.id)) {
+      if (fundedFromThis) {
+        parentAccId = a.id;
+      } else if (isFallbackPrimary && !isSharedStash) {
         parentAccId = a.id;
       }
     }
 
     if (parentAccId === a.id) {
-      // Instant access stashes are liquid cash (available to spend), only goal stashes are reserved
-      if (s.isInstantAccess === false) {
-        const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
-        const inAccCur = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
+      let sBal = 0;
+      const isShared = Boolean(
+        s.isShared ||
+        (s.sharedWith && s.sharedWith.length > 0) ||
+        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
+        s.name?.toLowerCase().trim() === 'kinky fund'
+      );
+
+      if (!isShared) {
+        sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
+      } else {
+        // For shared stashes, reserve the portion funded from this specific account:
+        for (const t of transfers) {
+          if (t.status === 'cancelled') continue;
+          if (t.date && t.date > today()) continue;
+          if ((t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) && t.fromAccountId === a.id) {
+            const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
+            sBal += amt;
+          }
+          if ((t.fromAccountId === `stash_${s.id}` || t.fromAccountId === s.id) && t.toAccountId === a.id) {
+            const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
+            sBal -= amt;
+          }
+        }
+        if (s.accountId === a.id && s.startAmount) {
+          sBal += s.startAmount;
+        }
+        for (const p of payments) {
+          if (p.status !== 'confirmed') continue;
+          if (p.kind === 'saving' && p.stashId === s.id && p.accountId === a.id) {
+            sBal += (p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount);
+          }
+        }
+        sBal = Math.max(0, sBal);
+      }
+
+      const inAccCur = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
+      if (isShared) {
+        totalShared += inAccCur;
+      } else {
         totalPersonal += inAccCur;
       }
     }
   }
   return {
-    total: totalPersonal,
+    total: totalPersonal + totalShared,
     personal: totalPersonal,
-    shared: 0,
+    shared: totalShared,
   };
 }
 
@@ -307,47 +305,6 @@ export function calcProjectedAccountBalance(
   // 1. Pending occurrences for this account
   for (const o of futurePending) {
     if (o.kind === 'transfer') {
-      const isToStash = Boolean(o.toAccountId?.startsWith('stash_') || stashes.some(s => s.id === o.toAccountId));
-      const isFromStash = Boolean(o.accountId?.startsWith('stash_') || stashes.some(s => s.id === o.accountId));
-
-      if (isToStash && o.toAccountId) {
-        if (o.accountId === account.id) {
-          const sId = o.toAccountId.startsWith('stash_') ? o.toAccountId.replace('stash_', '') : o.toAccountId;
-          const s = stashes.find(x => x.id === sId);
-          const isShared = Boolean(
-            s?.isShared ||
-            (s?.sharedWith && s.sharedWith.length > 0) ||
-            (s?.ownerId && s.ownerId !== account.ownerId) ||
-            s?.name?.toLowerCase().trim() === 'kinky fund'
-          );
-          if (isShared || !s?.accountId || s.accountId !== account.id) {
-            const amtInAcc = convert(o.amount, o.currency, account.currency);
-            projected -= amtInAcc;
-          }
-        }
-        continue;
-      }
-
-      if (isFromStash && o.accountId) {
-        if (o.toAccountId === account.id) {
-          const sId = o.accountId.startsWith('stash_') ? o.accountId.replace('stash_', '') : o.accountId;
-          const s = stashes.find(x => x.id === sId);
-          const isShared = Boolean(
-            s?.isShared ||
-            (s?.sharedWith && s.sharedWith.length > 0) ||
-            (s?.ownerId && s.ownerId !== account.ownerId) ||
-            s?.name?.toLowerCase().trim() === 'kinky fund'
-          );
-          if (isShared || !s?.accountId || s.accountId !== account.id) {
-            const toAmt = o.toAmount ?? o.amount;
-            const toCur = o.toCurrency ?? o.currency;
-            const amtInAcc = convert(toAmt, toCur, account.currency);
-            projected += amtInAcc;
-          }
-        }
-        continue;
-      }
-
       const physFrom = getPhysicalAccountId(o.accountId, stashes, account.id);
       const physTo = getPhysicalAccountId(o.toAccountId, stashes, account.id);
       if (physFrom === account.id && physTo === account.id) {
@@ -383,45 +340,6 @@ export function calcProjectedAccountBalance(
   for (const tr of transfers) {
     if (tr.status === 'cancelled') continue;
     if (tr.date > todayDate && tr.date <= targetDate) {
-      const isToStash = Boolean(tr.toAccountId?.startsWith('stash_') || stashes.some(s => s.id === tr.toAccountId));
-      const isFromStash = Boolean(tr.fromAccountId?.startsWith('stash_') || stashes.some(s => s.id === tr.fromAccountId));
-
-      if (isToStash) {
-        if (tr.fromAccountId === account.id) {
-          const sId = tr.toAccountId.startsWith('stash_') ? tr.toAccountId.replace('stash_', '') : tr.toAccountId;
-          const s = stashes.find(x => x.id === sId);
-          const isShared = Boolean(
-            s?.isShared ||
-            (s?.sharedWith && s.sharedWith.length > 0) ||
-            (s?.ownerId && s.ownerId !== account.ownerId) ||
-            s?.name?.toLowerCase().trim() === 'kinky fund'
-          );
-          if (isShared || !s?.accountId || s.accountId !== account.id) {
-            const amt = tr.fromCurrency && tr.fromCurrency !== account.currency ? convert(tr.fromAmount, tr.fromCurrency, account.currency) : tr.fromAmount;
-            projected -= amt;
-          }
-        }
-        continue;
-      }
-
-      if (isFromStash) {
-        if (tr.toAccountId === account.id) {
-          const sId = tr.fromAccountId.startsWith('stash_') ? tr.fromAccountId.replace('stash_', '') : tr.fromAccountId;
-          const s = stashes.find(x => x.id === sId);
-          const isShared = Boolean(
-            s?.isShared ||
-            (s?.sharedWith && s.sharedWith.length > 0) ||
-            (s?.ownerId && s.ownerId !== account.ownerId) ||
-            s?.name?.toLowerCase().trim() === 'kinky fund'
-          );
-          if (isShared || !s?.accountId || s.accountId !== account.id) {
-            const amt = tr.toCurrency && tr.toCurrency !== account.currency ? convert(tr.toAmount, tr.toCurrency, account.currency) : tr.toAmount;
-            projected += amt;
-          }
-        }
-        continue;
-      }
-
       const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, account.id);
       const physTo = getPhysicalAccountId(tr.toAccountId, stashes, account.id);
       if (physFrom === account.id && physTo === account.id) {
@@ -566,7 +484,7 @@ export function calcTotalLiquidBalance(
       (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)) ||
       s.name?.toLowerCase().trim() === 'kinky fund'
     );
-    if (isShared) {
+    if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
       const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
       sum += convert(sBal, s.currency || targetCurrency, targetCurrency);
     }
@@ -588,6 +506,7 @@ export function calcTotalStashedBreakdown(
   for (const a of accounts) {
     const bd = calcAccountStashedBreakdown(a, stashes, payments, transfers, plans, accounts);
     totalPersonal += convert(bd.personal, a.currency, targetCurrency);
+    totalShared += convert(bd.shared, a.currency, targetCurrency);
   }
   for (const s of stashes) {
     const isShared = Boolean(
@@ -596,7 +515,7 @@ export function calcTotalStashedBreakdown(
       (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)) ||
       s.name?.toLowerCase().trim() === 'kinky fund'
     );
-    if (isShared) {
+    if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
       const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
       totalShared += convert(sBal, s.currency || targetCurrency, targetCurrency);
     }
@@ -620,9 +539,6 @@ export function formatStashedBreakdown(
     return `🔒 ${money(totalStashed, currency)} in stashes: ${money(personalStashed, currency)} in personal, 👥 ${money(sharedStashed, currency)} in shared`;
   }
   if (sharedStashed > 0) {
-    if (personalStashed === 0) {
-      return `🔒 0 ${currency} in stashes, 👥 ${money(sharedStashed, currency)} in shared`;
-    }
     return `🔒 ${money(totalStashed, currency)} in stashes: 👥 ${money(sharedStashed, currency)} in shared`;
   }
   return `🔒 ${money(totalStashed, currency)} in stashes`;
