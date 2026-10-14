@@ -45,9 +45,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
     setDrawerOpen,
     showHowItWorks,
     setShowHowItWorks,
-    isDark,
   } = useData();
-  const [themeModalVisible, setThemeModalVisible] = useState(false);
   const styles = useStyles(getStyles);
 
   const handleShareApp = async () => {
@@ -123,20 +121,6 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
         {rightAction}
 
         <TouchableOpacity
-          style={styles.themeToggleBtn}
-          onPress={() => {
-            triggerHaptic('light');
-            setThemeModalVisible(true);
-          }}
-          activeOpacity={0.7}
-          accessibilityLabel="App Theme"
-        >
-          <Text style={styles.themeToggleIcon}>
-            {settings.theme === 'dark' ? '🌙' : settings.theme === 'light' ? '☀️' : (isDark ? '🌙' : '☀️')}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={styles.hamburgerBtn}
           onPress={() => {
             triggerHaptic('light');
@@ -188,40 +172,6 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
               >
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Quick Theme Switcher Bar in Drawer Header */}
-            <View style={styles.drawerThemeBar}>
-              <Text style={styles.drawerThemeLabel}>Theme</Text>
-              <View style={styles.drawerThemeRow}>
-                {[
-                  { id: 'light', label: '☀️ Light' },
-                  { id: 'dark', label: '🌙 Dark' },
-                  { id: 'system', label: '💻 Auto' },
-                ].map(t => {
-                  const active = (settings.theme || 'system') === t.id;
-                  return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[styles.drawerThemeChip, active && styles.drawerThemeChipActive]}
-                      onPress={() => {
-                        triggerHaptic('light');
-                        setSettings({ theme: t.id as any });
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.drawerThemeChipText,
-                          active && styles.drawerThemeChipTextActive,
-                        ]}
-                      >
-                        {t.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
             </View>
 
             <ScrollView
@@ -331,7 +281,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                     {[
                       { id: 'light', label: '☀️ Light' },
                       { id: 'dark', label: '🌙 Dark' },
-                      { id: 'system', label: '💻 Auto' },
+                      { id: 'system', label: '💻 Auto (System)' },
                     ].map(t => (
                       <TouchableOpacity
                         key={t.id}
@@ -378,61 +328,6 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
             </ScrollView>
           </View>
         </View>
-      </Modal>
-
-      {/* Theme Picker Modal */}
-      <Modal
-        visible={themeModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setThemeModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.themeModalOverlay}
-          activeOpacity={1}
-          onPress={() => setThemeModalVisible(false)}
-        >
-          <View style={styles.themeModalContent}>
-            <View style={styles.themeModalHeader}>
-              <Text style={styles.themeModalTitle}>App Theme</Text>
-              <TouchableOpacity
-                onPress={() => setThemeModalVisible(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={styles.themeModalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {[
-              { id: 'light', label: 'Light Theme', icon: '☀️', desc: 'Clean, bright display' },
-              { id: 'dark', label: 'Dark Theme', icon: '🌙', desc: 'Deep midnight, comfortable for eyes' },
-              { id: 'system', label: 'System (Auto)', icon: '💻', desc: 'Matches device dark/light setting' },
-            ].map(opt => {
-              const active = (settings.theme || 'system') === opt.id;
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={[styles.themeOptionRow, active && styles.themeOptionRowActive]}
-                  onPress={() => {
-                    triggerHaptic('light');
-                    setSettings({ theme: opt.id as any });
-                    setThemeModalVisible(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.themeOptionIcon}>{opt.icon}</Text>
-                  <View style={styles.themeOptionInfo}>
-                    <Text style={[styles.themeOptionLabel, active && styles.themeOptionLabelActive]}>
-                      {opt.label}
-                    </Text>
-                    <Text style={styles.themeOptionDesc}>{opt.desc}</Text>
-                  </View>
-                  {active ? <Text style={styles.themeOptionCheck}>✓</Text> : null}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
       </Modal>
 
       {/* Onboarding / "How it works" Modal */}
@@ -682,136 +577,5 @@ const getStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: theme.colors.bad,
-  },
-  themeToggleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.colors.card,
-    borderWidth: 1,
-    borderColor: theme.colors.line,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...theme.shadowCard,
-  },
-  themeToggleIcon: {
-    fontSize: 18,
-  },
-  drawerThemeBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.line,
-    backgroundColor: theme.colors.bg,
-  },
-  drawerThemeLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: theme.colors.mute,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 8,
-  },
-  drawerThemeRow: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.md,
-    padding: 3,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: theme.colors.line,
-  },
-  drawerThemeChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: theme.radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  drawerThemeChipActive: {
-    backgroundColor: theme.colors.brand,
-  },
-  drawerThemeChipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.mute,
-  },
-  drawerThemeChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  themeModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  themeModalContent: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.lg,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: theme.colors.line,
-    ...theme.shadowCard,
-  },
-  themeModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  themeModalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: theme.colors.ink,
-  },
-  themeModalClose: {
-    fontSize: 16,
-    color: theme.colors.mute,
-    fontWeight: '700',
-    padding: 4,
-  },
-  themeOptionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.bg,
-    marginVertical: 4,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    gap: 12,
-  },
-  themeOptionRowActive: {
-    borderColor: theme.colors.brand,
-    backgroundColor: theme.colors.brandLight,
-  },
-  themeOptionIcon: {
-    fontSize: 22,
-  },
-  themeOptionInfo: {
-    flex: 1,
-  },
-  themeOptionLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: theme.colors.ink,
-  },
-  themeOptionLabelActive: {
-    color: theme.colors.brandDark,
-  },
-  themeOptionDesc: {
-    fontSize: 12,
-    color: theme.colors.mute,
-    marginTop: 2,
-  },
-  themeOptionCheck: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: theme.colors.brand,
   },
 });
