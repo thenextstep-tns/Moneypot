@@ -3,9 +3,9 @@ import {
   calcStashBalance,
   calcTotalLiquidBalance,
   calcMonthStartingBalances,
+  normalizeStash,
 } from './src/domain/balances';
 import { calculateCashflowRange } from './src/domain/cashflow';
-import { normalizeStash } from './src/context/DataContext';
 import { today, addDays, thisMonth, shiftMonth, monthRange, occurrences } from './src/domain/schedule';
 import { DEMO, DEFAULT_CATEGORIES } from './src/domain/defaults';
 import type { Account, Stash, Transfer, Payment, Plan } from './src/domain/types';

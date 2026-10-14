@@ -12,7 +12,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { useData } from '../context/DataContext';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
 const GOOGLE_AUTH_URL = 'https://thenextstep-tns.github.io/Moneypot/auth-mobile.html';
@@ -43,6 +43,7 @@ function parseQueryParams(url: string): Record<string, string> {
 export function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { setUser, setDemoMode } = useData();
+  const styles = useStyles(getStyles);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -220,10 +221,10 @@ export function AuthScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3EFE6',
+    backgroundColor: theme.colors.bg,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
@@ -260,9 +261,9 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     width: '100%',
-    backgroundColor: '#FDF2F2',
+    backgroundColor: theme.colors.badLight,
     borderWidth: 1,
-    borderColor: '#FCD4D4',
+    borderColor: theme.colors.badLight,
     borderRadius: 12,
     padding: 10,
     marginBottom: 16,
@@ -279,16 +280,16 @@ const styles = StyleSheet.create({
   },
   googleBtn: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     borderWidth: 1.5,
-    borderColor: '#D8D4CC',
+    borderColor: theme.colors.line,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: theme.isDark ? 0.3 : 0.04,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -302,7 +303,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   googleBtnText: {
-    color: '#2D2A26',
+    color: theme.colors.ink,
     fontSize: 15,
     fontWeight: '700',
   },

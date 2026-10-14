@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { OnboardingModal } from './OnboardingModal';
 
@@ -46,6 +46,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
     showHowItWorks,
     setShowHowItWorks,
   } = useData();
+  const styles = useStyles(getStyles);
 
   const handleShareApp = async () => {
     triggerHaptic('light');
@@ -273,6 +274,39 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                   </View>
                 </View>
 
+                {/* Theme Selection */}
+                <View style={styles.currencyBlock}>
+                  <Text style={styles.currencyLabel}>Theme:</Text>
+                  <View style={styles.currencyRow}>
+                    {[
+                      { id: 'light', label: '☀️ Light' },
+                      { id: 'dark', label: '🌙 Dark' },
+                      { id: 'system', label: '💻 Auto' },
+                    ].map(t => (
+                      <TouchableOpacity
+                        key={t.id}
+                        style={[
+                          styles.curChip,
+                          (settings.theme || 'system') === t.id && styles.curChipActive,
+                        ]}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setSettings({ theme: t.id as any });
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.curChipText,
+                            (settings.theme || 'system') === t.id && styles.curChipTextActive,
+                          ]}
+                        >
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
                 {isDemoMode ? (
                   <TouchableOpacity
                     style={styles.resetDemoBtn}
@@ -305,7 +339,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -348,7 +382,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.line,
     justifyContent: 'center',
@@ -363,7 +397,7 @@ const styles = StyleSheet.create({
   drawerOverlay: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.overlay,
   },
   drawerBackdrop: {
     flex: 1,
@@ -374,7 +408,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
     shadowColor: '#000',
     shadowOffset: { width: -4, height: 0 },
-    shadowOpacity: 0.15,
+    shadowOpacity: theme.isDark ? 0.35 : 0.15,
     shadowRadius: 16,
     elevation: 20,
   },
@@ -446,7 +480,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   menuItemActive: {
-    backgroundColor: '#E8F6EE',
+    backgroundColor: theme.colors.brandLight,
   },
   menuItemIcon: {
     fontSize: 18,
@@ -458,28 +492,28 @@ const styles = StyleSheet.create({
     color: theme.colors.ink,
   },
   menuItemLabelActive: {
-    color: '#166534',
+    color: theme.colors.brandDark,
     fontWeight: '700',
   },
   menuItemCheck: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#166534',
+    color: theme.colors.brandDark,
   },
   menuItemDownload: {
-    backgroundColor: '#EEF6F1',
+    backgroundColor: theme.colors.brandLight,
     borderWidth: 1,
-    borderColor: '#C3E6D0',
+    borderColor: theme.colors.tagInstantBorder,
   },
   downloadLabelGroup: {
     flex: 1,
   },
   downloadLabel: {
-    color: '#1B5E3D',
+    color: theme.colors.brandDark,
   },
   downloadSubtext: {
     fontSize: 11,
-    color: '#2FA36B',
+    color: theme.colors.brand,
     fontWeight: '500',
   },
   currencyBlock: {
@@ -502,7 +536,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: theme.radius.sm,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.line,
   },
@@ -516,7 +550,7 @@ const styles = StyleSheet.create({
     color: theme.colors.mute,
   },
   curChipTextActive: {
-    color: '#FFFFFF',
+    color: theme.colors.bg,
   },
   resetDemoBtn: {
     backgroundColor: theme.colors.bg,
@@ -532,9 +566,9 @@ const styles = StyleSheet.create({
     color: theme.colors.ink,
   },
   logoutBtn: {
-    backgroundColor: '#FDF2F2',
+    backgroundColor: theme.colors.badLight,
     borderWidth: 1,
-    borderColor: '#FCD4D4',
+    borderColor: theme.colors.badLight,
     borderRadius: theme.radius.md,
     paddingVertical: 12,
     alignItems: 'center',
@@ -542,6 +576,6 @@ const styles = StyleSheet.create({
   logoutBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#E5484D',
+    color: theme.colors.bad,
   },
 });

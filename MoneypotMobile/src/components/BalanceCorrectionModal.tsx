@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useData } from '../context/DataContext';
 import { today, money } from '../domain/schedule';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import type { Account, Stash } from '../domain/types';
 
@@ -25,6 +25,8 @@ export function BalanceCorrectionModal({
   onClose,
   target,
 }: BalanceCorrectionModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { save } = useData();
   const [actualBalanceInput, setActualBalanceInput] = useState('');
 
@@ -133,7 +135,7 @@ export function BalanceCorrectionModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -205,7 +207,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: theme.colors.line,
     borderRadius: theme.radius.md,
-    backgroundColor: '#FFF',
+    backgroundColor: theme.colors.card,
     paddingHorizontal: 12,
   },
   input: {
@@ -237,6 +239,7 @@ const styles = StyleSheet.create({
   deltaLabel: {
     fontSize: 13,
     fontWeight: '600',
+    color: theme.colors.ink,
   },
   deltaVal: {
     fontSize: 15,

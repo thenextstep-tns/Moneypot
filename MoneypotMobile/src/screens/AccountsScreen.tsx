@@ -17,7 +17,7 @@ import {
   formatStashedBreakdown,
 } from '../domain/balances';
 import { money, today } from '../domain/schedule';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { AccountEditModal } from '../components/AccountEditModal';
@@ -40,6 +40,7 @@ const TYPE_ICONS: Record<Account['type'], string> = {
 
 export function AccountsScreen() {
   const { accounts, payments, transfers, plans, stashes, settings, user, save, reorder } = useData();
+  const styles = useStyles(getStyles);
 
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -237,7 +238,7 @@ export function AccountsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,

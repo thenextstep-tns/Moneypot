@@ -10,7 +10,7 @@ import {
 import { useData } from '../context/DataContext';
 import { freqLabel, perMonth, money } from '../domain/schedule';
 import { convert } from '../domain/fx';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { PlanEditModal } from '../components/PlanEditModal';
@@ -18,6 +18,7 @@ import type { Plan, Kind } from '../domain/types';
 
 export function PlansScreen() {
   const { plans, categories, accounts, stashes, settings } = useData();
+  const styles = useStyles(getStyles);
   const [filter, setFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -196,7 +197,7 @@ export function PlansScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,

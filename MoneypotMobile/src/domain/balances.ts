@@ -34,6 +34,22 @@ export function getPhysicalAccountId(
   return id;
 }
 
+export function normalizeStash(st: Stash, currentUserId?: string | null): Stash {
+  const isKinkyFund = st.name?.toLowerCase().trim() === 'kinky fund';
+  const isShared = isKinkyFund || Boolean(
+    st.isShared ||
+    (st.sharedWith && st.sharedWith.length > 0) ||
+    (st.invitedEmails && st.invitedEmails.length > 0) ||
+    (st.ownerId && currentUserId && st.ownerId !== currentUserId && currentUserId !== 'local')
+  );
+  const shouldBeInstant = !isShared;
+  return {
+    ...st,
+    isShared,
+    isInstantAccess: shouldBeInstant,
+  };
+}
+
 /** Calculate live balance of an account considering payments and transfers */
 export function calcAccountBalance(
   a: Account,

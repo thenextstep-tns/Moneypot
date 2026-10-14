@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { today, freqLabel } from '../domain/schedule';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import type { Plan, Kind, Freq } from '../domain/types';
 
@@ -22,6 +22,8 @@ interface PlanEditModalProps {
 }
 
 export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { accounts, categories, stashes, settings, save, remove } = useData();
 
   const [name, setName] = useState('');
@@ -183,6 +185,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Rent, Salary, Netflix, Stash top-up..."
+              placeholderTextColor={theme.colors.mute}
               value={name}
               onChangeText={setName}
             />
@@ -193,6 +196,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
               <TextInput
                 style={styles.amountInput}
                 placeholder="0.00"
+                placeholderTextColor={theme.colors.mute}
                 value={amountStr}
                 onChangeText={setAmountStr}
                 keyboardType="numeric"
@@ -362,6 +366,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Account number, memo..."
+              placeholderTextColor={theme.colors.mute}
               value={note}
               onChangeText={setNote}
             />
@@ -383,7 +388,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

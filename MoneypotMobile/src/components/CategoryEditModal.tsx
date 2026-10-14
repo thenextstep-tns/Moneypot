@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { EmojiPickerModal } from './EmojiPickerModal';
 import type { Category, Kind } from '../domain/types';
@@ -26,6 +26,8 @@ export function CategoryEditModal({
   onClose,
   categoryToEdit,
 }: CategoryEditModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { save, remove } = useData();
 
   const [name, setName] = useState('');
@@ -168,6 +170,7 @@ export function CategoryEditModal({
               <TextInput
                 style={styles.nameInput}
                 placeholder="Pot name (e.g. Groceries, Bills...)"
+                placeholderTextColor={theme.colors.mute}
                 value={name}
                 onChangeText={setName}
               />
@@ -201,6 +204,7 @@ export function CategoryEditModal({
               <TextInput
                 style={styles.subcatInput}
                 placeholder="Add subcategory (e.g. Coffee, Supermarket)..."
+                placeholderTextColor={theme.colors.mute}
                 value={newSubcatText}
                 onChangeText={setNewSubcatText}
                 onSubmitEditing={handleAddSubcat}
@@ -245,7 +249,7 @@ export function CategoryEditModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

@@ -13,7 +13,7 @@ import {
 import { useData, uid } from '../context/DataContext';
 import { calcAccountAvailableBalance } from '../domain/balances';
 import { today, money } from '../domain/schedule';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { EmojiPickerModal } from './EmojiPickerModal';
 import type { Stash } from '../domain/types';
@@ -32,6 +32,7 @@ export function StashEditModal({
   onOpenCorrection,
 }: StashEditModalProps) {
   const { accounts, settings, save, remove, payments, transfers, plans, stashes } = useData();
+  const styles = useStyles(getStyles);
 
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('🌱');
@@ -330,10 +331,10 @@ export function StashEditModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: theme.colors.overlay,
     justifyContent: 'flex-end',
   },
   content: {

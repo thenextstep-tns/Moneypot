@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useData } from '../context/DataContext';
 import { occurrences, today, addDays, money } from '../domain/schedule';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import type { Occurrence } from '../domain/types';
 
@@ -21,6 +21,8 @@ interface PayEarlyModalProps {
 }
 
 export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { plans, payments, categories, accounts, stashes } = useData();
   const [query, setQuery] = useState('');
   const t = today();
@@ -84,6 +86,7 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
             <TextInput
               style={styles.searchInput}
               placeholder="Search upcoming bills (rent, gym, wifi)..."
+              placeholderTextColor={theme.colors.mute}
               value={query}
               onChangeText={setQuery}
               autoFocus={false}
@@ -182,7 +185,7 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
@@ -263,7 +266,7 @@ const styles = StyleSheet.create({
     maxHeight: 400,
   },
   itemCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.line,
     borderRadius: 14,
@@ -303,7 +306,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dueDateBadge: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: theme.isDark ? '#78350F' : '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
@@ -311,7 +314,7 @@ const styles = StyleSheet.create({
   dueDateText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#92400E',
+    color: theme.isDark ? '#FDE68A' : '#92400E',
   },
   itemMeta: {
     fontSize: 12,
@@ -325,7 +328,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: theme.colors.line,
   },
   itemAmount: {
     fontSize: 16,

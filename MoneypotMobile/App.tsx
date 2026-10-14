@@ -25,7 +25,7 @@ import { AccountsScreen } from './src/screens/AccountsScreen';
 import { LogbookScreen } from './src/screens/LogbookScreen';
 import { CashflowScreen } from './src/screens/CashflowScreen';
 import { SpendingScreen } from './src/screens/SpendingScreen';
-import { theme } from './src/theme';
+import { theme, useStyles, type Theme } from './src/theme';
 import { triggerHaptic } from './src/utils/haptics';
 
 const PRIMARY_TABS = [
@@ -38,7 +38,8 @@ const PRIMARY_TABS = [
 
 function MainApp() {
   const insets = useSafeAreaInsets();
-  const { user, isDemoMode, loaded, activeTab, setActiveTab, setDrawerOpen, setDeepLinkAction } = useData();
+  const { user, isDemoMode, loaded, activeTab, setActiveTab, setDrawerOpen, setDeepLinkAction, isDark } = useData();
+  const styles = useStyles(getStyles);
 
   React.useEffect(() => {
     const handleUrl = (url: string | null) => {
@@ -106,6 +107,7 @@ function MainApp() {
 
   return (
     <View style={styles.mainContainer}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={styles.screenContainer}>
         {renderActiveScreen()}
       </View>
@@ -174,7 +176,6 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <DataProvider>
-          <StatusBar style="dark" />
           <MainApp />
         </DataProvider>
       </SafeAreaProvider>
@@ -182,10 +183,10 @@ export default function App() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#F3EFE6',
+    backgroundColor: theme.colors.bg,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -204,14 +205,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     borderTopWidth: 1,
     borderTopColor: theme.colors.line,
     paddingTop: 6,
     paddingHorizontal: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: theme.isDark ? 0.35 : 0.05,
     shadowRadius: 8,
     elevation: 8,
   },
@@ -224,7 +225,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
   },
   tabButtonActive: {
-    backgroundColor: '#E8F6EE',
+    backgroundColor: theme.colors.brandLight,
   },
   tabIcon: {
     fontSize: 18,
@@ -243,7 +244,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tabLabelActive: {
-    color: '#166534',
+    color: theme.colors.brandDark,
     fontWeight: '700',
   },
 });

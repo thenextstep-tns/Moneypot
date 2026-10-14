@@ -7,7 +7,7 @@ import {
   Easing,
   StyleSheet,
 } from 'react-native';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { money } from '../domain/schedule';
 import { triggerHaptic } from '../utils/haptics';
 import type { QuickTemplate } from '../domain/types';
@@ -23,6 +23,8 @@ export function QuickLogButton({
   onSuccess,
   currencyDefault,
 }: QuickLogButtonProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const [isHolding, setIsHolding] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
@@ -229,7 +231,7 @@ export function QuickLogButton({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   outerContainer: {
     borderRadius: theme.radius.full,
     borderWidth: 1.5,

@@ -13,7 +13,7 @@ import { useData, uid } from '../context/DataContext';
 import { convert, getRate } from '../domain/fx';
 import { today, money } from '../domain/schedule';
 import { calcAllAccountBalances, checkAccountFunds } from '../domain/balances';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
 interface OneOffPaymentModalProps {
@@ -31,6 +31,8 @@ export function OneOffPaymentModal({
   initialFromId,
   initialToId,
 }: OneOffPaymentModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { accounts, categories, stashes, settings, payments, transfers, plans, save } = useData();
 
   const [opType, setOpType] = useState<'expense' | 'income' | 'transfer'>(initialType || 'expense');
@@ -359,6 +361,7 @@ export function OneOffPaymentModal({
                 <TextInput
                   style={styles.textInput}
                   placeholder="e.g. Groceries, Coffee, Lunch"
+                  placeholderTextColor={theme.colors.mute}
                   value={name}
                   onChangeText={setName}
                   autoFocus={true}
@@ -369,6 +372,7 @@ export function OneOffPaymentModal({
                   <TextInput
                     style={styles.amountInput}
                     placeholder="0.00"
+                    placeholderTextColor={theme.colors.mute}
                     value={amountStr}
                     onChangeText={setAmountStr}
                     keyboardType="decimal-pad"
@@ -457,6 +461,7 @@ export function OneOffPaymentModal({
                 <TextInput
                   style={styles.textInput}
                   placeholder="Add payment note..."
+                  placeholderTextColor={theme.colors.mute}
                   value={note}
                   onChangeText={setNote}
                 />
@@ -484,6 +489,7 @@ export function OneOffPaymentModal({
                 <TextInput
                   style={styles.textInput}
                   placeholder="e.g. Salary, Client payout, Bonus, Gift"
+                  placeholderTextColor={theme.colors.mute}
                   value={name}
                   onChangeText={setName}
                   autoFocus={true}
@@ -494,6 +500,7 @@ export function OneOffPaymentModal({
                   <TextInput
                     style={styles.amountInput}
                     placeholder="0.00"
+                    placeholderTextColor={theme.colors.mute}
                     value={amountStr}
                     onChangeText={setAmountStr}
                     keyboardType="decimal-pad"
@@ -547,6 +554,7 @@ export function OneOffPaymentModal({
                 <TextInput
                   style={styles.textInput}
                   placeholder="Add income note..."
+                  placeholderTextColor={theme.colors.mute}
                   value={note}
                   onChangeText={setNote}
                 />
@@ -619,6 +627,7 @@ export function OneOffPaymentModal({
                       <TextInput
                         style={styles.textInput}
                         placeholder="0.00"
+                        placeholderTextColor={theme.colors.mute}
                         value={transferAmountStr}
                         onChangeText={text => {
                           setTransferAmountStr(text);
@@ -638,6 +647,7 @@ export function OneOffPaymentModal({
                       <TextInput
                         style={styles.textInput}
                         placeholder="0.00"
+                        placeholderTextColor={theme.colors.mute}
                         value={transferToAmountStr}
                         onChangeText={setTransferToAmountStr}
                         keyboardType="decimal-pad"
@@ -651,6 +661,7 @@ export function OneOffPaymentModal({
                       <TextInput
                         style={styles.amountInput}
                         placeholder="0.00"
+                        placeholderTextColor={theme.colors.mute}
                         value={transferAmountStr}
                         onChangeText={text => {
                           setTransferAmountStr(text);
@@ -697,6 +708,7 @@ export function OneOffPaymentModal({
                 <TextInput
                   style={styles.textInput}
                   placeholder="e.g. Card top-up, stash deposit, withdrawal…"
+                  placeholderTextColor={theme.colors.mute}
                   value={transferNote}
                   onChangeText={setTransferNote}
                 />
@@ -713,7 +725,7 @@ export function OneOffPaymentModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
@@ -775,7 +787,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segBtnActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.card,
     ...theme.shadowCard,
   },
   segBtnText: {

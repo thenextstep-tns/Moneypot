@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { theme } from '../theme';
+import { useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
 interface Step {
@@ -99,6 +99,7 @@ const STEPS: Step[] = [
 ];
 
 export function OnboardingModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const styles = useStyles(getStyles);
   const [index, setIndex] = useState(0);
   const step = STEPS[index];
   const isLast = index === STEPS.length - 1;
@@ -181,7 +182,7 @@ export function OnboardingModal({ visible, onClose }: { visible: boolean; onClos
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',

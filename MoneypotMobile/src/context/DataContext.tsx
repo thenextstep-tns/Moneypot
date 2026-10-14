@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import { db, auth, logout } from '../services/firebase';
@@ -44,9 +45,11 @@ export interface DataContextValue extends DataState {
   logoutUser: () => Promise<void>;
   save: <C extends Coll>(c: C, o: DataState[C][number]) => Promise<void>;
   remove: (c: Coll, id: string) => Promise<void>;
-  setSettings: (s: Settings) => Promise<void>;
+  setSettings: (s: Partial<Settings>) => Promise<void>;
   resetDemoData: () => Promise<void>;
   reorder: <C extends 'accounts' | 'categories' | 'stashes'>(c: C, items: DataState[C]) => Promise<void>;
+  isDark: boolean;
+  themeMode: 'light' | 'dark' | 'system';
 }
 
 const emptyData: DataState = {
@@ -58,31 +61,18 @@ const emptyData: DataState = {
   transfers: [],
   invites: [],
   templates: [],
-  settings: { currency: 'EUR' },
+  settings: { currency: 'EUR', theme: 'system' },
 };
 
 const LS_KEY = 'pots-mobile-demo';
 const AUTH_KEY = 'pots-mobile-auth';
+const THEME_KEY = 'pots-mobile-theme';
 
 export const uid = () => {
   return 'id_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 };
 
-export function normalizeStash(st: Stash, currentUserId?: string | null): Stash {
-  const isKinkyFund = st.name?.toLowerCase().trim() === 'kinky fund';
-  const isShared = isKinkyFund || Boolean(
-    st.isShared ||
-    (st.sharedWith && st.sharedWith.length > 0) ||
-    (st.invitedEmails && st.invitedEmails.length > 0) ||
-    (st.ownerId && currentUserId && st.ownerId !== currentUserId && currentUserId !== 'local')
-  );
-  const shouldBeInstant = !isShared;
-  return {
-    ...st,
-    isShared,
-    isInstantAccess: shouldBeInstant,
-  };
-}
+export { normalizeStash } from '../domain/balances';
 
 export function sortByOrder<T extends { id: string; order?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
@@ -104,6 +94,7 @@ export function useData(): DataContextValue {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const systemColorScheme = useColorScheme();
   const [user, setUserState] = useState<CurrentUser | null>(null);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('Today');
@@ -113,11 +104,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<DataState>(emptyData);
   const [loaded, setLoaded] = useState<boolean>(false);
 
-  // Load initial demo/auth state from AsyncStorage
+  const themeMode = data.settings.theme ?? 'system';
+  const isDark = themeMode === 'dark' || (themeMode === 'system' && systemColorScheme === 'dark');
+
+  // Load initial demo/auth/theme state from AsyncStorage
   useEffect(() => {
     (async () => {
       try {
-        const storedAuth = await AsyncStorage.getItem(AUTH_KEY);
+        const [storedAuth, storedTheme] = await Promise.all([
+          AsyncStorage.getItem(AUTH_KEY),
+          AsyncStorage.getItem(THEME_KEY),
+        ]);
+        if (storedTheme) {
+          setData(prev => ({
+            ...prev,
+            settings: { ...prev.settings, theme: storedTheme as any },
+          }));
+        }
         if (storedAuth) {
           const parsedUser = JSON.parse(storedAuth);
           setUserState(parsedUser);
@@ -127,7 +130,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setIsDemoMode(false);
         }
       } catch (err) {
-        console.warn('Error reading stored auth:', err);
+        console.warn('Error reading stored auth or theme:', err);
       } finally {
         setLoaded(true);
       }
@@ -307,7 +310,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     unsubs.push(onSnapshot(base, s => {
       if (s.exists()) {
         const d = s.data();
-        setData(prev => ({ ...prev, settings: { currency: d?.currency ?? 'EUR' } }));
+        const serverTheme = d?.theme;
+        if (serverTheme) {
+          AsyncStorage.setItem(THEME_KEY, serverTheme).catch(() => {});
+        }
+        setData(prev => ({
+          ...prev,
+          settings: {
+            currency: d?.currency ?? 'EUR',
+            theme: serverTheme ?? prev.settings.theme ?? 'system',
+          },
+        }));
       }
     }, err => {
       console.warn('Settings listener error:', err.message);
@@ -606,11 +619,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const setSettings = async (s: Settings): Promise<void> => {
+  const setSettings = async (s: Partial<Settings>): Promise<void> => {
     const userId = user?.uid;
     const local = isDemoMode || !userId || !db;
+    const nextSettings = { ...data.settings, ...s };
+    setData(prev => ({ ...prev, settings: nextSettings }));
+    if (s.theme) {
+      AsyncStorage.setItem(THEME_KEY, s.theme).catch(() => {});
+    }
     if (local) {
-      setData(prev => ({ ...prev, settings: s }));
+      try {
+        const stored = await AsyncStorage.getItem(LS_KEY);
+        const parsed = stored ? JSON.parse(stored) : {};
+        parsed.settings = nextSettings;
+        await AsyncStorage.setItem(LS_KEY, JSON.stringify(parsed));
+      } catch (e) {
+        console.warn('AsyncStorage setSettings error:', e);
+      }
     } else {
       await setDoc(doc(db!, 'users', userId!), s, { merge: true });
     }
@@ -669,6 +694,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSettings,
     resetDemoData,
     reorder,
+    isDark,
+    themeMode,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

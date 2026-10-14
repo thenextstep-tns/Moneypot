@@ -12,7 +12,7 @@ import { calcStashBalance } from '../domain/balances';
 import { convert } from '../domain/fx';
 import { money, today } from '../domain/schedule';
 import { generateMaskedCode, hashAccessCode } from '../domain/sharing';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { StashEditModal } from '../components/StashEditModal';
@@ -27,6 +27,7 @@ import type { Stash } from '../domain/types';
 
 export function StashesScreen() {
   const { stashes, payments, transfers, plans, accounts, settings, save, user, reorder } = useData();
+  const styles = useStyles(getStyles);
 
   const [activeStash, setActiveStash] = useState<Stash | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -294,7 +295,7 @@ export function StashesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,

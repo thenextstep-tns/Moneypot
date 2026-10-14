@@ -10,7 +10,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { EMOJI_GROUPS } from '../domain/emojis';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
 interface EmojiPickerModalProps {
@@ -26,6 +26,8 @@ export function EmojiPickerModal({
   onSelect,
   currentEmoji,
 }: EmojiPickerModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const [activeGroup, setActiveGroup] = useState<string>('Popular');
   const [customText, setCustomText] = useState('');
 
@@ -107,6 +109,7 @@ export function EmojiPickerModal({
             <TextInput
               style={styles.customInput}
               placeholder="e.g. 🍕"
+              placeholderTextColor={theme.colors.mute}
               value={customText}
               onChangeText={handleCustomChange}
               maxLength={4}
@@ -118,7 +121,7 @@ export function EmojiPickerModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -230,5 +233,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 18,
     textAlign: 'center',
+    color: theme.colors.ink,
   },
 });

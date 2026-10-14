@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import type { Account } from '../domain/types';
 
@@ -28,6 +28,7 @@ export function AccountEditModal({
   onOpenCorrection,
 }: AccountEditModalProps) {
   const { settings, save, remove } = useData();
+  const styles = useStyles(getStyles);
 
   const [name, setName] = useState('');
   const [type, setType] = useState<Account['type']>('card');
@@ -251,10 +252,10 @@ export function AccountEditModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: theme.colors.overlay,
     justifyContent: 'flex-end',
   },
   content: {

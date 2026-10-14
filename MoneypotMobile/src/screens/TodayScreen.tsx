@@ -14,7 +14,7 @@ import {
 import { useData, uid } from '../context/DataContext';
 import { occurrences, today, addDays, money, toPayment } from '../domain/schedule';
 import { checkAccountFunds, calcAllAccountBalances } from '../domain/balances';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { PaymentActionModal } from '../components/PaymentActionModal';
@@ -38,6 +38,7 @@ export function TodayScreen() {
     deepLinkAction,
     setDeepLinkAction,
   } = useData();
+  const styles = useStyles(getStyles);
 
   const [activeOccurrence, setActiveOccurrence] = useState<Occurrence | null>(null);
   const [transferVisible, setTransferVisible] = useState(false);
@@ -400,7 +401,7 @@ export function TodayScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,
@@ -411,9 +412,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerActionBtnEarly: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: theme.colors.warningLight,
     borderWidth: 1,
-    borderColor: '#FCD34D',
+    borderColor: theme.colors.warning,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 8,
@@ -421,7 +422,7 @@ const styles = StyleSheet.create({
   headerActionBtnEarlyText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#92400E',
+    color: theme.colors.warningText,
   },
   headerActionBtnAdd: {
     backgroundColor: theme.colors.brand,
@@ -512,8 +513,8 @@ const styles = StyleSheet.create({
     ...theme.shadowCard,
   },
   queueCardOverdue: {
-    borderColor: theme.colors.badLight,
-    backgroundColor: '#FFFBFB',
+    borderColor: theme.colors.bad,
+    backgroundColor: theme.colors.badLight,
   },
   cardHeader: {
     flexDirection: 'row',

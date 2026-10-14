@@ -12,7 +12,7 @@ import Svg, { Rect, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop }
 import { useData } from '../context/DataContext';
 import { calculateCashflowRange, type DayCashflow, type CashflowItem } from '../domain/cashflow';
 import { today, addDays, thisMonth, monthRange, weekRange, money } from '../domain/schedule';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 
@@ -20,6 +20,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export function CashflowScreen() {
   const { accounts, payments, transfers, plans, stashes, categories, settings } = useData();
+  const styles = useStyles(getStyles);
 
   const [rangeMode, setRangeMode] = useState<'month' | 'week' | '30days'>('30days');
   const t = today();
@@ -351,7 +352,7 @@ export function CashflowScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,

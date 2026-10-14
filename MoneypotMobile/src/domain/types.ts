@@ -143,7 +143,10 @@ export interface Transfer extends Owned {
   contributorName?: string;
 }
 
-export interface Settings { currency: string }
+export interface Settings {
+  currency: string;
+  theme?: 'light' | 'dark' | 'system';
+}
 
 /** A quick one-off payment template with pre-filled category, subcategory, account, amount and individual icon */
 export interface QuickTemplate extends Owned {

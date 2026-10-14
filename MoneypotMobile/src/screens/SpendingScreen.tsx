@@ -20,7 +20,7 @@ import {
   monthLabel,
   money,
 } from '../domain/schedule';
-import { theme } from '../theme';
+import { theme, useStyles, useTheme, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 
@@ -131,6 +131,8 @@ function createDonutArc(
 
 export function SpendingScreen() {
   const { payments, categories, settings } = useData();
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const [period, setPeriod] = useState<PeriodType>('this_month');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
@@ -451,7 +453,7 @@ export function SpendingScreen() {
                           y="186"
                           textAnchor="middle"
                           fontSize="11"
-                          fill="#64748B"
+                          fill={theme.colors.mute}
                         >
                           {totalOperations} ops
                         </SvgText>
@@ -563,7 +565,7 @@ export function SpendingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,
@@ -586,9 +588,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.line,
   },
   periodChipActive: {
     backgroundColor: theme.colors.ink,
@@ -597,10 +599,10 @@ const styles = StyleSheet.create({
   periodChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748B',
+    color: theme.colors.mute,
   },
   periodChipTextActive: {
-    color: '#ffffff',
+    color: theme.colors.bg,
   },
   kpiRow: {
     flexDirection: 'row',
@@ -609,16 +611,16 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.card,
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.line,
   },
   kpiLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: theme.colors.mute,
     textTransform: 'uppercase',
     marginBottom: 4,
   },
@@ -630,20 +632,20 @@ const styles = StyleSheet.create({
   },
   kpiSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: theme.colors.mute,
   },
   chartCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.card,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.line,
     alignItems: 'center',
     marginBottom: 20,
   },
   chartHint: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: theme.colors.mute,
     marginBottom: 6,
   },
   donutContainer: {
@@ -655,11 +657,11 @@ const styles = StyleSheet.create({
   selectedDetailCard: {
     marginTop: 12,
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.cardMuted,
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.line,
   },
   detailHeader: {
     flexDirection: 'row',
@@ -674,7 +676,7 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     fontSize: 14,
-    color: '#94A3B8',
+    color: theme.colors.mute,
     padding: 4,
   },
   detailStats: {
@@ -683,7 +685,7 @@ const styles = StyleSheet.create({
   },
   detailStatLabel: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: theme.colors.mute,
     textTransform: 'uppercase',
   },
   detailStatVal: {
@@ -702,28 +704,28 @@ const styles = StyleSheet.create({
   },
   sectionSub: {
     fontSize: 12,
-    color: '#64748B',
+    color: theme.colors.mute,
     marginBottom: 12,
   },
   rundownRow: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.card,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.line,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   rundownRowSelected: {
     borderColor: theme.colors.brand,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: theme.colors.brandLight,
   },
   rankNum: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: theme.colors.mute,
     width: 24,
   },
   swatch: {
@@ -751,7 +753,7 @@ const styles = StyleSheet.create({
   },
   potTag: {
     fontSize: 11,
-    color: '#64748B',
+    color: theme.colors.mute,
     marginTop: 1,
   },
   figureGroup: {
@@ -768,7 +770,7 @@ const styles = StyleSheet.create({
   },
   barTrack: {
     height: 5,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: theme.colors.line,
     borderRadius: 2.5,
     overflow: 'hidden',
     marginVertical: 4,
@@ -779,15 +781,15 @@ const styles = StyleSheet.create({
   },
   opsSub: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: theme.colors.mute,
   },
   emptyCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.card,
     borderRadius: 16,
     padding: 32,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.line,
     marginTop: 20,
   },
   emptyIcon: {
@@ -802,7 +804,7 @@ const styles = StyleSheet.create({
   },
   emptySub: {
     fontSize: 13,
-    color: '#64748B',
+    color: theme.colors.mute,
     textAlign: 'center',
     lineHeight: 18,
   },

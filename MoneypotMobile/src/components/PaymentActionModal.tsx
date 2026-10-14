@@ -12,7 +12,7 @@ import {
 import { useData, uid } from '../context/DataContext';
 import { today, addDays, money, toPayment } from '../domain/schedule';
 import { checkAccountFunds, calcAllAccountBalances } from '../domain/balances';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import type { Occurrence, Payment } from '../domain/types';
 
@@ -29,6 +29,8 @@ export function PaymentActionModal({
   occurrence,
   onOpenTransfer,
 }: PaymentActionModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { accounts, categories, stashes, payments, transfers, plans, save } = useData();
 
   const [amountStr, setAmountStr] = useState('');
@@ -227,6 +229,7 @@ export function PaymentActionModal({
             <TextInput
               style={styles.textInput}
               placeholder="Add payment comment..."
+              placeholderTextColor={theme.colors.mute}
               value={note}
               onChangeText={setNote}
             />
@@ -311,7 +314,7 @@ export function PaymentActionModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -347,7 +350,7 @@ const styles = StyleSheet.create({
   warningCard: {
     backgroundColor: theme.colors.warningLight,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: theme.isDark ? '#78350F' : '#FDE68A',
     borderRadius: theme.radius.md,
     padding: 12,
     marginBottom: 14,
@@ -369,7 +372,7 @@ const styles = StyleSheet.create({
   },
   moveMoneyBtn: {
     marginTop: 8,
-    backgroundColor: '#FDE68A',
+    backgroundColor: theme.isDark ? '#78350F' : '#FDE68A',
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: theme.radius.sm,
@@ -500,7 +503,7 @@ const styles = StyleSheet.create({
   },
   postponeChip: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: theme.colors.card,
     paddingVertical: 10,
     alignItems: 'center',
     borderRadius: theme.radius.sm,

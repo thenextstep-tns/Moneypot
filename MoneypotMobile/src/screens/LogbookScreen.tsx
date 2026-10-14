@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useData } from '../context/DataContext';
 import { money } from '../domain/schedule';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import type { Payment, Transfer } from '../domain/types';
@@ -37,6 +37,7 @@ interface LogItem {
 
 export function LogbookScreen() {
   const { payments, transfers, accounts, categories, stashes, remove } = useData();
+  const styles = useStyles(getStyles);
 
   const [search, setSearch] = useState('');
   const [selectedAccountFilter, setSelectedAccountFilter] = useState<string>('all');
@@ -270,7 +271,7 @@ export function LogbookScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,

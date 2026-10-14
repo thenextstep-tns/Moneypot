@@ -13,7 +13,7 @@ import { useData, uid } from '../context/DataContext';
 import { convert, getRate } from '../domain/fx';
 import { today, money } from '../domain/schedule';
 import { calcAllAccountBalances } from '../domain/balances';
-import { theme } from '../theme';
+import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
 interface QuickTransferModalProps {
@@ -29,6 +29,8 @@ export function QuickTransferModal({
   defaultFromAccountId,
   defaultToAccountId,
 }: QuickTransferModalProps) {
+  const { theme } = useTheme();
+  const styles = useStyles(getStyles);
   const { accounts, stashes, payments, transfers, plans, save } = useData();
 
   const currentBalMap = useMemo(
@@ -220,6 +222,7 @@ export function QuickTransferModal({
                 <TextInput
                   style={styles.amountInput}
                   placeholder="0.00"
+                  placeholderTextColor={theme.colors.mute}
                   value={fromAmountStr}
                   onChangeText={handleFromAmountChange}
                   keyboardType="numeric"
@@ -232,6 +235,7 @@ export function QuickTransferModal({
                   <TextInput
                     style={styles.amountInput}
                     placeholder="0.00"
+                    placeholderTextColor={theme.colors.mute}
                     value={toAmountStr}
                     onChangeText={setToAmountStr}
                     keyboardType="numeric"
@@ -275,6 +279,7 @@ export function QuickTransferModal({
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Card top-up, currency exchange..."
+              placeholderTextColor={theme.colors.mute}
               value={note}
               onChangeText={setNote}
             />
@@ -296,7 +301,7 @@ export function QuickTransferModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

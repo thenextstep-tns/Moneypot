@@ -17,7 +17,7 @@ import {
 } from '../domain/schedule';
 import { calcMonthStartingBalances } from '../domain/balances';
 import { convert } from '../domain/fx';
-import { theme } from '../theme';
+import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import { CategoryEditModal } from '../components/CategoryEditModal';
@@ -30,6 +30,7 @@ import type { Category } from '../domain/types';
 
 export function PotsScreen() {
   const { categories, plans, payments, accounts, stashes, transfers, settings, reorder } = useData();
+  const styles = useStyles(getStyles);
 
   const currentYm = thisMonth();
   const [selectedYm, setSelectedYm] = useState<string>(currentYm);
@@ -318,7 +319,7 @@ export function PotsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme: Theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.bg,
