@@ -7,7 +7,6 @@ export function isSharedStash(
   currentUserEmail?: string | null
 ): boolean {
   if (!s) return false;
-  if (s.name?.toLowerCase().trim() === 'kinky fund') return true;
   if (s.isShared) return true;
   if (Array.isArray(s.sharedWith) && s.sharedWith.length > 0) return true;
   if (Array.isArray(s.invitedEmails) && s.invitedEmails.length > 0) return true;
@@ -121,7 +120,7 @@ export async function verifyAccessCode(
   const cleanEntered = enteredCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const cleanMasked = (maskedCode ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-  const codeMatches = (cleanMasked && cleanEntered === cleanMasked);
+  const codeMatches = Boolean(cleanMasked && cleanEntered === cleanMasked);
   if (!codeMatches) {
     const enteredHash = await hashAccessCode(cleanEntered);
     if (enteredHash !== codeHash) return false;

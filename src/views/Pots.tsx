@@ -54,7 +54,7 @@ export function Pots() {
     setDragOverCatId(null);
   };
 
-  const occ = useMemo(() => occurrences(plans, payments, ...monthRange(ym)).filter(o => o.status !== 'cancelled'), [plans, payments, ym]);
+  const occ = useMemo(() => occurrences(plans, payments, ...monthRange(ym), true).filter(o => o.status !== 'cancelled'), [plans, payments, ym]);
 
   const curYm = thisMonth();
   const isCurrentMonth = ym === curYm;
@@ -71,8 +71,8 @@ export function Pots() {
   const monthBalances = monthProjection.accountBalances;
 
   const shortfalls = useMemo(
-    () => findAccountShortfalls(accounts, occ, monthBalances),
-    [accounts, occ, monthBalances]
+    () => findAccountShortfalls(accounts, occ, monthBalances, stashes, transfers, ym),
+    [accounts, occ, monthBalances, stashes, transfers, ym]
   );
 
   const income = occ.filter(o => o.kind === 'income');

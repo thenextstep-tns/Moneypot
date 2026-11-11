@@ -19,6 +19,7 @@ import {
   monthRange,
   monthLabel,
   money,
+  isBalanceCorrectionPayment,
 } from '../domain/schedule';
 import { theme, useStyles, useTheme, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -180,6 +181,7 @@ export function SpendingScreen() {
 
     for (const p of payments) {
       if (p.kind !== 'expense' || p.status !== 'confirmed') continue;
+      if (isBalanceCorrectionPayment(p)) continue;
       if (p.date < startDate || p.date > endDate) continue;
 
       const pot = p.categoryId ? catMap.get(p.categoryId) : undefined;

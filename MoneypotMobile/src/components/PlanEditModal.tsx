@@ -33,6 +33,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
   const [accountId, setAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [subcategory, setSubcategory] = useState<string | undefined>(undefined);
   const [stashId, setStashId] = useState('');
   const [note, setNote] = useState('');
   const [freq, setFreq] = useState<Freq>('monthly');
@@ -49,6 +50,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       setAccountId(planToEdit.accountId || accounts[0]?.id || '');
       setToAccountId(planToEdit.toAccountId || (isSav && planToEdit.stashId ? `stash_${planToEdit.stashId}` : ''));
       setCategoryId(planToEdit.categoryId || categories[0]?.id || '');
+      setSubcategory(planToEdit.subcategory);
       setStashId(planToEdit.stashId || '');
       setNote(planToEdit.note || '');
       setFreq(planToEdit.freq);
@@ -63,6 +65,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       setAccountId(firstAcc?.id || '');
       setToAccountId(accounts[1]?.id || '');
       setCategoryId(categories[0]?.id || '');
+      setSubcategory(undefined);
       setStashId(stashes[0]?.id || '');
       setNote('');
       setFreq('monthly');
@@ -91,6 +94,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       : undefined;
 
     const newPlan: Plan = {
+      ...(planToEdit || {}),
       id: planId,
       name: name.trim(),
       kind,
@@ -99,6 +103,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       accountId: accountId || undefined,
       toAccountId: kind === 'transfer' ? toAccountId : undefined,
       categoryId: kind !== 'transfer' ? categoryId : undefined,
+      subcategory: kind !== 'transfer' ? subcategory : undefined,
       stashId: stashDestination,
       note: note.trim() || undefined,
       freq,
@@ -296,6 +301,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                         onPress={() => {
                           triggerHaptic('light');
                           setCategoryId(c.id);
+                          setSubcategory(undefined);
                         }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
@@ -305,6 +311,41 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                     );
                   })}
                 </ScrollView>
+                {(() => {
+                  const selCat = categories.find(c => c.id === categoryId);
+                  if (!selCat?.subcategories || selCat.subcategories.length === 0) return null;
+                  return (
+                    <>
+                      <Text style={styles.fieldLabel}>Subcategory (Optional)</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                        <TouchableOpacity
+                          style={[styles.chip, !subcategory && styles.chipActive]}
+                          onPress={() => {
+                            triggerHaptic('light');
+                            setSubcategory(undefined);
+                          }}
+                        >
+                          <Text style={[styles.chipText, !subcategory && styles.chipTextActive]}>General</Text>
+                        </TouchableOpacity>
+                        {selCat.subcategories.map(sub => {
+                          const active = subcategory === sub;
+                          return (
+                            <TouchableOpacity
+                              key={sub}
+                              style={[styles.chip, active && styles.chipActive]}
+                              onPress={() => {
+                                triggerHaptic('light');
+                                setSubcategory(sub);
+                              }}
+                            >
+                              <Text style={[styles.chipText, active && styles.chipTextActive]}>{sub}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </>
+                  );
+                })()}
               </>
             )}
 

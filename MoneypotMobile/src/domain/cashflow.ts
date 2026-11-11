@@ -107,12 +107,13 @@ export function calculateCashflowRange(
       ? occurrences(plans, payments, futureStart, toDate).filter(o => o.status === 'pending')
       : [];
 
-  // Map occurrences by date
+  // Map occurrences by effective date (respecting postponed dates)
   const futureOccurrencesByDate = new Map<string, Occurrence[]>();
   for (const o of futureOccurrences) {
-    const arr = futureOccurrencesByDate.get(o.dueDate) ?? [];
+    const effDate = o.date || o.dueDate;
+    const arr = futureOccurrencesByDate.get(effDate) ?? [];
     arr.push(o);
-    futureOccurrencesByDate.set(o.dueDate, arr);
+    futureOccurrencesByDate.set(effDate, arr);
   }
 
   // Pre-filter confirmed payments and non-cancelled transfers
@@ -126,7 +127,8 @@ export function calculateCashflowRange(
     if (kind === 'transfer') return 0; // Handled in activeTransfers
     const stashId = p.stashId ?? plan?.stashId;
     const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-    const sourceAccId = p.accountId || plan?.accountId || s?.accountId;
+    const rawAccId = p.accountId || plan?.accountId || s?.accountId;
+    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [a]);
     const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
     let d = 0;
     if (sourceAccId === a.id) {
@@ -139,8 +141,8 @@ export function calculateCashflowRange(
 
   // Helper: compute delta for an account from a transfer
   const getTransferDelta = (tr: Transfer, a: Account): number => {
-    const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, a.id);
-    const physTo = getPhysicalAccountId(tr.toAccountId, stashes, a.id);
+    const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, a.id, [a]);
+    const physTo = getPhysicalAccountId(tr.toAccountId, stashes, a.id, [a]);
     if (physFrom === a.id && physTo === a.id) {
       return 0;
     }
@@ -160,8 +162,8 @@ export function calculateCashflowRange(
   const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
     const kind = o.kind ?? o.plan.kind ?? 'expense';
     if (kind === 'transfer') {
-      const physFrom = getPhysicalAccountId(o.accountId, stashes, a.id);
-      const physTo = getPhysicalAccountId(o.toAccountId, stashes, a.id);
+      const physFrom = getPhysicalAccountId(o.accountId, stashes, a.id, [a]);
+      const physTo = getPhysicalAccountId(o.toAccountId, stashes, a.id, [a]);
       if (physFrom === a.id && physTo === a.id) {
         return 0;
       }
@@ -179,7 +181,8 @@ export function calculateCashflowRange(
       return d;
     }
     const s = o.stashId ? stashes.find(x => x.id === o.stashId) : (o.plan.stashId ? stashes.find(x => x.id === o.plan.stashId) : undefined);
-    const sourceAccId = o.accountId || o.plan.accountId || s?.accountId;
+    const rawAccId = o.accountId || o.plan.accountId || s?.accountId;
+    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [a]);
     const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
     let d = 0;
     if (sourceAccId === a.id) {
@@ -189,14 +192,27 @@ export function calculateCashflowRange(
     return d;
   };
 
-  // Calculate live balances as of today
+  // Calculate live balances as of today (excluding future-dated transfers/payments)
   const liveBalancesToday = new Map<string, number>();
   for (const a of accounts) {
     let b = a.startBalance;
-    for (const p of confirmedPayments) b += getPaymentDelta(p, a);
-    for (const tr of activeTransfers) b += getTransferDelta(tr, a);
+    for (const p of confirmedPayments) {
+      if (p.date <= t) b += getPaymentDelta(p, a);
+    }
+    for (const tr of activeTransfers) {
+      if (!tr.date || tr.date <= t) b += getTransferDelta(tr, a);
+    }
     liveBalancesToday.set(a.id, b);
   }
+
+  const findParty = (id?: string) => {
+    if (!id) return undefined;
+    const acc = accounts.find(a => a.id === id);
+    if (acc) return { name: acc.name, color: acc.color };
+    const st = stashes.find(s => s.id === id || `stash_${s.id}` === id);
+    if (st) return { name: `${st.emoji} ${st.name}`, color: undefined };
+    return undefined;
+  };
 
   const result: DayCashflow[] = [];
 
@@ -219,10 +235,19 @@ export function calculateCashflowRange(
         const plan = plans.find(x => x.id === p.planId);
         const kind = p.kind ?? plan?.kind ?? 'expense';
         if (kind === 'transfer') continue; // Handled in activeTransfers
-        if (p.accountId && !accounts.some(a => a.id === p.accountId)) continue;
-        const cat = plan?.categoryId ? categories.find(c => c.id === plan.categoryId) : undefined;
-        const acc = accounts.find(a => a.id === p.accountId);
-        const isCorrection = p.name === 'Balance correction' || p.planId?.startsWith('adj_');
+        const physAccId = getPhysicalAccountId(p.accountId || plan?.accountId, stashes, undefined, accounts);
+        if (p.accountId && !accounts.some(a => a.id === p.accountId || a.id === physAccId)) continue;
+        const catId = p.categoryId ?? plan?.categoryId;
+        const cat = catId ? categories.find(c => c.id === catId) : undefined;
+        const acc = accounts.find(a => a.id === p.accountId || a.id === physAccId);
+        const isCorrection = Boolean(
+          p.isCorrection ||
+          p.name === 'Balance correction' ||
+          p.name === 'Technical balance edit' ||
+          p.name?.includes('Balance correction') ||
+          p.id.startsWith('adj_') ||
+          p.planId?.startsWith('adj_')
+        );
         items.push({
           id: p.id,
           name: p.name || plan?.name || (kind === 'income' ? 'Income' : 'Expense'),
@@ -238,7 +263,7 @@ export function calculateCashflowRange(
           category: cat?.name,
           subcategory: p.subcategory || plan?.subcategory,
           emoji: isCorrection ? '⚖️' : (kind === 'saving' ? (stashes.find(s => s.id === (p.stashId ?? plan?.stashId))?.emoji ?? '🌱') : cat?.emoji ?? (kind === 'income' ? '💰' : '💸')),
-          isShared: plan?.isShared,
+          isShared: p.isShared ?? plan?.isShared,
           isCorrection,
         });
       }
@@ -247,12 +272,14 @@ export function calculateCashflowRange(
     // 2. Transfers on this date
     for (const tr of activeTransfers) {
       if (tr.date === date) {
-        if (!accounts.some(a => a.id === tr.fromAccountId || a.id === tr.toAccountId)) continue;
-        const fromAcc = accounts.find(a => a.id === tr.fromAccountId);
-        const toAcc = accounts.find(a => a.id === tr.toAccountId);
+        const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, undefined, accounts);
+        const physTo = getPhysicalAccountId(tr.toAccountId, stashes, undefined, accounts);
+        if (!accounts.some(a => a.id === tr.fromAccountId || a.id === tr.toAccountId || a.id === physFrom || a.id === physTo)) continue;
+        const fromParty = findParty(tr.fromAccountId);
+        const toParty = findParty(tr.toAccountId);
         items.push({
           id: tr.id,
-          name: `Transfer (${fromAcc?.name ?? 'Account'} → ${toAcc?.name ?? 'Account'})`,
+          name: `Transfer (${fromParty?.name ?? 'Account'} → ${toParty?.name ?? 'Account'})`,
           amount: tr.fromAmount,
           currency: tr.fromCurrency,
           amountInMain: convert(tr.fromAmount, tr.fromCurrency, mainCurrency),
@@ -260,8 +287,8 @@ export function calculateCashflowRange(
           status: 'confirmed',
           date,
           accountId: tr.fromAccountId,
-          accountName: fromAcc?.name,
-          accountColor: fromAcc?.color,
+          accountName: fromParty?.name,
+          accountColor: fromParty?.color,
           emoji: '⇄',
         });
       }
@@ -273,12 +300,14 @@ export function calculateCashflowRange(
       for (const o of dayOccurrences) {
         const kind = o.kind ?? o.plan.kind ?? 'expense';
         if (kind === 'transfer') {
-          if (!accounts.some(a => a.id === o.accountId || a.id === o.toAccountId)) continue;
-          const fromAcc = accounts.find(a => a.id === o.accountId);
-          const toAcc = accounts.find(a => a.id === o.toAccountId);
+          const physFrom = getPhysicalAccountId(o.accountId, stashes, undefined, accounts);
+          const physTo = getPhysicalAccountId(o.toAccountId, stashes, undefined, accounts);
+          if (!accounts.some(a => a.id === o.accountId || a.id === o.toAccountId || a.id === physFrom || a.id === physTo)) continue;
+          const fromParty = findParty(o.accountId);
+          const toParty = findParty(o.toAccountId);
           items.push({
             id: o.key,
-            name: o.name || `Transfer (${fromAcc?.name ?? 'Account'} → ${toAcc?.name ?? 'Account'})`,
+            name: o.name || `Transfer (${fromParty?.name ?? 'Account'} → ${toParty?.name ?? 'Account'})`,
             amount: o.amount,
             currency: o.currency,
             amountInMain: convert(o.amount, o.currency, mainCurrency),
@@ -286,15 +315,17 @@ export function calculateCashflowRange(
             status: 'pending',
             date,
             accountId: o.accountId,
-            accountName: fromAcc?.name,
-            accountColor: fromAcc?.color,
+            accountName: fromParty?.name,
+            accountColor: fromParty?.color,
             emoji: '⇄',
           });
           continue;
         }
-        if (o.accountId && !accounts.some(a => a.id === o.accountId)) continue;
-        const acc = accounts.find(a => a.id === o.accountId);
-        const cat = o.plan.categoryId ? categories.find(c => c.id === o.plan.categoryId) : undefined;
+        const physAccId = getPhysicalAccountId(o.accountId || o.plan.accountId, stashes, undefined, accounts);
+        if (o.accountId && !accounts.some(a => a.id === o.accountId || a.id === physAccId)) continue;
+        const acc = accounts.find(a => a.id === o.accountId || a.id === physAccId);
+        const catId = o.categoryId ?? o.plan.categoryId;
+        const cat = catId ? categories.find(c => c.id === catId) : undefined;
         items.push({
           id: o.key,
           name: o.plan.name,
@@ -320,6 +351,7 @@ export function calculateCashflowRange(
     let expenseTotal = 0;
     let savingTotal = 0;
     for (const it of items) {
+      if (it.isCorrection) continue;
       if (it.kind === 'income') incomeTotal += it.amountInMain;
       else if (it.kind === 'expense') expenseTotal += it.amountInMain;
       else if (it.kind === 'saving') savingTotal += it.amountInMain;
@@ -337,16 +369,23 @@ export function calculateCashflowRange(
         bStash = proj.projected;
       } else {
         const pastPays = confirmedPayments.filter(p => p.date <= date);
-        const pastTrans = activeTransfers.filter(tr => tr.date <= date);
+        const pastTrans = activeTransfers.filter(tr => !tr.date || tr.date <= date);
         bStash = calcStashBalance(s, pastPays, pastTrans, plans);
       }
 
       // Track stashed amounts mapped to parent account (for stacked chart & account-level reserve tracking)
-      const parentAccId = s.accountId || accounts[0]?.id;
+      const isShared = Boolean(
+        s.isShared ||
+        (s.sharedWith && s.sharedWith.length > 0) ||
+        (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
+      );
+      const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
+      const parentAccId = hasValidAcc ? s.accountId : (!isShared ? accounts[0]?.id : undefined);
       if (parentAccId) {
         const parentAcc = accounts.find(a => a.id === parentAccId);
         if (parentAcc) {
-          const amtInParent = s.currency === parentAcc.currency ? bStash : convert(bStash, s.currency, parentAcc.currency);
+          const clampedStash = Math.max(0, bStash);
+          const amtInParent = s.currency === parentAcc.currency ? clampedStash : convert(clampedStash, s.currency, parentAcc.currency);
           stashAmountByAcc.set(parentAccId, (stashAmountByAcc.get(parentAccId) ?? 0) + amtInParent);
         }
       }
@@ -385,13 +424,20 @@ export function calculateCashflowRange(
           if (p.date <= date) b += getPaymentDelta(p, a);
         }
         for (const tr of activeTransfers) {
-          if (tr.date <= date) b += getTransferDelta(tr, a);
+          if (!tr.date || tr.date <= date) b += getTransferDelta(tr, a);
         }
       } else {
-        // Future date: today's live balance + all pending occurrences between tomorrow and this date
+        // Future date: today's live balance + all future payments, transfers, and pending occurrences up to this date
         b = liveBalancesToday.get(a.id) ?? a.startBalance;
+        for (const p of confirmedPayments) {
+          if (p.date > t && p.date <= date) b += getPaymentDelta(p, a);
+        }
+        for (const tr of activeTransfers) {
+          if (tr.date && tr.date > t && tr.date <= date) b += getTransferDelta(tr, a);
+        }
         for (const o of futureOccurrences) {
-          if (o.dueDate <= date) {
+          const effDate = o.date || o.dueDate;
+          if (effDate <= date) {
             b += getOccurrenceDelta(o, a);
           }
         }

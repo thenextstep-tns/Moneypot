@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
+import { convert } from '../fx';
 import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance, checkAccountFunds } from '../balances';
 import type { Occurrence, Payment, QuickTemplate } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
@@ -40,7 +41,7 @@ export function Today() {
   const isSharedItem = (o: Occurrence) => {
     const c = cat(o.categoryId);
     const s = stashes.find(x => x.id === o.stashId);
-    return Boolean((c?.sharedWith && c.sharedWith.length > 0) || (s?.sharedWith && s.sharedWith.length > 0) || s?.name?.toLowerCase().trim() === 'kinky fund');
+    return Boolean(o.isShared || (c?.sharedWith && c.sharedWith.length > 0) || s?.isShared || (s?.sharedWith && s.sharedWith.length > 0));
   };
 
   const pending = occ.filter(o => o.status === 'pending');
@@ -286,23 +287,11 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
   const [toAccountId, setToAccountId] = useState(o.toAccountId || accounts.find(a => a.id !== (o.accountId || accounts[0]?.id))?.id || (accounts[0]?.id ? `stash_${stashes[0]?.id}` : ''));
   const [toAmount, setToAmount] = useState(o.toAmount ?? o.amount);
   const [toCurrency, setToCurrency] = useState(o.toCurrency ?? o.currency);
+  const [userEditedToAmount, setUserEditedToAmount] = useState(false);
   const [categoryId, setCategoryId] = useState(o.categoryId);
   const [subcategory, setSubcategory] = useState(o.subcategory);
   const [note, setNote] = useState(o.note ?? '');
   const [date, setDate] = useState(mode === 'later' ? addDays(t, 1) : (o.date > t ? t : o.date));
-  const patch: Partial<Payment> = {
-    amount: +amount,
-    currency,
-    accountId: accountId || undefined,
-    toAccountId: o.kind === 'transfer' ? (toAccountId || undefined) : undefined,
-    toAmount: o.kind === 'transfer' ? (+toAmount || +amount) : undefined,
-    toCurrency: o.kind === 'transfer' ? (toCurrency || currency) : undefined,
-    stashId: accountId.startsWith('stash_') ? accountId.replace('stash_', '') : (o.stashId || undefined),
-    date,
-    categoryId: o.kind === 'transfer' ? '' : categoryId,
-    subcategory: o.kind === 'transfer' ? undefined : subcategory,
-    note: note.trim() || undefined,
-  };
   const currentCat = categories.find(c => c.id === categoryId);
 
   const isFuture = date > t;
@@ -356,6 +345,32 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
       acc: a,
     };
   }, [toAccountId, accounts, stashes]);
+
+  const effectiveToCurrency = toParty?.currency || toCurrency || currency;
+  const effectiveToAmount = o.kind === 'transfer'
+    ? (userEditedToAmount
+        ? (+toAmount || 0)
+        : (effectiveToCurrency !== currency
+            ? +convert(+amount || 0, currency, effectiveToCurrency).toFixed(2)
+            : (o.toAmount && o.toCurrency === effectiveToCurrency && +amount === o.amount ? o.toAmount : (+amount || 0))))
+    : (+amount || 0);
+
+  const amtInSelCur = selParty ? convert(+amount || 0, currency, selParty.currency) : (+amount || 0);
+  const amtInToCur = toParty ? convert(effectiveToAmount, effectiveToCurrency, toParty.currency) : effectiveToAmount;
+
+  const patch: Partial<Payment> = {
+    amount: +amount,
+    currency,
+    accountId: accountId || undefined,
+    toAccountId: o.kind === 'transfer' ? (toAccountId || undefined) : undefined,
+    toAmount: o.kind === 'transfer' ? (effectiveToAmount || +amount) : undefined,
+    toCurrency: o.kind === 'transfer' ? effectiveToCurrency : undefined,
+    stashId: accountId.startsWith('stash_') ? accountId.replace('stash_', '') : (o.stashId || undefined),
+    date,
+    categoryId: o.kind === 'transfer' ? '' : categoryId,
+    subcategory: o.kind === 'transfer' ? undefined : subcategory,
+    note: note.trim() || undefined,
+  };
 
   const selBals = useMemo(() => {
     if (!selParty) return null;
@@ -428,6 +443,22 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
         <Field label={mode === 'confirm' ? 'Final sum' : 'How much'}><input type="number" inputMode="decimal" value={amount} onChange={e => setAmount(+e.target.value)} /></Field>
         <Field label="Currency"><CurrencySelect value={currency} onChange={setCurrency} /></Field>
       </div>
+      {o.kind === 'transfer' && toParty && (toParty.currency !== currency || (selParty && selParty.currency !== toParty.currency)) && (
+        <div className="row">
+          <Field label={`Amount received in ${toParty.name} (${toParty.currency})`}>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={effectiveToAmount}
+              onChange={e => {
+                setUserEditedToAmount(true);
+                setToAmount(+e.target.value);
+                setToCurrency(toParty.currency);
+              }}
+            />
+          </Field>
+        </div>
+      )}
 
       {o.kind === 'transfer' ? (
         <>
@@ -482,8 +513,8 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                     <span style={{ color: 'var(--mute)' }}>
                       After this transfer:
                     </span>
-                    <b style={{ color: selBals.projected - +amount < 0 ? '#DC2626' : '#166534' }}>
-                      {money(selBals.projected - +amount, selParty.currency)}
+                    <b style={{ color: selBals.projected - amtInSelCur < 0 ? '#DC2626' : '#166534' }}>
+                      {money(selBals.projected - amtInSelCur, selParty.currency)}
                     </b>
                   </div>
                 )}
@@ -544,7 +575,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                       After receiving transfer:
                     </span>
                     <b style={{ color: '#166534' }}>
-                      {money(toBals.projected + +amount, toParty.currency)}
+                      {money(toBals.projected + amtInToCur, toParty.currency)}
                     </b>
                   </div>
                 )}
@@ -608,16 +639,16 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                       style={{
                         color:
                           (o.kind === 'income'
-                            ? selBals.projected + +amount
-                            : selBals.projected - +amount) < 0
+                            ? selBals.projected + amtInSelCur
+                            : selBals.projected - amtInSelCur) < 0
                             ? '#DC2626'
                             : '#166534',
                       }}
                     >
                       {money(
                         o.kind === 'income'
-                          ? selBals.projected + +amount
-                          : selBals.projected - +amount,
+                          ? selBals.projected + amtInSelCur
+                          : selBals.projected - amtInSelCur,
                         selParty.currency
                       )}
                     </b>
@@ -627,11 +658,11 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
             )}
           </Field>
 
-          {isFuture && selParty && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - +amount < 0) && (
+          {isFuture && selParty && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - amtInSelCur < 0) && (
             <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>⚠️</span>
               <span>
-                <strong>Low projected balance in {selParty.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selParty.currency)}, which is {money(+amount - selBals.projected, selParty.currency)} short.
+                <strong>Low projected balance in {selParty.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selParty.currency)}, which is {money(amtInSelCur - selBals.projected, selParty.currency)} short.
               </span>
             </div>
           )}

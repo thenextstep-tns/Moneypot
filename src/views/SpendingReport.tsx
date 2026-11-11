@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
-import { addDays, monthLabel, monthRange, money, shiftMonth, thisMonth, today } from '../schedule';
+import { addDays, isBalanceCorrectionPayment, monthLabel, monthRange, money, shiftMonth, thisMonth, today } from '../schedule';
 import { convert } from '../fx';
 import { Empty, Field, HelpButton } from '../ui';
 import { ScreenHelpModal } from './ScreenHelpModal';
@@ -206,6 +206,7 @@ export function SpendingReport() {
 
     for (const p of payments) {
       if (p.kind !== 'expense' || p.status !== 'confirmed') continue;
+      if (isBalanceCorrectionPayment(p)) continue;
       if (p.date < startDate || p.date > endDate) continue;
 
       const pot = p.categoryId ? catMap.get(p.categoryId) : undefined;

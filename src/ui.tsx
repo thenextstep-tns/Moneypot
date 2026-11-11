@@ -127,6 +127,7 @@ export function AccountForm({
       categoryId: defaultCat?.id ?? 'other',
       note: correctionNote.trim() || `Manual balance correction (adjusted from ${money(currentBal, acc.currency)} to ${money(targetBalNum, acc.currency)})`,
       status: 'confirmed',
+      isCorrection: true,
     };
     save('payments', corrPayment);
     setShowCorrection(false);
@@ -321,7 +322,7 @@ export function AccountCardsSelect({
   const instantStashes = useMemo(() => {
     if (!allowStashes || !stashes) return [];
     return stashes.filter(s => {
-      const isShared = Boolean((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund');
+      const isShared = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0));
       return !isShared && s.isInstantAccess !== false;
     });
   }, [allowStashes, stashes]);
@@ -351,7 +352,9 @@ export function AccountCardsSelect({
           const bal = balances?.get(a.id);
           const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
           const stashedAmt = (stashes || []).reduce((sum, s) => {
-            const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+            const isShared = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)));
+            const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
+            const parentAccId = hasValidAcc ? s.accountId : (!isShared && isFallbackPrimary ? a.id : undefined);
             if (parentAccId === a.id) {
               const sBal = Math.max(0, balances?.get(`stash_${s.id}`) ?? balances?.get(s.id) ?? 0);
               const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
@@ -470,7 +473,7 @@ export function AccountCardsSelect({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span className="acc-card-name">{s.name}</span>
                       <span style={{ fontSize: 10, fontWeight: 600, background: '#ECFDF5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>
-                        {(s.sharedWith?.length || s.name?.toLowerCase().trim() === 'kinky fund') ? 'Shared Stash' : 'Stash'}
+                        {(s.isShared || s.sharedWith?.length) ? 'Shared Stash' : 'Stash'}
                       </span>
                     </div>
                     <div className="acc-card-sub" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

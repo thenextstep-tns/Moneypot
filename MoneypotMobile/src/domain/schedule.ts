@@ -60,6 +60,8 @@ function dayInMonth(p: Plan, d: Date): boolean {
 
 /** Does plan `p` fall on date `s`? */
 export function matches(p: Plan, s: string): boolean {
+  if (!p.startDate || s < p.startDate) return false;
+  if (p.endDate && s > p.endDate) return false;
   const st = parse(p.startDate), d = parse(s), every = Math.max(1, p.every || 1);
   const months = (d.getFullYear() - st.getFullYear()) * 12 + d.getMonth() - st.getMonth();
   switch (p.freq) {
@@ -76,6 +78,7 @@ export function matches(p: Plan, s: string): boolean {
 }
 
 export function dueDates(p: Plan, from: string, to: string): string[] {
+  if (!p.startDate) return [];
   const start = from > p.startDate ? from : p.startDate;
   const end = p.endDate && p.endDate < to ? p.endDate : to;
   if (p.freq === 'once') return p.startDate >= from && p.startDate <= end ? [p.startDate] : [];
@@ -119,16 +122,35 @@ const ghost = (p: Payment): Plan => ({
   freq: 'once', every: 1, startDate: p.dueDate,
 });
 
+export function isBalanceCorrectionPayment(p: Payment): boolean {
+  return Boolean(
+    p.isCorrection ||
+    p.name === 'Balance correction' ||
+    p.name === 'Technical balance edit' ||
+    p.name?.includes('Balance correction') ||
+    p.id?.startsWith('adj_') ||
+    p.planId?.startsWith('adj_') ||
+    p.id?.startsWith('tech_start_') ||
+    p.planId === 'technical_adjustment'
+  );
+}
+
 /** Expand plans into concrete occurrences in [from, to], applying confirmations / postponements / cancellations */
-export function occurrences(plans: Plan[], payments: Payment[], from: string, to: string): Occurrence[] {
+export function occurrences(
+  plans: Plan[],
+  payments: Payment[],
+  from: string,
+  to: string,
+  byDueDateForScheduled = false
+): Occurrence[] {
   const pay = new Map(payments.map(p => [p.id, p]));
   const byId = new Map(plans.map(p => [p.id, p]));
   const used = new Set<string>();
-  const inRange = (d: string) => d >= from && d <= to;
+  const inRange = (d: string) => Boolean(d && d >= from && d <= to);
   const mk = (plan: Plan, due: string, p?: Payment): Occurrence => ({
     key: p?.id ?? `${plan.id}_${due}`,
-    plan, dueDate: due,
-    date: p?.date ?? due,
+    plan, dueDate: due || p?.date || '',
+    date: p?.date || due || '',
     amount: p?.amount ?? plan.amount,
     currency: p?.currency ?? plan.currency,
     accountId: p ? p.accountId : plan.accountId,
@@ -150,16 +172,31 @@ export function occurrences(plans: Plan[], payments: Payment[], from: string, to
     contributorName: p?.contributorName,
   });
   const out: Occurrence[] = [];
-  for (const plan of plans)
+  for (const plan of plans) {
     for (const due of dueDates(plan, from, to)) {
       const p = pay.get(`${plan.id}_${due}`);
       if (p) used.add(p.id);
       const o = mk(plan, due, p);
-      if (inRange(o.date)) out.push(o);
+      if (byDueDateForScheduled && p && p.status !== 'postponed') {
+        out.push(o);
+      } else if (inRange(o.date)) {
+        out.push(o);
+      }
     }
-  // moved-in postponements, payments whose plan schedule changed, or whose plan was deleted
-  for (const p of payments)
-    if (!used.has(p.id) && inRange(p.date)) out.push(mk(byId.get(p.planId) ?? ghost(p), p.dueDate, p));
+  }
+  // moved-in postponements, one-off payments, or payments whose plan schedule changed / was deleted
+  for (const p of payments) {
+    if (used.has(p.id)) continue;
+    if (isBalanceCorrectionPayment(p)) continue;
+    const plan = byId.get(p.planId);
+    if (byDueDateForScheduled && plan && p.status !== 'postponed' && p.dueDate && matches(plan, p.dueDate)) {
+      // Scheduled plan payment paid early/late belongs to the budget period of its dueDate
+      continue;
+    }
+    if (inRange(p.date)) {
+      out.push(mk(plan ?? ghost(p), p.dueDate, p));
+    }
+  }
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 

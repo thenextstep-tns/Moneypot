@@ -73,6 +73,7 @@ export function BalanceCorrectionModal({
       accountId: isStash ? `stash_${target.item.id}` : target.item.id,
       stashId: isStash ? target.item.id : undefined,
       note: `Adjusted balance from ${money(currentBal, targetCur)} to ${money(newBal, targetCur)}`,
+      isCorrection: true,
     });
 
     onClose();

@@ -78,8 +78,7 @@ export const uid = () => crypto.randomUUID().slice(0, 12);
 const LS = 'pots-demo';
 
 export function normalizeStash(st: Stash, currentUserId?: string | null): Stash {
-  const isKinkyFund = st.name?.toLowerCase().trim() === 'kinky fund';
-  const isShared = isKinkyFund || Boolean(
+  const isShared = Boolean(
     st.isShared ||
     (st.sharedWith && st.sharedWith.length > 0) ||
     (st.invitedEmails && st.invitedEmails.length > 0) ||
@@ -319,7 +318,15 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
           }
         }
         for (const st of incomingMap.values()) {
-          nextTransfers.push(st);
+          const isRelevant = d.stashes.some(s =>
+            st.fromAccountId === `stash_${s.id}` ||
+            st.fromAccountId === s.id ||
+            st.toAccountId === `stash_${s.id}` ||
+            st.toAccountId === s.id
+          );
+          if (isRelevant) {
+            nextTransfers.push(st);
+          }
         }
         return { ...d, transfers: nextTransfers };
       });
@@ -341,7 +348,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
           : t.toAccountId?.startsWith('stash_') ? t.toAccountId.replace('stash_', '')
           : undefined;
         const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
-        if (st && ((st.sharedWith && st.sharedWith.length > 0) || (st.ownerId && st.ownerId !== userId))) {
+        if (st && (st.isShared || (st.sharedWith && st.sharedWith.length > 0) || (st.ownerId && st.ownerId !== userId))) {
           const sharedT = { ...t, isShared: true };
           void setDoc(doc(db, 'shared_transfers', t.id), sharedT);
           if (st.ownerId && st.ownerId !== userId) {
@@ -396,7 +403,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
           const stashId = o.stashId || (o.accountId?.startsWith('stash_') ? o.accountId.replace('stash_', '') : undefined);
           const st = data.stashes.find(s => s.id === stashId);
           const cat = data.categories.find(k => k.id === o.categoryId);
-          if (st?.sharedWith?.length || cat?.sharedWith?.length) {
+          if (st?.isShared || st?.sharedWith?.length || cat?.sharedWith?.length) {
             o.isShared = true;
           }
         }
@@ -405,7 +412,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
             : o.toAccountId?.startsWith('stash_') ? o.toAccountId.replace('stash_', '')
             : undefined;
           const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
-          if (st?.sharedWith?.length || (st?.ownerId && st.ownerId !== userId)) {
+          if (st?.isShared || st?.sharedWith?.length || (st?.ownerId && st.ownerId !== userId)) {
             o.isShared = true;
           }
         }
@@ -417,7 +424,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
           const stashId = o.stashId || (o.accountId?.startsWith('stash_') ? o.accountId.replace('stash_', '') : undefined);
           const st = data.stashes.find(s => s.id === stashId);
           const cat = data.categories.find(k => k.id === o.categoryId);
-          const isSharedStash = st && (st.sharedWith?.length || (st.ownerId && st.ownerId !== userId));
+          const isSharedStash = st && (st.isShared || st.sharedWith?.length || (st.ownerId && st.ownerId !== userId));
           const isSharedCat = cat && (cat.sharedWith?.length || (cat.ownerId && cat.ownerId !== userId));
           if (isSharedStash || isSharedCat) {
             o.isShared = true;
@@ -436,7 +443,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
             : o.toAccountId?.startsWith('stash_') ? o.toAccountId.replace('stash_', '')
             : undefined;
           const st = stashId ? data.stashes.find(s => s.id === stashId) : undefined;
-          const isSharedStash = Boolean(st && ((st.sharedWith && st.sharedWith.length > 0) || (st.ownerId && st.ownerId !== userId)));
+          const isSharedStash = Boolean(st && (st.isShared || (st.sharedWith && st.sharedWith.length > 0) || (st.ownerId && st.ownerId !== userId)));
           if (isSharedStash) {
             o.isShared = true;
             void setDoc(doc(db!, 'shared_transfers', o.id), o);
@@ -447,7 +454,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
         }
         // If updating a shared stash or category, sync to shared collections and master owner
         if (c === 'stashes') {
-          const isShared = (o.sharedWith && o.sharedWith.length > 0) || (o.ownerId && o.ownerId !== userId);
+          const isShared = o.isShared || (o.sharedWith && o.sharedWith.length > 0) || (o.ownerId && o.ownerId !== userId);
           if (isShared) {
             // Strip out accountId from shared_stashes so members never overwrite each other's accounts
             const { accountId, ...sharedStashData } = o;

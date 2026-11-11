@@ -424,7 +424,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         }
         for (const st of incomingMap.values()) {
-          nextTransfers.push(st);
+          const isRelevant = prev.stashes.some(
+            s =>
+              st.fromAccountId === `stash_${s.id}` ||
+              st.fromAccountId === s.id ||
+              st.toAccountId === `stash_${s.id}` ||
+              st.toAccountId === s.id
+          );
+          if (isRelevant) {
+            nextTransfers.push(st);
+          }
         }
         return { ...prev, transfers: nextTransfers };
       });

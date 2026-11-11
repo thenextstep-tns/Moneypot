@@ -44,7 +44,9 @@ export function QuickTransferModal({
       const bal = currentBalMap.get(a.id) ?? 0;
       const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
       const stashedAmt = (stashes || []).reduce((sum, s) => {
-        const parentAccId = s.accountId || (isFallbackPrimary ? a.id : undefined);
+        const isShared = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)));
+        const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
+        const parentAccId = hasValidAcc ? s.accountId : (!isShared && isFallbackPrimary ? a.id : undefined);
         if (parentAccId === a.id) {
           const sBal = Math.max(0, currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0);
           const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;

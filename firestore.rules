@@ -1,27 +1,47 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
-    function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
 
     // users/{uid} holds settings; everything else lives in its subcollections
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
-      // accounts | categories | plans | stashes | payments
+      // accounts | categories | plans | stashes | payments | transfers | invites | templates
       match /{coll}/{id} {
-        allow read, delete: if isOwner(uid);
-        // every document must be stamped with its owner — no cross-user data, safe for collectionGroup queries
-        allow create, update: if isOwner(uid)
+        allow read, delete: if isOwner(uid) || (
+          isSignedIn() && coll in ['categories', 'stashes', 'payments', 'transfers', 'invites']
+        );
+        allow create, update: if isSignedIn()
           && coll in ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites', 'templates']
-          && request.resource.data.ownerId == uid
-          && request.resource.data.id == id;
-
+          && (
+            isOwner(uid)
+            || coll in ['categories', 'stashes', 'payments', 'transfers', 'invites']
+          );
       }
     }
 
-    // collectionGroup queries (e.g. admin analytics) can only ever return the caller's own docs
+    // Shared collaboration collections for invites, shared stashes, shared payments, and shared transfers
+    match /invites/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /shared_stashes/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /shared_payments/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /shared_transfers/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    // collectionGroup queries (invites lookup and owner docs)
+    match /{path=**}/invites/{id} {
+      allow read, write: if isSignedIn();
+    }
     match /{path=**}/{coll}/{id} {
-      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
     }
   }
 }

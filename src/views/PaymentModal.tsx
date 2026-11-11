@@ -173,6 +173,8 @@ export function OneOffPaymentModal({
     return null;
   }, [selParty, date, payments, transfers, plans, stashes]);
 
+  const amtInSelCur = selParty ? convert(Number(amount) || 0, currency, selParty.currency) : (Number(amount) || 0);
+
   // Transfer helpers
   const getParty = (id: string) => {
     if (id.startsWith('stash_')) {
@@ -250,7 +252,7 @@ export function OneOffPaymentModal({
     const numAmount = Number(amount);
     const targetStashId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : undefined;
     const targetStash = targetStashId ? stashes.find(s => s.id === targetStashId) : undefined;
-    const isSharedStash = Boolean((targetStash?.sharedWith && targetStash.sharedWith.length > 0) || targetStash?.name?.toLowerCase().trim() === 'kinky fund');
+    const isSharedStash = Boolean(targetStash?.isShared || (targetStash?.sharedWith && targetStash.sharedWith.length > 0));
     const isShared = isSharedStash || Boolean(selCat?.sharedWith && selCat.sharedWith.length > 0);
 
     if (isFuture) {
@@ -319,7 +321,7 @@ export function OneOffPaymentModal({
     const numAmount = Number(amount);
     const targetStashId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : undefined;
     const targetStash = targetStashId ? stashes.find(s => s.id === targetStashId) : undefined;
-    const isSharedStash = Boolean((targetStash?.sharedWith && targetStash.sharedWith.length > 0) || targetStash?.name?.toLowerCase().trim() === 'kinky fund');
+    const isSharedStash = Boolean(targetStash?.isShared || (targetStash?.sharedWith && targetStash.sharedWith.length > 0));
     const isShared = isSharedStash || Boolean(selCat?.sharedWith && selCat.sharedWith.length > 0);
 
     if (isFuture) {
@@ -598,7 +600,7 @@ export function OneOffPaymentModal({
           {/* If current pot is linked to a shared stash, show quick helper */}
           {(() => {
             const sharedStashForCat = stashes.find(s =>
-              ((s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund') &&
+              (s.isShared || (s.sharedWith && s.sharedWith.length > 0)) &&
               (s.categoryId === categoryId || s.name.toLowerCase() === selCat?.name.toLowerCase())
             );
             if (!sharedStashForCat) return null;
@@ -666,12 +668,12 @@ export function OneOffPaymentModal({
                     <b
                       style={{
                         color:
-                          selBals.projected - Number(amount) < 0
+                          selBals.projected - amtInSelCur < 0
                             ? '#DC2626'
                             : '#166534',
                       }}
                     >
-                      {money(selBals.projected - Number(amount), selParty.currency)}
+                      {money(selBals.projected - amtInSelCur, selParty.currency)}
                     </b>
                   </div>
                 )}
@@ -709,13 +711,13 @@ export function OneOffPaymentModal({
             </div>
           )}
 
-          {isFuture && selParty && Number(amount) > 0 && selBals && selBals.projected < Number(amount) && (
+          {isFuture && selParty && Number(amount) > 0 && selBals && selBals.projected < amtInSelCur && (
             <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13 }}>
-              ⚠️ <b>Low projected balance:</b> On {dayLabel(date)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(Number(amount) - selBals.projected, selParty.currency)} short.
+              ⚠️ <b>Low projected balance:</b> On {dayLabel(date)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(amtInSelCur - selBals.projected, selParty.currency)} short.
             </div>
           )}
 
-          {isFuture && selParty && Number(amount) > 0 && selBals && selBals.current < Number(amount) && selBals.projected >= Number(amount) && (
+          {isFuture && selParty && Number(amount) > 0 && selBals && selBals.current < amtInSelCur && selBals.projected >= amtInSelCur && (
             <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13 }}>
               ℹ️ Current balance is {money(selBals.current, selParty.currency)}, but projected to reach {money(selBals.projected, selParty.currency)} by {dayLabel(date)} (sufficient funds expected).
             </div>
@@ -943,7 +945,7 @@ export function OneOffPaymentModal({
                   >
                     <span style={{ color: 'var(--mute)' }}>After this income:</span>
                     <b style={{ color: '#166534' }}>
-                      {money((isFuture ? selBals.projected : selBals.current) + Number(amount), selParty.currency)}
+                      {money((isFuture ? selBals.projected : selBals.current) + amtInSelCur, selParty.currency)}
                     </b>
                   </div>
                 )}

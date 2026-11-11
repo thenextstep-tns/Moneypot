@@ -132,22 +132,44 @@ export function StashesScreen() {
 
             // Contributor Breakdown
             const contributors = new Map<string, number>();
+            const stashKey = `stash_${s.id}`;
             const ownerLabel = s.ownerEmail
               ? (s.ownerEmail === user?.email ? 'You (Creator)' : s.ownerEmail.split('@')[0])
               : 'Initial balance';
             if (s.startAmount > 0 && !payments.some(p => p.id === `init_stash_${s.id}` && p.status === 'confirmed')) {
               contributors.set(ownerLabel, (contributors.get(ownerLabel) || 0) + s.startAmount);
             }
+            const resolveLabel = (item: { contributorName?: string; contributorEmail?: string; ownerId?: string }) => {
+              if (item.contributorName) return item.contributorName;
+              if (item.contributorEmail) {
+                return item.contributorEmail === user?.email ? 'You' : item.contributorEmail.split('@')[0];
+              }
+              return item.ownerId === user?.uid || !item.ownerId ? 'You' : 'Collaborator';
+            };
             for (const p of payments) {
-              if (p.status !== 'confirmed') continue;
-              const isThisStash = p.stashId === s.id || p.accountId === `stash_${s.id}`;
+              if (p.status !== 'confirmed' || p.kind === 'transfer') continue;
+              const isThisStash = (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id || p.accountId === stashKey || p.accountId === s.id;
               if (!isThisStash) continue;
-              const cName = p.contributorName || (p.contributorEmail ? (p.contributorEmail === user?.email ? 'You' : p.contributorEmail.split('@')[0]) : 'You');
+              const cName = resolveLabel(p);
               const cur = contributors.get(cName) || 0;
+              const amtInStashCur = convert(p.amount, p.currency || s.currency, s.currency);
               if (p.kind === 'saving' || p.kind === 'income') {
-                contributors.set(cName, cur + p.amount);
+                contributors.set(cName, cur + amtInStashCur);
               } else if (p.kind === 'expense') {
-                contributors.set(cName, cur - p.amount);
+                contributors.set(cName, cur - amtInStashCur);
+              }
+            }
+            for (const tr of transfers) {
+              if (tr.status === 'cancelled') continue;
+              if (tr.toAccountId === stashKey || tr.toAccountId === s.id) {
+                const cName = resolveLabel(tr);
+                const amtInStashCur = convert(tr.toAmount, tr.toCurrency || s.currency, s.currency);
+                contributors.set(cName, (contributors.get(cName) || 0) + amtInStashCur);
+              }
+              if (tr.fromAccountId === stashKey || tr.fromAccountId === s.id) {
+                const cName = resolveLabel(tr);
+                const amtInStashCur = convert(tr.fromAmount, tr.fromCurrency || s.currency, s.currency);
+                contributors.set(cName, (contributors.get(cName) || 0) - amtInStashCur);
               }
             }
 

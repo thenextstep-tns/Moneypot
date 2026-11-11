@@ -38,7 +38,7 @@ export function PotsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   const [monthStart, monthEnd] = monthRange(selectedYm);
-  const monthOccurrences = occurrences(plans, payments, monthStart, monthEnd);
+  const monthOccurrences = occurrences(plans, payments, monthStart, monthEnd, true).filter(o => o.status !== 'cancelled');
 
   // 1. Starting liquid balance for this month
   const startingProjection = calcMonthStartingBalances(

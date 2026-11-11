@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { today, addDays, money, toPayment } from '../domain/schedule';
+import { convert } from '../domain/fx';
 import { checkAccountFunds, calcAllAccountBalances } from '../domain/balances';
 import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -88,6 +89,32 @@ export function PaymentActionModal({
     });
 
     await save('payments', paymentRecord);
+    if (occurrence.kind === 'transfer') {
+      const fromPartyId = selectedAccountId || occurrence.accountId || '';
+      const toPartyId = occurrence.toAccountId || '';
+      const fromCur = occurrence.currency;
+      const toAcc = accounts.find(a => a.id === toPartyId);
+      const toStash = toPartyId.startsWith('stash_') ? stashes.find(s => s.id === toPartyId.replace('stash_', '')) : stashes.find(s => s.id === toPartyId);
+      const toCur = occurrence.toCurrency || toAcc?.currency || toStash?.currency || fromCur;
+      const toAmt = (amt === occurrence.amount && occurrence.toAmount)
+        ? occurrence.toAmount
+        : (toCur !== fromCur ? convert(amt, fromCur, toCur) : amt);
+      await save('transfers', {
+        id: `tr_${occurrence.key}`,
+        date: dateStr,
+        fromAccountId: fromPartyId,
+        toAccountId: toPartyId,
+        fromAmount: amt,
+        fromCurrency: fromCur,
+        toAmount: toAmt,
+        toCurrency: toCur,
+        note: note.trim() || occurrence.note || undefined,
+        status: 'confirmed',
+        createdAt: Date.now(),
+        planId: occurrence.plan.id,
+        dueDate: occurrence.dueDate,
+      });
+    }
     onClose();
   };
 

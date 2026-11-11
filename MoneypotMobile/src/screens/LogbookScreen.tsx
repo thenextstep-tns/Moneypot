@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useData } from '../context/DataContext';
-import { money } from '../domain/schedule';
+import { isBalanceCorrectionPayment, money } from '../domain/schedule';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
@@ -46,12 +46,24 @@ export function LogbookScreen() {
   // Build combined unified audit list of confirmed items
   const logItems: LogItem[] = [];
 
+  const resolvePartyName = (id?: string) => {
+    if (!id) return 'Account';
+    const acc = accounts.find(a => a.id === id);
+    if (acc) return acc.name;
+    const sId = id.startsWith('stash_') ? id.replace('stash_', '') : id;
+    const st = stashes.find(s => s.id === sId);
+    if (st) return `${st.emoji} ${st.name}`;
+    return 'Account';
+  };
+
   for (const p of payments) {
     if (p.status !== 'confirmed') continue;
+    // Skip confirmed scheduled transfers here since they are also stored in `transfers`
+    if (p.kind === 'transfer' && transfers.some(t => t.id === `tr_${p.id}`)) continue;
     const cat = categories.find(c => c.id === p.categoryId);
     const acc = accounts.find(a => a.id === p.accountId);
     const stash = stashes.find(s => s.id === p.stashId || `stash_${s.id}` === p.accountId);
-    const isCorrection = p.name?.includes('Balance correction') || p.id.startsWith('adj_');
+    const isCorrection = isBalanceCorrectionPayment(p);
 
     logItems.push({
       id: p.id,
@@ -75,19 +87,21 @@ export function LogbookScreen() {
 
   for (const tr of transfers) {
     if (tr.status === 'cancelled') continue;
-    const fromAcc = accounts.find(a => a.id === tr.fromAccountId);
-    const toAcc = accounts.find(a => a.id === tr.toAccountId);
+    const fromName = resolvePartyName(tr.fromAccountId);
+    const toName = resolvePartyName(tr.toAccountId);
 
     logItems.push({
       id: tr.id,
       type: 'transfer',
       date: tr.date,
-      name: `Transfer (${fromAcc?.name || 'Account'} → ${toAcc?.name || 'Account'})`,
+      name: `Transfer (${fromName} → ${toName})`,
       amount: tr.fromAmount,
       currency: tr.fromCurrency,
       kind: 'transfer',
-      accountName: `${fromAcc?.name} → ${toAcc?.name}`,
+      accountName: `${fromName} → ${toName}`,
       emoji: '⇄',
+      isShared: tr.isShared,
+      contributorName: tr.contributorName,
       note: tr.note,
       raw: tr,
     });
@@ -109,13 +123,19 @@ export function LogbookScreen() {
     }
 
     if (selectedAccountFilter !== 'all') {
-      const p = item.raw as Payment;
-      if (item.type === 'payment' && p.accountId !== selectedAccountFilter) return false;
+      if (item.type === 'payment') {
+        const p = item.raw as Payment;
+        if (p.accountId !== selectedAccountFilter) return false;
+      } else {
+        const tr = item.raw as Transfer;
+        if (tr.fromAccountId !== selectedAccountFilter && tr.toAccountId !== selectedAccountFilter) return false;
+      }
     }
 
     if (selectedPotFilter !== 'all') {
+      if (item.type !== 'payment') return false;
       const p = item.raw as Payment;
-      if (item.type === 'payment' && p.categoryId !== selectedPotFilter) return false;
+      if (p.categoryId !== selectedPotFilter) return false;
     }
 
     return true;
@@ -134,8 +154,14 @@ export function LogbookScreen() {
             triggerHaptic('warning');
             if (item.type === 'payment') {
               await remove('payments', item.id);
+              if ((item.raw as Payment).kind === 'transfer') {
+                await remove('transfers', `tr_${item.id}`);
+              }
             } else {
               await remove('transfers', item.id);
+              if (item.id.startsWith('tr_')) {
+                await remove('payments', item.id.slice(3));
+              }
             }
           },
         },

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { occurrences, today, addDays, money, toPayment } from '../domain/schedule';
+import { convert } from '../domain/fx';
 import { checkAccountFunds, calcAllAccountBalances } from '../domain/balances';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -52,17 +53,18 @@ export function TodayScreen() {
   const allOccurrences = occurrences(plans, payments, addDays(t, -30), addDays(t, 7));
   const pendingOccurrences = allOccurrences.filter(o => o.status === 'pending');
 
-  const overdue = pendingOccurrences.filter(o => o.dueDate < t);
-  const dueToday = pendingOccurrences.filter(o => o.dueDate === t);
-  const upcomingThisWeek = pendingOccurrences.filter(o => o.dueDate > t);
+  const overdue = pendingOccurrences.filter(o => o.date < t);
+  const dueToday = pendingOccurrences.filter(o => o.date === t);
+  const upcomingThisWeek = pendingOccurrences.filter(o => o.date > t);
 
   const currentBalMap = calcAllAccountBalances(accounts, payments, transfers, plans, stashes);
 
   // Sync state with Android Home Screen AppWidget
   useEffect(() => {
+    const mainCur = settings.currency || 'EUR';
     const dueCount = overdue.length + dueToday.length;
-    const dueSum = [...overdue, ...dueToday].reduce((acc, o) => acc + o.amount, 0);
-    const dueSumText = dueSum > 0 ? money(dueSum, settings.currency || 'EUR') : '';
+    const dueSum = [...overdue, ...dueToday].reduce((acc, o) => acc + convert(o.amount, o.currency, mainCur), 0);
+    const dueSumText = dueSum > 0 ? money(dueSum, mainCur) : '';
 
     if (Platform.OS === 'android' && NativeModules.MoneypotWidget) {
       try {
@@ -148,8 +150,33 @@ export function TodayScreen() {
   const handleDirectPaid = async (o: Occurrence) => {
     triggerHaptic('success');
     const isPayEarly = o.dueDate > t || o.date > t;
+    const effDate = isPayEarly ? t : o.date;
     const pRecord = toPayment(o, 'confirmed', isPayEarly ? { date: t } : {});
     await save('payments', pRecord);
+    if (o.kind === 'transfer') {
+      const fromPartyId = o.accountId || '';
+      const toPartyId = o.toAccountId || '';
+      const fromCur = o.currency;
+      const toAcc = accounts.find(a => a.id === toPartyId);
+      const toStash = toPartyId.startsWith('stash_') ? stashes.find(s => s.id === toPartyId.replace('stash_', '')) : stashes.find(s => s.id === toPartyId);
+      const toCur = o.toCurrency || toAcc?.currency || toStash?.currency || fromCur;
+      const toAmt = o.toAmount ?? (toCur !== fromCur ? convert(o.amount, fromCur, toCur) : o.amount);
+      await save('transfers', {
+        id: `tr_${o.key}`,
+        date: effDate,
+        fromAccountId: fromPartyId,
+        toAccountId: toPartyId,
+        fromAmount: o.amount,
+        fromCurrency: fromCur,
+        toAmount: toAmt,
+        toCurrency: toCur,
+        note: o.note || undefined,
+        status: 'confirmed',
+        createdAt: Date.now(),
+        planId: o.plan.id,
+        dueDate: o.dueDate,
+      });
+    }
   };
 
   const renderOccurrenceCard = (o: Occurrence, isOverdue: boolean, isUpcoming: boolean = false) => {

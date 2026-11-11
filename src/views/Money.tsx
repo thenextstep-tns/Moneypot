@@ -47,8 +47,13 @@ export function Stashes() {
   const saved = (s: Stash) => calcStashBalance(s, payments, transfers, plans);
 
   const getStashContributors = (s: Stash) => {
+    const stashKey = `stash_${s.id}`;
     const pays = payments.filter(
-      p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id
+      p => p.status === 'confirmed' && p.kind !== 'transfer' && (
+        (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id ||
+        p.accountId === stashKey ||
+        p.accountId === s.id
+      )
     );
     const byUser = new Map<string, number>();
 
@@ -60,16 +65,33 @@ export function Stashes() {
       byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + s.startAmount);
     }
 
+    const resolveLabel = (item: { contributorName?: string; contributorEmail?: string; ownerId?: string }) => {
+      if (item.contributorName) return item.contributorName;
+      if (item.contributorEmail) {
+        return item.contributorEmail === user?.email ? 'You' : item.contributorEmail.split('@')[0];
+      }
+      return item.ownerId === user?.uid || !item.ownerId ? 'You' : 'Collaborator';
+    };
+
     for (const p of pays) {
-      let label = p.contributorName;
-      if (!label && p.contributorEmail) {
-        label = p.contributorEmail === user?.email ? 'You' : p.contributorEmail.split('@')[0];
-      }
-      if (!label) {
-        label = p.ownerId === user?.uid ? 'You' : 'Collaborator';
-      }
-      const delta = p.kind === 'expense' ? -p.amount : p.amount;
+      const label = resolveLabel(p);
+      const amtInStashCur = convert(p.amount, p.currency || s.currency, s.currency);
+      const delta = p.kind === 'expense' ? -amtInStashCur : amtInStashCur;
       byUser.set(label, (byUser.get(label) ?? 0) + delta);
+    }
+
+    for (const t of transfers) {
+      if (t.status === 'cancelled') continue;
+      if (t.toAccountId === stashKey || t.toAccountId === s.id) {
+        const label = resolveLabel(t);
+        const amtInStashCur = convert(t.toAmount, t.toCurrency || s.currency, s.currency);
+        byUser.set(label, (byUser.get(label) ?? 0) + amtInStashCur);
+      }
+      if (t.fromAccountId === stashKey || t.fromAccountId === s.id) {
+        const label = resolveLabel(t);
+        const amtInStashCur = convert(t.fromAmount, t.fromCurrency || s.currency, s.currency);
+        byUser.set(label, (byUser.get(label) ?? 0) - amtInStashCur);
+      }
     }
 
     return Array.from(byUser.entries())
@@ -106,7 +128,7 @@ export function Stashes() {
         {stashes.map((s, index) => {
           const v = saved(s);
           const contribs = getStashContributors(s);
-          const isSharedStash = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || s.name?.toLowerCase().trim() === 'kinky fund' || (s.ownerId && user?.uid && s.ownerId !== user.uid));
+          const isSharedStash = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && user?.uid && s.ownerId !== user.uid));
           const isInstant = s.isInstantAccess !== false && !isSharedStash;
           return (
             <div
@@ -241,7 +263,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
   const [transferring, setTransferring] = useState(false);
   const [topUp, setTopUp] = useState(false);
 
-  const isSharedStash = Boolean(stash?.isShared || (stash?.sharedWith && stash.sharedWith.length > 0) || stash?.name?.toLowerCase().trim() === 'kinky fund' || (stash?.ownerId && user?.uid && stash.ownerId !== user.uid));
+  const isSharedStash = Boolean(stash?.isShared || (stash?.sharedWith && stash.sharedWith.length > 0) || (stash?.ownerId && user?.uid && stash.ownerId !== user.uid));
   const initialInstant = stash
     ? (stash.isInstantAccess !== false && !isSharedStash)
     : true;
@@ -293,6 +315,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
       subcategory: stash.name,
       note: correctionNote.trim() || `Manual stash balance correction (adjusted from ${money(currentBal, stash.currency)} to ${money(targetBalNum, stash.currency)})`,
       status: 'confirmed',
+      isCorrection: true,
       contributorEmail: user?.email || undefined,
       contributorName: user?.displayName || (user?.email ? user.email.split('@')[0] : 'You'),
     };
@@ -304,8 +327,13 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
   const contribs = useMemo(() => {
     if (!stash) return [];
+    const stashKey = `stash_${stash.id}`;
     const pays = payments.filter(
-      p => p.status === 'confirmed' && (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === stash.id
+      p => p.status === 'confirmed' && p.kind !== 'transfer' && (
+        (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === stash.id ||
+        p.accountId === stashKey ||
+        p.accountId === stash.id
+      )
     );
     const byUser = new Map<string, number>();
     const ownerLabel = stash.ownerEmail
@@ -315,21 +343,40 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
     if (stash.startAmount > 0 && !payments.some(p => p.id === `init_stash_${stash.id}` && p.status === 'confirmed')) {
       byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + stash.startAmount);
     }
+
+    const resolveLabel = (item: { contributorName?: string; contributorEmail?: string; ownerId?: string }) => {
+      if (item.contributorName) return item.contributorName;
+      if (item.contributorEmail) {
+        return item.contributorEmail === user?.email ? 'You' : item.contributorEmail.split('@')[0];
+      }
+      return item.ownerId === user?.uid || !item.ownerId ? 'You' : 'Collaborator';
+    };
+
     for (const p of pays) {
-      let label = p.contributorName;
-      if (!label && p.contributorEmail) {
-        label = p.contributorEmail === user?.email ? 'You' : p.contributorEmail.split('@')[0];
-      }
-      if (!label) {
-        label = p.ownerId === user?.uid ? 'You' : 'Collaborator';
-      }
-      const delta = p.kind === 'expense' ? -p.amount : p.amount;
+      const label = resolveLabel(p);
+      const amtInStashCur = convert(p.amount, p.currency || stash.currency, stash.currency);
+      const delta = p.kind === 'expense' ? -amtInStashCur : amtInStashCur;
       byUser.set(label, (byUser.get(label) ?? 0) + delta);
     }
+
+    for (const t of transfers) {
+      if (t.status === 'cancelled') continue;
+      if (t.toAccountId === stashKey || t.toAccountId === stash.id) {
+        const label = resolveLabel(t);
+        const amtInStashCur = convert(t.toAmount, t.toCurrency || stash.currency, stash.currency);
+        byUser.set(label, (byUser.get(label) ?? 0) + amtInStashCur);
+      }
+      if (t.fromAccountId === stashKey || t.fromAccountId === stash.id) {
+        const label = resolveLabel(t);
+        const amtInStashCur = convert(t.fromAmount, t.fromCurrency || stash.currency, stash.currency);
+        byUser.set(label, (byUser.get(label) ?? 0) - amtInStashCur);
+      }
+    }
+
     return Array.from(byUser.entries())
       .filter(([_, amount]) => amount > 0)
       .map(([name, amount]) => ({ name, amount }));
-  }, [stash, payments, plans, user]);
+  }, [stash, payments, transfers, plans, user]);
 
   const doSaveStash = (addTechnicalEdit = false, targetAccParam?: Account, initialAmountParam?: number) => {
     const finalIsInstant = !isSharedStash && isInstant;
@@ -340,12 +387,13 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
     const targetAcc = targetAccParam || accounts.find(a => a.id === targetAccId);
 
     if (addTechnicalEdit && targetAcc && initialAmount > 0) {
+      const techAmt = convert(initialAmount, s.currency, targetAcc.currency);
       const techPayment: Payment = {
         id: `adj_acc_${targetAcc.id}_${Date.now()}`,
         planId: `adj_acc_${targetAcc.id}`,
         dueDate: today(),
         date: today(),
-        amount: initialAmount,
+        amount: techAmt,
         currency: targetAcc.currency,
         accountId: targetAcc.id,
         name: 'Technical balance edit',
@@ -424,6 +472,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
   if (fundingPrompt) {
     const { targetAcc, initialAmount } = fundingPrompt;
+    const techAmtInAccCur = convert(initialAmount, s.currency, targetAcc.currency);
     return (
       <Modal title="Is this money already set apart?" onClose={() => setFundingPrompt(null)}>
         <div style={{ padding: '8px 0 16px', lineHeight: 1.5, fontSize: 14 }}>
@@ -431,7 +480,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
             You are setting a starter balance of <b>{money(initialAmount, s.currency)}</b> for this stash.
           </p>
           <p style={{ margin: 0, color: 'var(--ink)' }}>
-            Is this money you had already set aside separately (so we top up <b>{targetAcc.name}</b> by <b>{money(initialAmount, s.currency)}</b>), or should it be deducted from your existing <b>{targetAcc.name}</b> balance?
+            Is this money you had already set aside separately (so we top up <b>{targetAcc.name}</b> by <b>{money(techAmtInAccCur, targetAcc.currency)}</b>), or should it be deducted from your existing <b>{targetAcc.name}</b> balance?
           </p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -443,7 +492,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
               doSaveStash(true, targetAcc, initialAmount);
             }}
           >
-            ✅ Yes, it's set apart (+{money(initialAmount, s.currency)} to {targetAcc.name})
+            ✅ Yes, it's set apart (+{money(techAmtInAccCur, targetAcc.currency)} to {targetAcc.name})
           </button>
           <button
             type="button"
@@ -1286,7 +1335,13 @@ export function TransferModal({
       {transfer && (
         <button
           className="btn ghost wide danger"
-          onClick={() => { remove('transfers', transfer.id); onClose(); }}
+          onClick={() => {
+            remove('transfers', transfer.id);
+            if (transfer.id.startsWith('tr_')) {
+              remove('payments', transfer.id.slice(3));
+            }
+            onClose();
+          }}
         >
           Delete record
         </button>

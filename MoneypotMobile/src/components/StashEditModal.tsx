@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
 import { calcAccountAvailableBalance } from '../domain/balances';
+import { convert } from '../domain/fx';
 import { today, money } from '../domain/schedule';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -73,13 +74,14 @@ export function StashEditModal({
 
     if (addTechnicalEdit && targetAcc && starterAmt > 0) {
       const techPaymentId = `adj_acc_${targetAcc.id}_${Date.now()}`;
+      const techAmt = convert(starterAmt, currency, targetAcc.currency);
       await save('payments', {
         id: techPaymentId,
         planId: techPaymentId,
         dueDate: today(),
         date: today(),
         name: 'Technical balance edit',
-        amount: starterAmt,
+        amount: techAmt,
         currency: targetAcc.currency,
         accountId: targetAcc.id,
         kind: 'income',
@@ -140,9 +142,10 @@ export function StashEditModal({
     const targetAcc = accounts.find(a => a.id === targetAccId);
 
     if (!stashToEdit && starterAmt > 0 && targetAcc) {
+      const techAmtInAccCur = convert(starterAmt, currency, targetAcc.currency);
       Alert.alert(
         'Is this money already set apart?',
-        `You're setting a starter balance of ${money(starterAmt, currency)} for this stash.\n\nIs this money you had already set aside separately (so we top up ${targetAcc.name} by ${money(starterAmt, currency)}), or should it be deducted from your existing ${targetAcc.name} balance?`,
+        `You're setting a starter balance of ${money(starterAmt, currency)} for this stash.\n\nIs this money you had already set aside separately (so we top up ${targetAcc.name} by ${money(techAmtInAccCur, targetAcc.currency)}), or should it be deducted from your existing ${targetAcc.name} balance?`,
         [
           {
             text: 'Cancel',

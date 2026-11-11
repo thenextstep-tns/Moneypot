@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
-import { dayLabel, money } from '../schedule';
+import { dayLabel, isBalanceCorrectionPayment, money } from '../schedule';
 import type { Payment, Transfer } from '../types';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
 
@@ -170,9 +170,18 @@ export function LogBook() {
     if (item.payment) {
       const nextStatus = item.payment.status === 'cancelled' ? 'confirmed' : 'cancelled';
       save('payments', { ...item.payment, status: nextStatus });
+      if (item.payment.kind === 'transfer') {
+        const linkedTr = transfers.find(t => t.id === `tr_${item.payment!.id}`);
+        if (linkedTr) save('transfers', { ...linkedTr, status: nextStatus });
+      }
     } else if (item.transfer) {
       const nextStatus = item.transfer.status === 'cancelled' ? 'confirmed' : 'cancelled';
       save('transfers', { ...item.transfer, status: nextStatus });
+      if (item.transfer.id.startsWith('tr_')) {
+        const linkedPayId = item.transfer.id.slice(3);
+        const linkedPay = payments.find(p => p.id === linkedPayId);
+        if (linkedPay) save('payments', { ...linkedPay, status: nextStatus });
+      }
     }
   };
 
@@ -180,12 +189,21 @@ export function LogBook() {
     if (!confirm(`Delete this ${item.type} record permanently? The money will be restored to the account.`)) return;
     if (item.payment) {
       remove('payments', item.payment.id);
+      if (item.payment.kind === 'transfer') {
+        remove('transfers', `tr_${item.payment.id}`);
+      }
       const plan = plans.find(x => x.id === item.payment?.planId);
       if (plan && plan.freq === 'once') {
         remove('plans', plan.id);
       }
     }
-    if (item.transfer) remove('transfers', item.transfer.id);
+    if (item.transfer) {
+      remove('transfers', item.transfer.id);
+      if (item.transfer.id.startsWith('tr_')) {
+        const linkedPayId = item.transfer.id.slice(3);
+        remove('payments', linkedPayId);
+      }
+    }
   };
 
   return (
@@ -256,7 +274,7 @@ export function LogBook() {
           const isCancelled = item.status === 'cancelled';
           const isTransfer = item.type === 'transfer';
           const isIncome = item.type === 'income';
-          const isCorrection = item.title === 'Balance correction' || item.payment?.planId?.startsWith('adj_');
+          const isCorrection = item.payment ? isBalanceCorrectionPayment(item.payment) : item.title === 'Balance correction';
 
           return (
             <div

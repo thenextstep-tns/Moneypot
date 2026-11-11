@@ -17,8 +17,7 @@ export function getPhysicalAccountId(
     const isShared = Boolean(
       s?.isShared ||
       (s?.sharedWith && s.sharedWith.length > 0) ||
-      (s?.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s?.accountId)) ||
-      s?.name?.toLowerCase().trim() === 'kinky fund'
+      (s?.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s?.accountId))
     );
     if (isShared) {
       if (s?.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
@@ -26,7 +25,7 @@ export function getPhysicalAccountId(
       }
       return undefined;
     }
-    if (s?.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
+    if (s?.accountId) {
       return s.accountId;
     }
     return defaultAccountId;
@@ -50,7 +49,8 @@ export function calcAccountBalance(
     if (kind === 'transfer') continue; // Handled via transfers collection
     const stashId = p.stashId ?? plan?.stashId;
     const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-    const sourceAccId = p.accountId || plan?.accountId || s?.accountId;
+    const rawAccId = p.accountId || plan?.accountId || s?.accountId;
+    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [a]);
     if (sourceAccId === a.id) {
       const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
       if (kind === 'income') b += amt;
@@ -146,20 +146,19 @@ export function calcAccountStashedBreakdown(
     const hasValidAcc = s.accountId && allAccounts.some(acc => acc.id === s.accountId);
     let parentAccId = hasValidAcc ? s.accountId : undefined;
 
-    // If stash accountId is not set or foreign, check if account a funded it via transfers
+    // If stash accountId is not set or foreign, check if account a funded a personal stash via transfers
     if (!parentAccId) {
       const isSharedStash = Boolean(
         s.isShared ||
         (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
-        s.name?.toLowerCase().trim() === 'kinky fund'
+        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId))
       );
       const fundedFromThis = transfers.some(t =>
         t.status !== 'cancelled' &&
         (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) &&
         t.fromAccountId === a.id
       );
-      if (fundedFromThis) {
+      if (fundedFromThis && !isSharedStash) {
         parentAccId = a.id;
       } else if (isFallbackPrimary && !isSharedStash) {
         parentAccId = a.id;
@@ -171,8 +170,7 @@ export function calcAccountStashedBreakdown(
       const isShared = Boolean(
         s.isShared ||
         (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId)) ||
-        s.name?.toLowerCase().trim() === 'kinky fund'
+        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId))
       );
 
       if (!isShared) {
@@ -196,8 +194,14 @@ export function calcAccountStashedBreakdown(
         }
         for (const p of payments) {
           if (p.status !== 'confirmed') continue;
-          if (p.kind === 'saving' && p.stashId === s.id && p.accountId === a.id) {
+          const plan = plans.find(x => x.id === p.planId);
+          const kind = p.kind ?? plan?.kind;
+          if (kind === 'saving' && (p.stashId === s.id || plan?.stashId === s.id) && (p.accountId === a.id || plan?.accountId === a.id)) {
             sBal += (p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount);
+          } else if (s.accountId === a.id && (p.accountId === `stash_${s.id}` || p.accountId === s.id) && kind !== 'transfer') {
+            const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
+            if (kind === 'income') sBal += amt;
+            else sBal -= amt;
           }
         }
         sBal = Math.max(0, sBal);
@@ -324,7 +328,8 @@ export function calcProjectedAccountBalance(
     }
     const stashId = o.stashId ?? o.plan?.stashId;
     const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-    const sourceAccId = o.accountId || o.plan?.accountId || s?.accountId;
+    const rawAccId = o.accountId || o.plan?.accountId || s?.accountId;
+    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [account]);
     if (sourceAccId === account.id) {
       const amtInAcc = convert(o.amount, o.currency, account.currency);
       if (o.kind === 'income') {
@@ -481,8 +486,7 @@ export function calcTotalLiquidBalance(
     const isShared = Boolean(
       s.isShared ||
       (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)) ||
-      s.name?.toLowerCase().trim() === 'kinky fund'
+      (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
     );
     if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
       const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
@@ -512,8 +516,7 @@ export function calcTotalStashedBreakdown(
     const isShared = Boolean(
       s.isShared ||
       (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)) ||
-      s.name?.toLowerCase().trim() === 'kinky fund'
+      (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
     );
     if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
       const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
@@ -570,8 +573,7 @@ export function calcTotalSharedStashedBalance(
     const isShared = Boolean(
       s.isShared ||
       (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && currentUserId && s.ownerId !== currentUserId) ||
-      s.name?.toLowerCase().trim() === 'kinky fund'
+      (s.ownerId && currentUserId && s.ownerId !== currentUserId)
     );
     if (isShared) {
       const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
@@ -651,7 +653,13 @@ export function checkAccountFunds(
   let stashedBal = 0;
   const stashesInAcc: Stash[] = [];
   for (const s of stashes) {
-    const parentId = s.accountId || accounts[0]?.id;
+    const isShared = Boolean(
+      s.isShared ||
+      (s.sharedWith && s.sharedWith.length > 0) ||
+      (s.ownerId && accounts.length > 0 && !accounts.some(a => a.id === s.accountId))
+    );
+    const hasValidAcc = s.accountId && accounts.some(a => a.id === s.accountId);
+    const parentId = hasValidAcc ? s.accountId : (!isShared ? accounts[0]?.id : undefined);
     if (parentId === acc.id) {
       const sBal = Math.max(0, balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0);
       const converted = s.currency === acc.currency ? sBal : convert(sBal, s.currency, acc.currency);
@@ -695,21 +703,41 @@ export interface AccountShortfallWarning {
 export function findAccountShortfalls(
   accounts: Account[],
   occurrences: Occurrence[],
-  balances: Map<string, number>
+  balances: Map<string, number>,
+  stashes: Stash[] = [],
+  transfers: Transfer[] = [],
+  ym?: string
 ): AccountShortfallWarning[] {
   const warnings: AccountShortfallWarning[] = [];
   const pending = occurrences.filter(o => o.status === 'pending');
+  const todayStr = today();
 
   for (const a of accounts) {
-    const bal = balances.get(a.id) ?? 0;
+    const totalBal = balances.get(a.id) ?? 0;
+    let stashedInAcc = 0;
+    for (const s of stashes) {
+      const isShared = Boolean(
+        s.isShared ||
+        (s.sharedWith && s.sharedWith.length > 0) ||
+        (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
+      );
+      const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
+      const parentId = hasValidAcc ? s.accountId : (!isShared ? accounts[0]?.id : undefined);
+      if (parentId === a.id) {
+        const sBal = Math.max(0, balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0);
+        stashedInAcc += s.currency === a.currency ? sBal : convert(sBal, s.currency, a.currency);
+      }
+    }
+    const bal = Math.max(0, totalBal - stashedInAcc);
     let outSum = 0;
     let inSum = 0;
 
-    // Net balance change per due date (incoming transfers count as money in)
+    // Net balance change per effective date (incoming transfers count as money in)
     const deltaByDate = new Map<string, number>();
     const addDelta = (date: string, d: number) => deltaByDate.set(date, (deltaByDate.get(date) ?? 0) + d);
 
     for (const o of pending) {
+      const effDate = o.date || o.dueDate;
       const isSource = o.accountId === a.id;
       const isTransferTarget = o.kind === 'transfer' && o.toAccountId === a.id;
       if (isSource && isTransferTarget) continue; // transfer to itself: no effect
@@ -718,17 +746,35 @@ export function findAccountShortfalls(
         const amtInAcc = convert(o.amount, o.currency, a.currency);
         if (o.kind === 'income') {
           inSum += amtInAcc;
-          addDelta(o.dueDate, amtInAcc);
+          addDelta(effDate, amtInAcc);
         } else {
           outSum += amtInAcc;
-          addDelta(o.dueDate, -amtInAcc);
+          addDelta(effDate, -amtInAcc);
         }
       } else if (isTransferTarget) {
         const toAmt = o.toAmount ?? o.amount;
         const toCur = o.toCurrency ?? o.currency;
         const amtInAcc = convert(toAmt, toCur, a.currency);
         inSum += amtInAcc;
-        addDelta(o.dueDate, amtInAcc);
+        addDelta(effDate, amtInAcc);
+      }
+    }
+
+    for (const tr of transfers) {
+      if (tr.status === 'cancelled') continue;
+      if (!tr.date || tr.date <= todayStr) continue;
+      if (ym && !tr.date.startsWith(ym)) continue;
+      const isSource = tr.fromAccountId === a.id;
+      const isTarget = tr.toAccountId === a.id;
+      if (isSource && isTarget) continue;
+      if (isSource) {
+        const amtInAcc = tr.fromCurrency && tr.fromCurrency !== a.currency ? convert(tr.fromAmount, tr.fromCurrency, a.currency) : tr.fromAmount;
+        outSum += amtInAcc;
+        addDelta(tr.date, -amtInAcc);
+      } else if (isTarget) {
+        const amtInAcc = tr.toCurrency && tr.toCurrency !== a.currency ? convert(tr.toAmount, tr.toCurrency, a.currency) : tr.toAmount;
+        inSum += amtInAcc;
+        addDelta(tr.date, amtInAcc);
       }
     }
 
@@ -804,33 +850,80 @@ export function calcMonthStartingBalances(
     const priorPending = occurrences(plans, payments, fromDate, toDate).filter(o => o.status === 'pending');
 
     const accBals = new Map<string, number>(liveBalances);
+    let projectedStashed = totalStashed;
     let unassignedNet = 0;
 
     for (const o of priorPending) {
       if (o.kind === 'transfer') {
-        if (o.accountId) {
-          const fromAcc = accounts.find(a => a.id === o.accountId);
-          if (fromAcc) {
-            const amtInFrom = convert(o.amount, o.currency, fromAcc.currency);
-            const curr = accBals.get(fromAcc.id) ?? 0;
-            accBals.set(fromAcc.id, curr - amtInFrom);
+        const physFrom = getPhysicalAccountId(o.accountId, stashes, accounts[0]?.id, accounts);
+        const physTo = getPhysicalAccountId(o.toAccountId, stashes, accounts[0]?.id, accounts);
+        if (physFrom !== physTo) {
+          if (physFrom) {
+            const fromAcc = accounts.find(a => a.id === physFrom);
+            if (fromAcc) {
+              const amtInFrom = convert(o.amount, o.currency, fromAcc.currency);
+              accBals.set(fromAcc.id, (accBals.get(fromAcc.id) ?? 0) - amtInFrom);
+            }
+          }
+          if (physTo) {
+            const toAcc = accounts.find(a => a.id === physTo);
+            if (toAcc) {
+              const toAmt = o.toAmount ?? o.amount;
+              const toCur = o.toCurrency ?? o.currency;
+              const amtInTo = convert(toAmt, toCur, toAcc.currency);
+              accBals.set(toAcc.id, (accBals.get(toAcc.id) ?? 0) + amtInTo);
+            }
           }
         }
-        if (o.toAccountId) {
-          const toAcc = accounts.find(a => a.id === o.toAccountId);
-          if (toAcc) {
-            const toAmt = o.toAmount ?? o.amount;
-            const toCur = o.toCurrency ?? o.currency;
-            const amtInTo = convert(toAmt, toCur, toAcc.currency);
-            const curr = accBals.get(toAcc.id) ?? 0;
-            accBals.set(toAcc.id, curr + amtInTo);
-          }
+        const sFrom = stashes.find(s => s.id === o.accountId || `stash_${s.id}` === o.accountId);
+        if (sFrom) {
+          const amtInS = convert(o.amount, o.currency, sFrom.currency);
+          const nextS = (accBals.get(sFrom.id) ?? 0) - amtInS;
+          accBals.set(sFrom.id, nextS);
+          accBals.set(`stash_${sFrom.id}`, nextS);
+          projectedStashed = Math.max(0, projectedStashed - convert(o.amount, o.currency, targetCurrency));
+        }
+        const sTo = stashes.find(s => s.id === o.toAccountId || `stash_${s.id}` === o.toAccountId);
+        if (sTo) {
+          const toAmt = o.toAmount ?? o.amount;
+          const toCur = o.toCurrency ?? o.currency;
+          const amtInS = convert(toAmt, toCur, sTo.currency);
+          const nextS = (accBals.get(sTo.id) ?? 0) + amtInS;
+          accBals.set(sTo.id, nextS);
+          accBals.set(`stash_${sTo.id}`, nextS);
+          projectedStashed += convert(toAmt, toCur, targetCurrency);
         }
         continue;
       }
 
-      if (o.accountId) {
-        const acc = accounts.find(a => a.id === o.accountId);
+      if (o.kind === 'saving') {
+        const stashId = o.stashId ?? o.plan?.stashId;
+        const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
+        if (s) {
+          const amtInS = convert(o.amount, o.currency, s.currency);
+          const nextS = (accBals.get(s.id) ?? 0) + amtInS;
+          accBals.set(s.id, nextS);
+          accBals.set(`stash_${s.id}`, nextS);
+        }
+        projectedStashed += convert(o.amount, o.currency, targetCurrency);
+        continue;
+      }
+
+      const rawAccId = o.accountId || o.plan?.accountId;
+      const sPay = rawAccId ? stashes.find(s => s.id === rawAccId || `stash_${s.id}` === rawAccId) : undefined;
+      if (sPay) {
+        const amtInS = convert(o.amount, o.currency, sPay.currency);
+        const deltaS = o.kind === 'income' ? amtInS : -amtInS;
+        const nextS = (accBals.get(sPay.id) ?? 0) + deltaS;
+        accBals.set(sPay.id, nextS);
+        accBals.set(`stash_${sPay.id}`, nextS);
+        const amtTarget = convert(o.amount, o.currency, targetCurrency);
+        projectedStashed = Math.max(0, projectedStashed + (o.kind === 'income' ? amtTarget : -amtTarget));
+      }
+
+      const physAccId = getPhysicalAccountId(rawAccId, stashes, undefined, accounts);
+      if (physAccId) {
+        const acc = accounts.find(a => a.id === physAccId);
         if (acc) {
           const amtInAcc = convert(o.amount, o.currency, acc.currency);
           const curr = accBals.get(acc.id) ?? 0;
@@ -840,7 +933,7 @@ export function calcMonthStartingBalances(
             accBals.set(acc.id, curr - amtInAcc);
           }
         }
-      } else {
+      } else if (!rawAccId) {
         // Pending item without a designated account still impacts total liquid funds
         const amtInTarget = convert(o.amount, o.currency, targetCurrency);
         if (o.kind === 'income') unassignedNet += amtInTarget;
@@ -851,19 +944,39 @@ export function calcMonthStartingBalances(
     for (const tr of transfers) {
       if (tr.status === 'cancelled') continue;
       if (tr.date && tr.date > todayDate && tr.date <= toDate) {
-        if (tr.fromAccountId) {
-          const fromAcc = accounts.find(a => a.id === tr.fromAccountId);
-          if (fromAcc) {
-            const amt = tr.fromCurrency && tr.fromCurrency !== fromAcc.currency ? convert(tr.fromAmount, tr.fromCurrency, fromAcc.currency) : tr.fromAmount;
-            accBals.set(fromAcc.id, (accBals.get(fromAcc.id) ?? 0) - amt);
+        const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, accounts[0]?.id, accounts);
+        const physTo = getPhysicalAccountId(tr.toAccountId, stashes, accounts[0]?.id, accounts);
+        if (physFrom !== physTo) {
+          if (physFrom) {
+            const fromAcc = accounts.find(a => a.id === physFrom);
+            if (fromAcc) {
+              const amt = tr.fromCurrency && tr.fromCurrency !== fromAcc.currency ? convert(tr.fromAmount, tr.fromCurrency, fromAcc.currency) : tr.fromAmount;
+              accBals.set(fromAcc.id, (accBals.get(fromAcc.id) ?? 0) - amt);
+            }
+          }
+          if (physTo) {
+            const toAcc = accounts.find(a => a.id === physTo);
+            if (toAcc) {
+              const amt = tr.toCurrency && tr.toCurrency !== toAcc.currency ? convert(tr.toAmount, tr.toCurrency, toAcc.currency) : tr.toAmount;
+              accBals.set(toAcc.id, (accBals.get(toAcc.id) ?? 0) + amt);
+            }
           }
         }
-        if (tr.toAccountId) {
-          const toAcc = accounts.find(a => a.id === tr.toAccountId);
-          if (toAcc) {
-            const amt = tr.toCurrency && tr.toCurrency !== toAcc.currency ? convert(tr.toAmount, tr.toCurrency, toAcc.currency) : tr.toAmount;
-            accBals.set(toAcc.id, (accBals.get(toAcc.id) ?? 0) + amt);
-          }
+        const sFrom = stashes.find(s => s.id === tr.fromAccountId || `stash_${s.id}` === tr.fromAccountId);
+        if (sFrom) {
+          const amt = tr.fromCurrency && tr.fromCurrency !== sFrom.currency ? convert(tr.fromAmount, tr.fromCurrency, sFrom.currency) : tr.fromAmount;
+          const nextS = (accBals.get(sFrom.id) ?? 0) - amt;
+          accBals.set(sFrom.id, nextS);
+          accBals.set(`stash_${sFrom.id}`, nextS);
+          projectedStashed = Math.max(0, projectedStashed - convert(tr.fromAmount, tr.fromCurrency || targetCurrency, targetCurrency));
+        }
+        const sTo = stashes.find(s => s.id === tr.toAccountId || `stash_${s.id}` === tr.toAccountId);
+        if (sTo) {
+          const amt = tr.toCurrency && tr.toCurrency !== sTo.currency ? convert(tr.toAmount, tr.toCurrency, sTo.currency) : tr.toAmount;
+          const nextS = (accBals.get(sTo.id) ?? 0) + amt;
+          accBals.set(sTo.id, nextS);
+          accBals.set(`stash_${sTo.id}`, nextS);
+          projectedStashed += convert(tr.toAmount, tr.toCurrency || targetCurrency, targetCurrency);
         }
       }
     }
@@ -873,64 +986,40 @@ export function calcMonthStartingBalances(
       const bal = accBals.get(a.id) ?? 0;
       projectedTotal += convert(bal, a.currency, targetCurrency);
     }
+    for (const s of stashes) {
+      const isShared = Boolean(
+        s.isShared ||
+        (s.sharedWith && s.sharedWith.length > 0) ||
+        (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
+      );
+      if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
+        const sBal = Math.max(0, accBals.get(s.id) ?? 0);
+        projectedTotal += convert(sBal, s.currency || targetCurrency, targetCurrency);
+      }
+    }
     projectedTotal += unassignedNet;
 
     return {
       accountBalances: accBals,
       totalLiquid: projectedTotal,
-      totalStashed,
-      totalAvailable: Math.max(0, projectedTotal - totalStashed),
+      totalStashed: projectedStashed,
+      totalAvailable: Math.max(0, projectedTotal - projectedStashed),
     };
   }
 
-  // Past month: Unwind confirmed payments & transfers that happened since targetYm-01
+  // Past month: Compute historical balances as of targetYm-01 using transactions strictly before targetYm-01
   const startOfPastMonth = `${targetYm}-01`;
-  const accBals = new Map<string, number>(liveBalances);
+  const pastPayments = payments.filter(p => p.date < startOfPastMonth);
+  const pastTransfers = transfers.filter(t => !t.date || t.date < startOfPastMonth);
 
-  for (const p of payments) {
-    if (p.status !== 'confirmed') continue;
-    if (p.date < startOfPastMonth) continue;
-    const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind;
-    const stashId = p.stashId ?? plan?.stashId;
-    if (!kind) continue;
-
-    if (p.accountId) {
-      const acc = accounts.find(a => a.id === p.accountId);
-      if (acc) {
-        const curr = accBals.get(acc.id) ?? 0;
-        if (kind === 'income') {
-          accBals.set(acc.id, curr - p.amount);
-        } else {
-          accBals.set(acc.id, curr + p.amount);
-        }
-      }
-    }
-  }
-
-  for (const t of transfers) {
-    if (t.status === 'cancelled') continue;
-    if (t.date < startOfPastMonth) continue;
-    if (t.fromAccountId) {
-      const curr = accBals.get(t.fromAccountId) ?? 0;
-      accBals.set(t.fromAccountId, curr + t.fromAmount);
-    }
-    if (t.toAccountId) {
-      const curr = accBals.get(t.toAccountId) ?? 0;
-      accBals.set(t.toAccountId, curr - t.toAmount);
-    }
-  }
-
-  let histTotal = 0;
-  for (const a of accounts) {
-    const bal = accBals.get(a.id) ?? 0;
-    histTotal += convert(bal, a.currency, targetCurrency);
-  }
+  const histAccountBalances = calcAllAccountBalances(accounts, pastPayments, pastTransfers, plans, stashes);
+  const histTotalLiquid = calcTotalLiquidBalance(accounts, pastPayments, pastTransfers, plans, stashes, targetCurrency);
+  const histTotalStashed = calcTotalStashedBalance(accounts, stashes, pastPayments, pastTransfers, plans, targetCurrency);
 
   return {
-    accountBalances: accBals,
-    totalLiquid: histTotal,
-    totalStashed,
-    totalAvailable: Math.max(0, histTotal - totalStashed),
+    accountBalances: histAccountBalances,
+    totalLiquid: histTotalLiquid,
+    totalStashed: histTotalStashed,
+    totalAvailable: Math.max(0, histTotalLiquid - histTotalStashed),
   };
 }
