@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Moneypot — Google Sign In</title>
   <link rel="icon" type="image/png" href="./logo.png" />
@@ -158,7 +159,7 @@
 
     <!-- Container: Fresh login button -->
     <div id="login-container" style="display: none;">
-      <button class="btn" id="login-btn" onclick="startAuth()">
+      <button class="btn" id="login-btn" type="button">
         <svg class="google-icon" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
           <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -167,28 +168,6 @@
         </svg>
         Sign in with Google
       </button>
-    </div>
-
-    <!-- Container: Existing browser session prompt -->
-    <div id="existing-container" style="display: none;">
-      <div class="account-badge">
-        <div class="avatar-circle">👤</div>
-        <div class="account-details">
-          <div class="account-name" id="existing-name">User</div>
-          <div class="account-email" id="existing-email">user@gmail.com</div>
-        </div>
-      </div>
-      <p style="font-size: 13px; color: #64748B; margin-bottom: 16px;">
-        You're logged in with this Google account in your browser. Do you want to use this account?
-      </p>
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button class="btn primary" id="continue-existing-btn" onclick="continueWithExisting()">
-          Continue with this account
-        </button>
-        <button class="btn secondary" onclick="switchAccount()">
-          Use a different account
-        </button>
-      </div>
     </div>
 
     <!-- Container: Return to app confirmation -->
@@ -203,18 +182,18 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { 
-      getAuth, 
-      GoogleAuthProvider, 
-      signInWithPopup, 
-      signInWithRedirect, 
-      getRedirectResult, 
-      onAuthStateChanged, 
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signInWithRedirect,
+      getRedirectResult,
       signOut,
+      browserSessionPersistence,
       setPersistence,
-      browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
+    // Public Firebase web config (not a secret). Restrict the key to this site in Google Cloud Console.
     const firebaseConfig = {
       apiKey: 'AIzaSyCGlXGlR7JgDOcCNQQmGbyEhg2mPuIZpbQ',
       authDomain: 'honeypot-834a1.firebaseapp.com',
@@ -222,235 +201,139 @@
       appId: '1:1093994142262:web:34ae22d54101375ff69697',
     };
 
+    /*
+     * The Moneypot app opens this page with ?state=<random>#k=<one-time pad>.
+     * We return moneypot://auth?state=<same>&ct=<Google ID token XOR pad>, so whoever receives the
+     * moneypot:// link without the pad learns nothing. This page never stores Google tokens.
+     */
+    const SS_KEY = 'mp_auth_handoff';
+    const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const toB64Url = (bytes) => {
+      let out = '';
+      for (let i = 0; i < bytes.length; i += 3) {
+        const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+        out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63];
+        if (i + 1 < bytes.length) out += B64[(n >> 6) & 63];
+        if (i + 2 < bytes.length) out += B64[n & 63];
+      }
+      return out;
+    };
+    const fromB64Url = (s) => {
+      const out = [];
+      for (let i = 0; i < s.length; i += 4) {
+        const chunk = s.slice(i, i + 4);
+        let n = 0;
+        for (let j = 0; j < chunk.length; j++) n |= B64.indexOf(chunk[j]) << (18 - j * 6);
+        out.push((n >> 16) & 255);
+        if (chunk.length > 2) out.push((n >> 8) & 255);
+        if (chunk.length > 3) out.push(n & 255);
+      }
+      return Uint8Array.from(out);
+    };
+
+    // Read the handoff parameters once (kept per-tab so they survive a redirect sign-in),
+    // then remove the pad from the address bar and history.
+    const params = new URLSearchParams(location.search);
+    const fragKey = new URLSearchParams(location.hash.slice(1)).get('k');
+    if (params.get('state') && fragKey) {
+      sessionStorage.setItem(SS_KEY, JSON.stringify({ state: params.get('state'), k: fragKey }));
+      history.replaceState(null, '', location.pathname);
+    }
+    let handoff = null;
+    try { handoff = JSON.parse(sessionStorage.getItem(SS_KEY) || 'null'); } catch (e) { handoff = null; }
+    const validHandoff = Boolean(handoff && /^[A-Z0-9]{16,64}$/.test(handoff.state) && typeof handoff.k === 'string' && handoff.k.length > 100);
+
+    const $ = (id) => document.getElementById(id);
+    const show = (id, on) => { $(id).style.display = on ? 'block' : 'none'; };
+
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    setPersistence(auth, browserLocalPersistence).catch(() => {});
-
+    // This page only relays a credential to the app; it never keeps a long-lived session.
+    setPersistence(auth, browserSessionPersistence).catch(() => {});
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
 
-    let activeUser = null;
     let handled = false;
-    let authChecked = false;
 
-    // Safety timeout in case Firebase auth takes unusually long to respond
-    const safetyTimer = setTimeout(() => {
-      if (!authChecked && !handled) {
-        authChecked = true;
-        showLoginButton();
-      }
-    }, 3000);
+    function buildDeepLink(idToken) {
+      const key = fromB64Url(handoff.k);
+      if (idToken.length > key.length) throw new Error('Sign-in token too long');
+      const ct = new Uint8Array(idToken.length);
+      for (let i = 0; i < idToken.length; i++) ct[i] = idToken.charCodeAt(i) ^ key[i];
+      return 'moneypot://auth?state=' + encodeURIComponent(handoff.state) + '&ct=' + toB64Url(ct);
+    }
 
-    function buildDeepLink(user, cred) {
-      const uid = user.uid || '';
-      const email = user.email || '';
-      const displayName = user.displayName || email.split('@')[0] || 'Google User';
-      const idToken = (cred && cred.idToken) || localStorage.getItem('mp_google_id_token') || '';
-      const accessToken = (cred && cred.accessToken) || localStorage.getItem('mp_google_access_token') || '';
-      if (cred && cred.idToken) {
-        localStorage.setItem('mp_google_id_token', cred.idToken);
-        localStorage.setItem('mp_google_token_ts', String(Date.now()));
-      }
-      if (cred && cred.accessToken) {
-        localStorage.setItem('mp_google_access_token', cred.accessToken);
-        localStorage.setItem('mp_google_token_ts', String(Date.now()));
-      }
-      return "moneypot://auth?uid=" + encodeURIComponent(uid) +
-             "&email=" + encodeURIComponent(email) +
-             "&displayName=" + encodeURIComponent(displayName) +
-             (idToken ? "&idToken=" + encodeURIComponent(idToken) : "") +
-             (accessToken ? "&accessToken=" + encodeURIComponent(accessToken) : "");
+    function showLoginButton(statusMsg) {
+      show('loader', false);
+      show('app-redirect-container', false);
+      $('title').innerText = 'Google Sign In';
+      $('msg').innerText = 'Connect with your Google account to sync your budget.';
+      show('login-container', true);
+      $('status').innerText = statusMsg || '';
+      $('login-btn').disabled = false;
     }
 
     function sendToApp(user, cred) {
-      if (!user) return;
+      if (!user || !cred || !cred.idToken) {
+        showLoginButton('Google did not return a sign-in token. Please try again.');
+        return;
+      }
+      let target;
+      try {
+        target = buildDeepLink(cred.idToken);
+      } catch (e) {
+        showLoginButton('Sign-in failed. Please start again from the app.');
+        return;
+      }
       handled = true;
-      authChecked = true;
-      clearTimeout(safetyTimer);
-
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('login-container').style.display = 'none';
-      document.getElementById('existing-container').style.display = 'none';
-      document.getElementById('title').innerText = "Connected!";
-      document.getElementById('msg').innerText = "Signed in as " + (user.displayName || user.email);
-      document.getElementById('status').innerText = "Returning to Moneypot app...";
-
-      const target = buildDeepLink(user, cred);
-      
-      const appLink = document.getElementById('open-app-link');
-      appLink.href = target;
-      appLink.onclick = function() {
-        window.location.href = target;
-      };
-      document.getElementById('app-redirect-container').style.display = 'block';
-
-      // Immediate attempt to launch deep link
-      try {
-        window.location.href = target;
-      } catch (e) {}
-
-      // Keep button clickable if browser blocks programmatic custom scheme navigation
-      setTimeout(() => {
-        document.getElementById('status').innerText = "If Moneypot didn't open automatically, tap the button above.";
-      }, 1200);
+      sessionStorage.removeItem(SS_KEY);
+      show('loader', false);
+      show('login-container', false);
+      $('title').innerText = 'Connected!';
+      $('msg').innerText = 'Signed in as ' + (user.displayName || user.email || 'your Google account');
+      $('status').innerText = 'Returning to the Moneypot app…';
+      $('open-app-link').href = target;
+      show('app-redirect-container', true);
+      window.location.href = target;
+      setTimeout(() => { $('status').innerText = 'If Moneypot did not open automatically, tap the button above.'; }, 1200);
+      // The app now has its own session; sign this page out.
+      signOut(auth).catch(() => {});
     }
 
-    function showExistingPrompt(user) {
-      activeUser = user;
-      authChecked = true;
-      clearTimeout(safetyTimer);
-
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('login-container').style.display = 'none';
-      document.getElementById('app-redirect-container').style.display = 'none';
-
-      document.getElementById('title').innerText = "Google Account Found";
-      document.getElementById('msg').innerText = "Choose whether to continue with this account or switch.";
-      document.getElementById('existing-name').innerText = user.displayName || user.email?.split('@')[0] || "Google User";
-      document.getElementById('existing-email').innerText = user.email || "";
-      document.getElementById('continue-existing-btn').innerText = "Continue as " + (user.displayName || user.email?.split('@')[0] || "User");
-
-      document.getElementById('existing-container').style.display = 'block';
-      document.getElementById('status').innerText = "";
-    }
-
-    function showLoginButton(statusMsg = "") {
-      authChecked = true;
-      clearTimeout(safetyTimer);
-
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('existing-container').style.display = 'none';
-      document.getElementById('app-redirect-container').style.display = 'none';
-
-      document.getElementById('title').innerText = "Google Sign In";
-      document.getElementById('msg').innerText = "Connect with your Google account to sync your budget.";
-      document.getElementById('login-container').style.display = 'block';
-      document.getElementById('status').innerText = statusMsg;
-
-      const btn = document.getElementById('login-btn');
-      if (btn) btn.disabled = false;
-    }
-
-    window.continueWithExisting = function() {
-      const ts = Number(localStorage.getItem('mp_google_token_ts') || '0');
-      const hasFreshToken = Boolean(
-        (localStorage.getItem('mp_google_id_token') || localStorage.getItem('mp_google_access_token')) &&
-        Date.now() - ts < 45 * 60 * 1000
-      );
-      if (activeUser && hasFreshToken) {
-        sendToApp(activeUser);
-      } else {
-        window.startAuth();
-      }
-    };
-
-    window.switchAccount = async function() {
-      document.getElementById('existing-container').style.display = 'none';
-      document.getElementById('loader').style.display = 'block';
-      document.getElementById('msg').innerText = "Signing out...";
+    async function startAuth() {
+      $('login-btn').disabled = true;
+      show('loader', true);
+      show('login-container', false);
+      $('title').innerText = 'Signing in…';
+      $('msg').innerText = 'Choose your Google account in the pop-up window.';
+      $('status').innerText = '';
       try {
-        await signOut(auth);
-      } catch (e) {}
-      activeUser = null;
-      showLoginButton("Please sign in with your other account.");
-    };
-
-    window.startAuth = async function() {
-      const btn = document.getElementById('login-btn');
-      if (btn) btn.disabled = true;
-
-      document.getElementById('loader').style.display = 'block';
-      document.getElementById('login-container').style.display = 'none';
-      document.getElementById('existing-container').style.display = 'none';
-      document.getElementById('title').innerText = "Signing In...";
-      document.getElementById('msg').innerText = "Select your Google account in the pop-up window.";
-      document.getElementById('status').innerText = "";
-
-      try {
-        // Primary flow: signInWithPopup.
-        // Runs via window.open + postMessage, which bypasses modern browser
-        // cross-origin iframe storage partitioning on third-party authDomains!
         const result = await signInWithPopup(auth, provider);
-        if (result && result.user) {
-          const cred = GoogleAuthProvider.credentialFromResult(result);
-          sendToApp(result.user, cred);
-          return;
-        }
+        sendToApp(result.user, GoogleAuthProvider.credentialFromResult(result));
       } catch (err) {
-        console.warn("Popup sign-in notice:", err);
-        
-        if (err.code === 'auth/popup-closed-by-user') {
-          showLoginButton("Sign in was cancelled. Tap below to try again.");
-          return;
+        if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+          showLoginButton('Sign-in was cancelled. Tap below to try again.');
+        } else if (err.code === 'auth/popup-blocked') {
+          $('status').innerText = 'Pop-up blocked — continuing in this tab…';
+          signInWithRedirect(auth, provider);
+        } else {
+          showLoginButton('Sign-in failed. Please try again.');
         }
-
-        if (err.code === 'auth/popup-blocked') {
-          document.getElementById('loader').style.display = 'none';
-          document.getElementById('login-container').style.display = 'none';
-          document.getElementById('title').innerText = "Pop-up Blocked";
-          document.getElementById('msg').innerText = "Your browser blocked the Google sign-in window. Please choose an option:";
-          document.getElementById('status').innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
-              <button class="btn primary" onclick="startAuth()">
-                Allow & Try Again
-              </button>
-              <button class="btn secondary" onclick="startRedirectAuth()">
-                Use Redirect Instead
-              </button>
-            </div>
-          `;
-          return;
-        }
-
-        showLoginButton(err.message || "Sign in failed. Tap below to try again.");
       }
-    };
+    }
+    $('login-btn').addEventListener('click', startAuth);
 
-    window.startRedirectAuth = function() {
-      sessionStorage.setItem('in_active_redirect_flow', '1');
-      localStorage.setItem('in_active_redirect_flow', '1');
-      document.getElementById('loader').style.display = 'block';
-      document.getElementById('status').innerText = "Redirecting to Google...";
-      signInWithRedirect(auth, provider);
-    };
-
-    // Check redirect result on load
-    getRedirectResult(auth)
-      .then((res) => {
-        if (res && res.user) {
-          sessionStorage.removeItem('in_active_redirect_flow');
-          localStorage.removeItem('in_active_redirect_flow');
-          const cred = GoogleAuthProvider.credentialFromResult(res);
-          sendToApp(res.user, cred);
-        } else {
-          initAuthState();
-        }
-      })
-      .catch((err) => {
-        console.warn("getRedirectResult info:", err);
-        sessionStorage.removeItem('in_active_redirect_flow');
-        localStorage.removeItem('in_active_redirect_flow');
-        initAuthState();
-      });
-
-    function initAuthState() {
-      const wasRedirectFlow = (sessionStorage.getItem('in_active_redirect_flow') === '1') ||
-                              (localStorage.getItem('in_active_redirect_flow') === '1');
-      sessionStorage.removeItem('in_active_redirect_flow');
-      localStorage.removeItem('in_active_redirect_flow');
-
-      onAuthStateChanged(auth, (user) => {
-        if (handled) return;
-        if (user) {
-          if (wasRedirectFlow) {
-            sendToApp(user);
-          } else {
-            showExistingPrompt(user);
-          }
-        } else {
-          showLoginButton();
-        }
-      });
+    if (!validHandoff) {
+      show('loader', false);
+      $('title').innerText = 'Open from the app';
+      $('msg').innerText = 'Start Google sign-in from the Moneypot app on your phone.';
+    } else {
+      getRedirectResult(auth)
+        .then((res) => {
+          if (res && res.user) sendToApp(res.user, GoogleAuthProvider.credentialFromResult(res));
+          else if (!handled) showLoginButton();
+        })
+        .catch(() => showLoginButton('Sign-in failed. Please try again.'));
     }
   </script>
 </body>

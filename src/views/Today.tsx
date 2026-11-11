@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useData } from '../store';
-import { addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
+import { OVERDUE_WINDOW_DAYS, addDays, dayLabel, money, occurrences, toPayment, today } from '../schedule';
 import { convert } from '../fx';
 import { calcAllAccountBalances, calcAllProjectedAccountBalances, calcProjectedAccountBalance, calcProjectedStashBalance, checkAccountFunds } from '../balances';
 import type { Occurrence, Payment, QuickTemplate } from '../types';
@@ -18,7 +18,8 @@ export function Today() {
   const [payEarlyModal, setPayEarlyModal] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const t = today();
-  const occ = useMemo(() => occurrences(plans, payments, addDays(t, -60), addDays(t, 7)), [plans, payments, t]);
+  // Only this user's own records belong in the to-do queue (other members' shared records are not yours to undo)
+  const occ = useMemo(() => occurrences(plans, payments.filter(p => !p.foreign), addDays(t, -OVERDUE_WINDOW_DAYS), addDays(t, 7)), [plans, payments, t]);
   const balances = useMemo(
     () => calcAllAccountBalances(accounts, payments, transfers, plans, stashes),
     [accounts, payments, transfers, plans, stashes]
@@ -84,13 +85,13 @@ export function Today() {
           <div className="title">
             {o.name}
             {isTransfer && (
-              <span className="tag" style={{ background: '#EEF2FF', color: '#4338CA' }}>
+              <span className="tag" style={{ background: 'var(--info-bg)', color: '#4338CA' }}>
                 {fromLabel} → {toLabel}
               </span>
             )}
             {o.subcategory && <span className="tag subcat-badge">{o.subcategory}</span>}
             {isSharedItem(o) && <span className="tag shared-tag">👥 Shared</span>}
-            {o.contributorName && <span className="tag" style={{ background: '#EFF6FF', color: '#1E40AF' }}>👤 {o.contributorName}</span>}
+            {o.contributorName && <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>👤 {o.contributorName}</span>}
             {o.postponed && <span className="tag">moved</span>}
             {funds?.isShort && (
               <span className="tag warn-badge" title={`Account has only ${money(funds.balance ?? 0, funds.accountCurrency)}`}>
@@ -482,8 +483,8 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
             {selParty && isFuture && selBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -507,7 +508,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
+                      borderTop: '1px dashed var(--line)',
                     }}
                   >
                     <span style={{ color: 'var(--mute)' }}>
@@ -543,8 +544,8 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
             {toParty && isFuture && toBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -557,7 +558,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: +amount > 0 ? 4 : 0 }}>
                   <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
-                  <b style={{ color: '#2563EB' }}>
+                  <b style={{ color: 'var(--info-ink)' }}>
                     {money(toBals.projected, toParty.currency)}
                   </b>
                 </div>
@@ -568,13 +569,13 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
+                      borderTop: '1px dashed var(--line)',
                     }}
                   >
                     <span style={{ color: 'var(--mute)' }}>
                       After receiving transfer:
                     </span>
-                    <b style={{ color: '#166534' }}>
+                    <b style={{ color: 'var(--good-ink)' }}>
                       {money(toBals.projected + amtInToCur, toParty.currency)}
                     </b>
                   </div>
@@ -604,8 +605,8 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
             {selParty && isFuture && selBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -629,7 +630,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
+                      borderTop: '1px dashed var(--line)',
                     }}
                   >
                     <span style={{ color: 'var(--mute)' }}>
@@ -659,7 +660,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           </Field>
 
           {isFuture && selParty && +amount > 0 && selBals && o.kind !== 'income' && (selBals.projected - amtInSelCur < 0) && (
-            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>⚠️</span>
               <span>
                 <strong>Low projected balance in {selParty.name}:</strong> On {dayLabel(date)}, projected balance is {money(selBals.projected, selParty.currency)}, which is {money(amtInSelCur - selBals.projected, selParty.currency)} short.
@@ -668,7 +669,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           )}
 
           {!isFuture && selFunds?.isShort && (
-            <div className="preview" style={{ background: '#FFFBEB', color: '#92400E', borderColor: '#FDE68A', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="preview" style={{ background: 'var(--warn-bg)', color: 'var(--warn-ink)', borderColor: 'var(--warn-line)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>⚠️</span>
               <span>
                 <strong>Low balance in {selFunds.accountName}:</strong> Has {money(selFunds.balance ?? 0, selFunds.accountCurrency)}, but this payment needs {money(selFunds.neededInAccCur, selFunds.accountCurrency)} (short by {money(selFunds.shortBy, selFunds.accountCurrency)}).
@@ -677,7 +678,7 @@ function ActModal({ o, mode, onClose, onSave }: { o: Occurrence; mode: 'confirm'
           )}
 
           {o.kind === 'saving' ? (
-            <div className="preview" style={{ background: '#F0FDF4', color: '#166534', borderColor: '#BBF7D0', margin: '4px 0 10px' }}>
+            <div className="preview" style={{ background: 'var(--good-bg)', color: 'var(--good-ink)', borderColor: 'var(--good-line)', margin: '4px 0 10px' }}>
               🌱 Saving into stash: <b>{stashes.find(s => s.id === o.stashId)?.name || o.name}</b>
             </div>
           ) : (

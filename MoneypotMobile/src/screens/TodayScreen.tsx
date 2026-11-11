@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   Animated,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
-import { occurrences, today, addDays, money, toPayment } from '../domain/schedule';
+import { OVERDUE_WINDOW_DAYS, occurrences, today, addDays, money, toPayment } from '../domain/schedule';
 import { convert } from '../domain/fx';
 import { checkAccountFunds, calcAllAccountBalances } from '../domain/balances';
 import { theme, useStyles, type Theme } from '../theme';
@@ -49,8 +49,11 @@ export function TodayScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const t = today();
-  // Look at window from 30 days ago up to 7 days ahead
-  const allOccurrences = occurrences(plans, payments, addDays(t, -30), addDays(t, 7));
+  // Same overdue window as the web app and all projections; only this user's own records
+  const allOccurrences = useMemo(
+    () => occurrences(plans, payments.filter(p => !p.foreign), addDays(t, -OVERDUE_WINDOW_DAYS), addDays(t, 7)),
+    [plans, payments, t]
+  );
   const pendingOccurrences = allOccurrences.filter(o => o.status === 'pending');
 
   const overdue = pendingOccurrences.filter(o => o.date < t);
@@ -237,6 +240,7 @@ export function TodayScreen() {
                 setTransferTargetAccId(o.accountId);
                 setTransferVisible(true);
               }}
+              accessibilityRole="button"
             >
               <Text style={styles.moveMoneyPillText}>Move money ›</Text>
             </TouchableOpacity>
@@ -248,6 +252,7 @@ export function TodayScreen() {
           <TouchableOpacity
             style={[styles.paidBtn, { backgroundColor: actionBtnBg }]}
             onPress={() => (isUpcoming ? setActiveOccurrence(o) : handleDirectPaid(o))}
+            accessibilityRole="button"
           >
             <Text style={styles.paidBtnText}>
               {actionText}
@@ -260,6 +265,7 @@ export function TodayScreen() {
               triggerHaptic('light');
               setActiveOccurrence(o);
             }}
+            accessibilityRole="button"
           >
             <Text style={styles.optionsBtnText}>More Options ›</Text>
           </TouchableOpacity>
@@ -283,6 +289,7 @@ export function TodayScreen() {
                 triggerHaptic('light');
                 setPayEarlyVisible(true);
               }}
+              accessibilityRole="button"
             >
               <Text style={styles.headerActionBtnEarlyText}>⚡ Early action</Text>
             </TouchableOpacity>
@@ -292,6 +299,7 @@ export function TodayScreen() {
                 triggerHaptic('light');
                 setOneOffVisible(true);
               }}
+              accessibilityRole="button"
             >
               <Text style={styles.headerActionBtnAddText}>+ Record</Text>
             </TouchableOpacity>

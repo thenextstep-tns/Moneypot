@@ -179,6 +179,7 @@ export function QuickLogButton({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         style={styles.pressable}
+        accessibilityRole="button"
       >
         {/* Animated green progress fill */}
         <Animated.View

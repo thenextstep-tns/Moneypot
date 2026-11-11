@@ -130,7 +130,7 @@ export function OnboardingModal({ visible, onClose }: { visible: boolean; onClos
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>How Moneypot Works</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityLabel="Close" hitSlop={12} accessibilityRole="button">
               <Text style={styles.closeBtn}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -161,16 +161,18 @@ export function OnboardingModal({ visible, onClose }: { visible: boolean; onClos
                     triggerHaptic('light');
                     setIndex(i);
                   }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: Boolean(i === index) }}
                 />
               ))}
             </View>
           </ScrollView>
 
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
+            <TouchableOpacity style={styles.backBtn} onPress={handleBack} accessibilityRole="button">
               <Text style={styles.backBtnText}>{index > 0 ? '‹ Back' : 'Skip'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
+            <TouchableOpacity style={styles.nextBtn} onPress={handleNext} accessibilityRole="button">
               <Text style={styles.nextBtnText}>
                 {isLast ? 'Get Started 🚀' : 'Next ›'}
               </Text>

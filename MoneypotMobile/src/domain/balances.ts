@@ -1,243 +1,348 @@
+// GENERATED from src/balances.ts by scripts/sync-domain.mjs — do not edit here, edit src/balances.ts and re-run.
 import type { Account, Occurrence, Payment, Plan, Stash, Transfer } from './types';
-import { convert } from './fx';
-import { addDays, money, monthRange, occurrences, shiftMonth, today } from './schedule';
+import { convert, getFxInfo, getRate } from './fx';
+import { OVERDUE_WINDOW_DAYS, addDays, monthRange, money, occurrences, shiftMonth, today } from './schedule';
 
-/** Helper to resolve the physical account ID of an account or stash */
-export function getPhysicalAccountId(
-  id?: string,
-  stashes: Stash[] = [],
-  defaultAccountId?: string,
-  accounts: Account[] = []
-): string | undefined {
-  if (!id) return undefined;
-  const isStashId = id.startsWith('stash_');
-  const sId = isStashId ? id.replace('stash_', '') : id;
-  const s = isStashId ? stashes.find(x => x.id === sId) : stashes.find(x => x.id === id);
-  if (s || isStashId) {
-    const isShared = Boolean(
-      s?.isShared ||
-      (s?.sharedWith && s.sharedWith.length > 0) ||
-      (s?.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s?.accountId))
-    );
-    if (isShared) {
-      if (s?.accountId && (accounts.length === 0 || accounts.some(acc => acc.id === s.accountId))) {
-        return s.accountId;
-      }
-      return undefined;
-    }
-    if (s?.accountId) {
-      return s.accountId;
-    }
-    return defaultAccountId;
-  }
-  return id;
+/*
+ * Balance engine.
+ *
+ * Every money movement is turned into "deltas" by exactly two functions:
+ *   - accountDeltas*  → how a record changes the PHYSICAL balance of real accounts
+ *   - stashDelta*     → how a record changes the balance of a stash (savings envelope)
+ * All balances, projections, the cashflow chart and the month planner are built on these,
+ * so the same record can never be counted differently on two screens.
+ *
+ * Rules:
+ *   - A stash lives inside the account in `stash.accountId` ("housed"). Moving money between an
+ *     account and a stash housed in that same account does not change the account's physical balance.
+ *   - A saving payment moves money from its source account into the stash's housing account.
+ *   - A stash that has no (valid) housing account is "unhoused": its money is counted separately
+ *     in the liquid totals.
+ *   - A reference to a stash that no longer exists is ignored for accounts (deleting a stash releases
+ *     its money back to where it came from) — it is never credited to some other account.
+ *   - Records added by other members of a shared item (`foreign`) never touch this user's accounts;
+ *     they only change the shared stash's balance and the shared pot's spending.
+ *   - Confirmed records dated in the future only take effect on their date.
+ */
+
+export type FxSnapshot = Record<string, number>;
+
+/**
+ * Convert with the rates frozen on a record when available (so past records never re-price),
+ * otherwise with today's rates.
+ */
+export function convAt(amount: number, from: string | undefined, to: string | undefined, fx?: FxSnapshot): number {
+  if (!from || !to || from === to) return amount;
+  const rf = fx?.[from];
+  const rt = fx?.[to];
+  if (rf && rt) return (amount / rf) * rt;
+  return convert(amount, from, to);
 }
 
+export const conv = (amount: number, from: string | undefined, to: string | undefined): number => convAt(amount, from, to);
+
+/**
+ * Rates (units per 1 EUR) for the given currencies, to freeze on a new record.
+ * Returns undefined while only the built-in fallback rates are known.
+ */
+export function fxSnapshot(currencies: (string | undefined)[]): FxSnapshot | undefined {
+  if (!getFxInfo().isLive) return undefined;
+  const out: FxSnapshot = {};
+  for (const c of new Set(currencies.filter((x): x is string => Boolean(x)))) {
+    const r = getRate('EUR', c);
+    if (Number.isFinite(r) && r > 0) out[c] = +r.toPrecision(10);
+  }
+  return Object.keys(out).length > 1 ? out : undefined;
+}
+
+/** Is this stash shared with other people? */
+export function isSharedStash(s?: Partial<Stash> | null): boolean {
+  return Boolean(s && (s.sharedId || s.isShared || (s.sharedWith?.length ?? 0) > 0 || s.isForeignOwned));
+}
+
+/** Currencies a record touches (its own, the accounts/stashes involved, and the main currency) */
+export function recordCurrencies(
+  r: Partial<Payment & Transfer>,
+  accounts: Account[],
+  stashes: Stash[],
+  mainCurrency: string
+): string[] {
+  const out = [r.currency, r.fromCurrency, r.toCurrency, mainCurrency];
+  for (const id of [r.accountId, r.fromAccountId, r.toAccountId]) {
+    if (!id) continue;
+    const s = findStashByRef(id, stashes);
+    if (s) out.push(s.currency, accounts.find(a => a.id === s.accountId)?.currency);
+    else out.push(accounts.find(a => a.id === id)?.currency);
+  }
+  if (r.stashId) {
+    const s = stashes.find(x => x.id === r.stashId);
+    out.push(s?.currency, accounts.find(a => a.id === s?.accountId)?.currency);
+  }
+  return out.filter((c): c is string => Boolean(c));
+}
+
+/** Add frozen exchange rates to a record (keeps rates that were already frozen) */
+export function withFrozenRates<T extends Partial<Payment & Transfer>>(r: T, accounts: Account[], stashes: Stash[], mainCurrency: string): T {
+  if (r.foreign) return r;
+  const snap = fxSnapshot(recordCurrencies(r, accounts, stashes, mainCurrency));
+  if (!snap) return r;
+  return { ...r, fx: { ...snap, ...(r.fx ?? {}) } };
+}
+
+/** Normalize shared / instant-access flags. Shared stashes can never be instant-access. */
 export function normalizeStash(st: Stash, currentUserId?: string | null): Stash {
+  const isForeignOwned = Boolean(st.ownerId && currentUserId && currentUserId !== 'local' && st.ownerId !== currentUserId);
   const isShared = Boolean(
-    st.isShared ||
-    (st.sharedWith && st.sharedWith.length > 0) ||
-    (st.invitedEmails && st.invitedEmails.length > 0) ||
-    (st.ownerId && currentUserId && st.ownerId !== currentUserId && currentUserId !== 'local')
+    st.sharedId || st.isShared || (st.sharedWith?.length ?? 0) > 0 || (st.invitedEmails?.length ?? 0) > 0 || isForeignOwned
   );
-  const shouldBeInstant = !isShared;
   return {
     ...st,
     isShared,
-    isInstantAccess: shouldBeInstant,
+    isForeignOwned: isForeignOwned || undefined,
+    // Respect the user's choice for personal stashes; default to instant access.
+    isInstantAccess: isShared ? false : st.isInstantAccess !== false,
   };
 }
 
-/** Calculate live balance of an account considering payments and transfers */
+/** Find the stash an id refers to (`stash_<id>` or a bare stash id). */
+export function findStashByRef(id: string | undefined, stashes: Stash[]): Stash | undefined {
+  if (!id) return undefined;
+  if (id.startsWith('stash_')) {
+    const sid = id.slice(6);
+    return stashes.find(s => s.id === sid);
+  }
+  return stashes.find(s => s.id === id);
+}
+
+export const refersToStash = (id: string | undefined, s: Stash): boolean => Boolean(id) && (id === `stash_${s.id}` || id === s.id);
+
+const isDanglingStashRef = (id: string | undefined, stashes: Stash[]) =>
+  Boolean(id && id.startsWith('stash_') && !findStashByRef(id, stashes));
+
+/** Physical account behind an account id or stash reference (undefined = no real account). */
+export function physicalAccountId(id: string | undefined, stashes: Stash[] = []): string | undefined {
+  if (!id) return undefined;
+  const s = findStashByRef(id, stashes);
+  if (s) return s.accountId || undefined;
+  if (id.startsWith('stash_') || id.startsWith('ext:')) return undefined;
+  return id;
+}
+
+/** @deprecated kept for older call sites — use physicalAccountId */
+export function getPhysicalAccountId(id?: string, stashes: Stash[] = []): string | undefined {
+  return physicalAccountId(id, stashes);
+}
+
+/** Is the stash housed in one of these accounts? */
+export const isHoused = (s: Stash, accounts: Account[]) => Boolean(s.accountId && accounts.some(a => a.id === s.accountId));
+
+// ---------------------------------------------------------------------------------------------
+// Deltas
+// ---------------------------------------------------------------------------------------------
+
+export interface AccountDelta { accountId: string; amount: number; currency: string; fx?: FxSnapshot }
+
+type PaymentLike = Pick<Payment, 'amount' | 'currency' | 'accountId' | 'stashId' | 'kind' | 'foreign' | 'fx'>;
+type TransferLike = Pick<Transfer, 'fromAccountId' | 'toAccountId' | 'fromAmount' | 'fromCurrency' | 'toAmount' | 'toCurrency' | 'foreign' | 'fx'> & { status?: Transfer['status'] };
+
+/** How a (non-transfer) payment changes physical account balances */
+export function paymentAccountDeltas(p: PaymentLike, plan: Plan | undefined, stashes: Stash[]): AccountDelta[] {
+  if (p.foreign) return [];
+  const kind = p.kind ?? plan?.kind ?? 'expense';
+  if (kind === 'transfer') return [];
+  const stashId = p.stashId ?? plan?.stashId;
+  const stash = stashId ? stashes.find(x => x.id === stashId) : undefined;
+  const rawSource = p.accountId || plan?.accountId || stash?.accountId;
+  if (isDanglingStashRef(rawSource, stashes)) return [];
+  const src = physicalAccountId(rawSource, stashes);
+  const amount = p.amount || 0;
+  if (kind === 'income') return src ? [{ accountId: src, amount, currency: p.currency, fx: p.fx }] : [];
+  if (kind === 'expense') return src ? [{ accountId: src, amount: -amount, currency: p.currency, fx: p.fx }] : [];
+  // saving: money moves from the source account into the stash's housing account
+  if (stashId && !stash) return []; // stash deleted → saving released back to the source
+  const dest = stash?.accountId || undefined;
+  if (src === dest) return [];
+  const out: AccountDelta[] = [];
+  if (src) out.push({ accountId: src, amount: -amount, currency: p.currency, fx: p.fx });
+  if (dest) out.push({ accountId: dest, amount, currency: p.currency, fx: p.fx });
+  return out;
+}
+
+/** How a transfer changes physical account balances */
+export function transferAccountDeltas(t: TransferLike, stashes: Stash[]): AccountDelta[] {
+  if (t.foreign || t.status === 'cancelled') return [];
+  if (isDanglingStashRef(t.fromAccountId, stashes) || isDanglingStashRef(t.toAccountId, stashes)) return [];
+  const from = physicalAccountId(t.fromAccountId, stashes);
+  const to = physicalAccountId(t.toAccountId, stashes);
+  if (from && from === to) return [];
+  const out: AccountDelta[] = [];
+  if (from) out.push({ accountId: from, amount: -(t.fromAmount || 0), currency: t.fromCurrency, fx: t.fx });
+  if (to) out.push({ accountId: to, amount: t.toAmount || 0, currency: t.toCurrency, fx: t.fx });
+  return out;
+}
+
+/** Treat a transfer-kind occurrence as a transfer */
+export function occurrenceAsTransfer(o: Occurrence): TransferLike {
+  const toCurrency = o.toCurrency ?? o.currency;
+  return {
+    fromAccountId: o.accountId || o.plan?.accountId || '',
+    toAccountId: o.toAccountId || o.plan?.toAccountId || '',
+    fromAmount: o.amount,
+    fromCurrency: o.currency,
+    toAmount: o.toAmount ?? conv(o.amount, o.currency, toCurrency),
+    toCurrency,
+  };
+}
+
+/** How an occurrence (pending plan instance) changes physical account balances */
+export function occurrenceAccountDeltas(o: Occurrence, stashes: Stash[]): AccountDelta[] {
+  const kind = o.kind ?? o.plan?.kind ?? 'expense';
+  if (kind === 'transfer') return transferAccountDeltas(occurrenceAsTransfer(o), stashes);
+  return paymentAccountDeltas(
+    { amount: o.amount, currency: o.currency, accountId: o.accountId, stashId: o.stashId, kind, fx: o.fx },
+    o.plan,
+    stashes
+  );
+}
+
+/** Change of a stash balance (in the stash's currency) caused by a payment */
+export function paymentStashDelta(p: PaymentLike, plan: Plan | undefined, s: Stash): number {
+  const kind = p.kind ?? plan?.kind ?? 'expense';
+  if (kind === 'transfer') return 0;
+  const isSavingIntoThis = kind === 'saving' && (p.stashId ?? plan?.stashId) === s.id;
+  const isPaidFromThis = refersToStash(p.accountId, s);
+  const amt = convAt(p.amount || 0, p.currency, s.currency, p.fx);
+  // (a saving "from the stash into itself" is how an opening balance is recorded → it adds)
+  if (isSavingIntoThis) return amt;
+  if (isPaidFromThis) return kind === 'income' ? amt : -amt;
+  return 0;
+}
+
+/** Change of a stash balance (in the stash's currency) caused by a transfer */
+export function transferStashDelta(t: TransferLike, s: Stash): number {
+  if (t.status === 'cancelled') return 0;
+  let d = 0;
+  if (refersToStash(t.toAccountId, s)) d += convAt(t.toAmount || 0, t.toCurrency, s.currency, t.fx);
+  if (refersToStash(t.fromAccountId, s)) d -= convAt(t.fromAmount || 0, t.fromCurrency, s.currency, t.fx);
+  return d;
+}
+
+export function occurrenceStashDelta(o: Occurrence, s: Stash): number {
+  const kind = o.kind ?? o.plan?.kind ?? 'expense';
+  if (kind === 'transfer') return transferStashDelta(occurrenceAsTransfer(o), s);
+  return paymentStashDelta({ amount: o.amount, currency: o.currency, accountId: o.accountId, stashId: o.stashId, kind, fx: o.fx }, o.plan, s);
+}
+
+const planIndex = (plans: Plan[]) => new Map(plans.map(p => [p.id, p]));
+const effective = (date: string | undefined, asOf: string) => !date || date <= asOf;
+
+// ---------------------------------------------------------------------------------------------
+// Live balances
+// ---------------------------------------------------------------------------------------------
+
+/** Physical balance of an account as of `asOf` (default: today) */
 export function calcAccountBalance(
   a: Account,
   payments: Payment[],
   transfers: Transfer[] = [],
   plans: Plan[] = [],
-  stashes: Stash[] = []
+  stashes: Stash[] = [],
+  asOf: string = today()
 ): number {
-  let b = a.startBalance;
+  let b = a.startBalance || 0;
+  const byId = planIndex(plans);
   for (const p of payments) {
-    if (p.status !== 'confirmed') continue;
-    const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind ?? 'expense';
-    if (kind === 'transfer') continue; // Handled via transfers collection
-    const stashId = p.stashId ?? plan?.stashId;
-    const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-    const rawAccId = p.accountId || plan?.accountId || s?.accountId;
-    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [a]);
-    if (sourceAccId === a.id) {
-      const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
-      if (kind === 'income') b += amt;
-      else if (kind === 'expense') b -= amt;
-      // Stash saving stays inside the physical account envelope, so physical balance does not decrease
+    if (p.status !== 'confirmed' || !effective(p.date, asOf)) continue;
+    for (const d of paymentAccountDeltas(p, byId.get(p.planId), stashes)) {
+      if (d.accountId === a.id) b += convAt(d.amount, d.currency, a.currency, d.fx);
     }
   }
   for (const t of transfers) {
-    if (t.status === 'cancelled') continue;
-    if (t.date && t.date > today()) continue;
-
-    const physFrom = getPhysicalAccountId(t.fromAccountId, stashes, a.id, [a]);
-    const physTo = getPhysicalAccountId(t.toAccountId, stashes, a.id, [a]);
-
-    // If transfer is internal to this account (e.g. into or out of a stash held in this account),
-    // the total physical balance remains in this account.
-    if (physFrom === a.id && physTo === a.id) {
-      continue;
-    }
-
-    if (physFrom === a.id) {
-      const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
-      b -= amt;
-    }
-    if (physTo === a.id) {
-      const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
-      b += amt;
+    if (!effective(t.date, asOf)) continue;
+    for (const d of transferAccountDeltas(t, stashes)) {
+      if (d.accountId === a.id) b += convAt(d.amount, d.currency, a.currency, d.fx);
     }
   }
   return b;
 }
 
-/** Calculate live balance of a stash considering saving payments, withdrawals, and transfers */
+function stashBalanceInternal(s: Stash, payments: Payment[], transfers: Transfer[], plans: Plan[], asOf: string, ownOnly: boolean): number {
+  let b = ownOnly && s.isForeignOwned ? 0 : s.startAmount || 0;
+  const byId = planIndex(plans);
+  for (const p of payments) {
+    if (p.status !== 'confirmed' || !effective(p.date, asOf)) continue;
+    if (ownOnly && p.foreign) continue;
+    b += paymentStashDelta(p, byId.get(p.planId), s);
+  }
+  for (const t of transfers) {
+    if (!effective(t.date, asOf)) continue;
+    if (ownOnly && t.foreign) continue;
+    b += transferStashDelta(t, s);
+  }
+  return b;
+}
+
+/** Balance of a stash (all members' contributions for shared stashes) */
 export function calcStashBalance(
   s: Stash,
   payments: Payment[] = [],
   transfers: Transfer[] = [],
-  plans: Plan[] = []
+  plans: Plan[] = [],
+  asOf: string = today()
 ): number {
-  let b = s.startAmount || 0;
-
-  // 1. Confirmed payments
-  for (const p of payments) {
-    if (p.status !== 'confirmed') continue;
-    const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind;
-    if (kind === 'transfer') continue; // Handled via transfers collection
-    const isThisStashSaving = kind === 'saving' && ((p.stashId && p.stashId === s.id) || (plan?.stashId && plan.stashId === s.id));
-    const isThisStashPayment = p.accountId === `stash_${s.id}` || p.accountId === s.id;
-
-    if (!isThisStashSaving && !isThisStashPayment) continue;
-
-    const amt = p.currency && p.currency !== s.currency ? convert(p.amount, p.currency, s.currency) : p.amount;
-
-    if (isThisStashSaving) {
-      b += amt;
-    } else if (isThisStashPayment) {
-      if (kind === 'income') b += amt;
-      else b -= amt;
-    }
-  }
-
-  // 2. Active confirmed transfers
-  for (const t of transfers) {
-    if (t.status === 'cancelled') continue;
-    if (t.date && t.date > today()) continue;
-    if (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) {
-      const amt = t.toCurrency && t.toCurrency !== s.currency ? convert(t.toAmount, t.toCurrency, s.currency) : t.toAmount;
-      b += amt;
-    }
-    if (t.fromAccountId === `stash_${s.id}` || t.fromAccountId === s.id) {
-      const amt = t.fromCurrency && t.fromCurrency !== s.currency ? convert(t.fromAmount, t.fromCurrency, s.currency) : t.fromAmount;
-      b -= amt;
-    }
-  }
-
-  return b;
+  return stashBalanceInternal(s, payments, transfers, plans, asOf, false);
 }
 
-/** Calculate breakdown of stashed funds inside an account: personal vs shared */
+/** This user's own share of a stash (equals the full balance for personal stashes) */
+export function calcStashOwnBalance(
+  s: Stash,
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  asOf: string = today()
+): number {
+  if (!isSharedStash(s)) return calcStashBalance(s, payments, transfers, plans, asOf);
+  return stashBalanceInternal(s, payments, transfers, plans, asOf, true);
+}
+
+/**
+ * Money reserved for a stash inside this user's accounts (in stash currency).
+ * Personal stash: its balance. Shared stash: only this user's contributions, capped by the stash balance.
+ */
+export function calcStashReserved(
+  s: Stash,
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  asOf: string = today()
+): number {
+  const total = calcStashBalance(s, payments, transfers, plans, asOf);
+  if (!isSharedStash(s)) return Math.max(0, total);
+  const own = stashBalanceInternal(s, payments, transfers, plans, asOf, true);
+  return Math.max(0, Math.min(own, total));
+}
+
+/** Breakdown of stashed funds inside an account: personal vs shared (in account currency) */
 export function calcAccountStashedBreakdown(
   a: Account,
   stashes: Stash[],
   payments: Payment[] = [],
   transfers: Transfer[] = [],
   plans: Plan[] = [],
-  allAccounts: Account[] = []
+  _allAccounts: Account[] = []
 ): { total: number; personal: number; shared: number } {
-  let totalShared = 0;
-  let totalPersonal = 0;
-  const isFallbackPrimary = allAccounts.length > 0 && allAccounts[0].id === a.id;
+  let personal = 0;
+  let shared = 0;
   for (const s of stashes) {
-    const hasValidAcc = s.accountId && allAccounts.some(acc => acc.id === s.accountId);
-    let parentAccId = hasValidAcc ? s.accountId : undefined;
-
-    // If stash accountId is not set or foreign, check if account a funded a personal stash via transfers
-    if (!parentAccId) {
-      const isSharedStash = Boolean(
-        s.isShared ||
-        (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId))
-      );
-      const fundedFromThis = transfers.some(t =>
-        t.status !== 'cancelled' &&
-        (t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) &&
-        t.fromAccountId === a.id
-      );
-      if (fundedFromThis && !isSharedStash) {
-        parentAccId = a.id;
-      } else if (isFallbackPrimary && !isSharedStash) {
-        parentAccId = a.id;
-      }
-    }
-
-    if (parentAccId === a.id) {
-      let sBal = 0;
-      const isShared = Boolean(
-        s.isShared ||
-        (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && allAccounts.length > 0 && !allAccounts.some(acc => acc.id === s.accountId))
-      );
-
-      if (!isShared) {
-        sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
-      } else {
-        // For shared stashes, reserve the portion funded from this specific account:
-        for (const t of transfers) {
-          if (t.status === 'cancelled') continue;
-          if (t.date && t.date > today()) continue;
-          if ((t.toAccountId === `stash_${s.id}` || t.toAccountId === s.id) && t.fromAccountId === a.id) {
-            const amt = t.toCurrency && t.toCurrency !== a.currency ? convert(t.toAmount, t.toCurrency, a.currency) : t.toAmount;
-            sBal += amt;
-          }
-          if ((t.fromAccountId === `stash_${s.id}` || t.fromAccountId === s.id) && t.toAccountId === a.id) {
-            const amt = t.fromCurrency && t.fromCurrency !== a.currency ? convert(t.fromAmount, t.fromCurrency, a.currency) : t.fromAmount;
-            sBal -= amt;
-          }
-        }
-        if (s.accountId === a.id && s.startAmount) {
-          sBal += s.startAmount;
-        }
-        for (const p of payments) {
-          if (p.status !== 'confirmed') continue;
-          const plan = plans.find(x => x.id === p.planId);
-          const kind = p.kind ?? plan?.kind;
-          if (kind === 'saving' && (p.stashId === s.id || plan?.stashId === s.id) && (p.accountId === a.id || plan?.accountId === a.id)) {
-            sBal += (p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount);
-          } else if (s.accountId === a.id && (p.accountId === `stash_${s.id}` || p.accountId === s.id) && kind !== 'transfer') {
-            const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
-            if (kind === 'income') sBal += amt;
-            else sBal -= amt;
-          }
-        }
-        sBal = Math.max(0, sBal);
-      }
-
-      const inAccCur = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
-      if (isShared) {
-        totalShared += inAccCur;
-      } else {
-        totalPersonal += inAccCur;
-      }
-    }
+    if (s.accountId !== a.id) continue;
+    const reserved = conv(calcStashReserved(s, payments, transfers, plans), s.currency, a.currency);
+    if (isSharedStash(s)) shared += reserved;
+    else personal += reserved;
   }
-  return {
-    total: totalPersonal + totalShared,
-    personal: totalPersonal,
-    shared: totalShared,
-  };
+  return { total: personal + shared, personal, shared };
 }
 
-/** Calculate total stashed / reserved funds sitting inside an account (envelopes within this account) */
+/** Total stashed / reserved funds sitting inside an account */
 export function calcAccountStashedBalance(
   a: Account,
   stashes: Stash[],
@@ -249,7 +354,7 @@ export function calcAccountStashedBalance(
   return calcAccountStashedBreakdown(a, stashes, payments, transfers, plans, allAccounts).total;
 }
 
-/** Calculate free / available spending balance of an account (Total balance minus reserved stashes) */
+/** Free / available spending balance of an account (may be negative when overdrawn) */
 export function calcAccountAvailableBalance(
   a: Account,
   stashes: Stash[],
@@ -260,28 +365,37 @@ export function calcAccountAvailableBalance(
 ): number {
   const total = calcAccountBalance(a, payments, transfers, plans, stashes);
   const stashed = calcAccountStashedBalance(a, stashes, payments, transfers, plans, allAccounts);
-  return Math.max(0, total - stashed);
+  return total - stashed;
 }
 
-/** Map of all account balances keyed by account ID (and stash_ ID for stashes) */
+export const reservedKey = (stashId: string) => `reserved:${stashId}`;
+
+/**
+ * Map of balances keyed by account id, stash id, `stash_<id>`, and `reserved:<stashId>`
+ * (the part of a stash reserved inside this user's housing account, in stash currency).
+ */
 export function calcAllAccountBalances(
   accounts: Account[],
   payments: Payment[],
   transfers: Transfer[] = [],
   plans: Plan[] = [],
-  stashes: Stash[] = []
+  stashes: Stash[] = [],
+  asOf: string = today()
 ): Map<string, number> {
   const map = new Map<string, number>();
-  for (const a of accounts) {
-    map.set(a.id, calcAccountBalance(a, payments, transfers, plans, stashes));
-  }
+  for (const a of accounts) map.set(a.id, calcAccountBalance(a, payments, transfers, plans, stashes, asOf));
   for (const s of stashes) {
-    const sBal = calcStashBalance(s, payments, transfers, plans);
+    const sBal = calcStashBalance(s, payments, transfers, plans, asOf);
     map.set(s.id, sBal);
     map.set(`stash_${s.id}`, sBal);
+    map.set(reservedKey(s.id), calcStashReserved(s, payments, transfers, plans, asOf));
   }
   return map;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Projections
+// ---------------------------------------------------------------------------------------------
 
 export interface ProjectedBalanceResult {
   current: number;
@@ -291,10 +405,15 @@ export interface ProjectedBalanceResult {
 }
 
 /**
- * Calculates both the current live balance and the projected balance of an account
- * as of a given target date (YYYY-MM-DD), taking into account pending plan occurrences
- * and future transfers.
+ * Pending plan occurrences that projections assume will still happen: everything unconfirmed from
+ * OVERDUE_WINDOW_DAYS ago (overdue items are assumed to be paid next) up to `targetDate`.
  */
+export function pendingForProjection(plans: Plan[], payments: Payment[], todayDate: string, targetDate: string): Occurrence[] {
+  if (targetDate < todayDate) return [];
+  return occurrences(plans, payments, addDays(todayDate, -OVERDUE_WINDOW_DAYS), targetDate).filter(o => o.status === 'pending');
+}
+
+/** Current and projected physical balance of an account on `targetDate` */
 export function calcProjectedAccountBalance(
   account: Account,
   targetDate: string,
@@ -304,87 +423,26 @@ export function calcProjectedAccountBalance(
   stashes: Stash[] = [],
   todayDate: string = today()
 ): ProjectedBalanceResult {
-  const current = calcAccountBalance(account, payments, transfers, plans, stashes);
+  const current = calcAccountBalance(account, payments, transfers, plans, stashes, todayDate);
   if (!targetDate || targetDate <= todayDate) {
-    return {
-      current,
-      projected: current,
-      isFuture: false,
-      targetDate: targetDate || todayDate,
-    };
+    return { current, projected: current, isFuture: false, targetDate: targetDate || todayDate };
   }
-
-  // Future date: take today's live balance and apply all pending transactions
-  // scheduled between tomorrow and targetDate.
-  const tomorrow = addDays(todayDate, 1);
-  const futurePending = occurrences(plans, payments, tomorrow, targetDate).filter(o => o.status === 'pending');
-
   let projected = current;
-
-  // 1. Pending occurrences for this account
-  for (const o of futurePending) {
-    if (o.kind === 'transfer') {
-      const physFrom = getPhysicalAccountId(o.accountId, stashes, account.id);
-      const physTo = getPhysicalAccountId(o.toAccountId, stashes, account.id);
-      if (physFrom === account.id && physTo === account.id) {
-        continue;
-      }
-      if (physFrom === account.id) {
-        const amtInAcc = convert(o.amount, o.currency, account.currency);
-        projected -= amtInAcc;
-      }
-      if (physTo === account.id) {
-        const toAmt = o.toAmount ?? o.amount;
-        const toCur = o.toCurrency ?? o.currency;
-        const amtInAcc = convert(toAmt, toCur, account.currency);
-        projected += amtInAcc;
-      }
-      continue;
-    }
-    const stashId = o.stashId ?? o.plan?.stashId;
-    const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-    const rawAccId = o.accountId || o.plan?.accountId || s?.accountId;
-    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [account]);
-    if (sourceAccId === account.id) {
-      const amtInAcc = convert(o.amount, o.currency, account.currency);
-      if (o.kind === 'income') {
-        projected += amtInAcc;
-      } else if (o.kind === 'expense') {
-        projected -= amtInAcc;
-      }
-      // kind === 'saving' stays inside the account envelope
-    }
-  }
-
-  // 2. Future transfers between tomorrow and targetDate
-  for (const tr of transfers) {
-    if (tr.status === 'cancelled') continue;
-    if (tr.date > todayDate && tr.date <= targetDate) {
-      const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, account.id);
-      const physTo = getPhysicalAccountId(tr.toAccountId, stashes, account.id);
-      if (physFrom === account.id && physTo === account.id) {
-        continue;
-      }
-      if (physFrom === account.id) {
-        const amt = tr.fromCurrency && tr.fromCurrency !== account.currency ? convert(tr.fromAmount, tr.fromCurrency, account.currency) : tr.fromAmount;
-        projected -= amt;
-      }
-      if (physTo === account.id) {
-        const amt = tr.toCurrency && tr.toCurrency !== account.currency ? convert(tr.toAmount, tr.toCurrency, account.currency) : tr.toAmount;
-        projected += amt;
-      }
-    }
-  }
-
-  return {
-    current,
-    projected,
-    isFuture: true,
-    targetDate,
+  const add = (ds: AccountDelta[]) => {
+    for (const d of ds) if (d.accountId === account.id) projected += convAt(d.amount, d.currency, account.currency, d.fx);
   };
+  for (const o of pendingForProjection(plans, payments, todayDate, targetDate)) add(occurrenceAccountDeltas(o, stashes));
+  const byId = planIndex(plans);
+  for (const p of payments) {
+    if (p.status === 'confirmed' && p.date > todayDate && p.date <= targetDate) add(paymentAccountDeltas(p, byId.get(p.planId), stashes));
+  }
+  for (const t of transfers) {
+    if (t.date && t.date > todayDate && t.date <= targetDate) add(transferAccountDeltas(t, stashes));
+  }
+  return { current, projected, isFuture: true, targetDate };
 }
 
-/** Calculate projected balance of a stash on a future target date */
+/** Current and projected balance of a stash on `targetDate` */
 export function calcProjectedStashBalance(
   s: Stash,
   targetDate: string,
@@ -393,74 +451,23 @@ export function calcProjectedStashBalance(
   plans: Plan[] = [],
   todayDate: string = today()
 ): ProjectedBalanceResult {
-  const current = calcStashBalance(s, payments, transfers, plans);
+  const current = calcStashBalance(s, payments, transfers, plans, todayDate);
   if (!targetDate || targetDate <= todayDate) {
-    return {
-      current,
-      projected: current,
-      isFuture: false,
-      targetDate: targetDate || todayDate,
-    };
+    return { current, projected: current, isFuture: false, targetDate: targetDate || todayDate };
   }
-
-  const tomorrow = addDays(todayDate, 1);
-  const futurePending = occurrences(plans, payments, tomorrow, targetDate).filter(o => o.status === 'pending');
-
   let projected = current;
-  for (const o of futurePending) {
-    if (o.kind === 'transfer') {
-      if (o.accountId === `stash_${s.id}` || o.accountId === s.id) {
-        const amtInStash = convert(o.amount, o.currency, s.currency);
-        projected -= amtInStash;
-      }
-      if (o.toAccountId === `stash_${s.id}` || o.toAccountId === s.id) {
-        const toAmt = o.toAmount ?? o.amount;
-        const toCur = o.toCurrency ?? o.currency;
-        const amtInStash = convert(toAmt, toCur, s.currency);
-        projected += amtInStash;
-      }
-      continue;
-    }
-    const isThisStashSaving = o.kind === 'saving' && (o.stashId === s.id || o.plan?.stashId === s.id);
-    const isThisStashPayment = o.accountId === `stash_${s.id}` || o.accountId === s.id;
-
-    if (!isThisStashSaving && !isThisStashPayment) continue;
-
-    const amt = o.currency && o.currency !== s.currency ? convert(o.amount, o.currency, s.currency) : o.amount;
-    if (isThisStashSaving) {
-      projected += amt;
-    } else if (isThisStashPayment) {
-      if (o.kind === 'income') projected += amt;
-      else projected -= amt;
-    }
+  for (const o of pendingForProjection(plans, payments, todayDate, targetDate)) projected += occurrenceStashDelta(o, s);
+  const byId = planIndex(plans);
+  for (const p of payments) {
+    if (p.status === 'confirmed' && p.date > todayDate && p.date <= targetDate) projected += paymentStashDelta(p, byId.get(p.planId), s);
   }
-
-  for (const tr of transfers) {
-    if (tr.status === 'cancelled') continue;
-    if (tr.date > todayDate && tr.date <= targetDate) {
-      if (tr.toAccountId === `stash_${s.id}` || tr.toAccountId === s.id) {
-        const amt = tr.toCurrency && tr.toCurrency !== s.currency ? convert(tr.toAmount, tr.toCurrency, s.currency) : tr.toAmount;
-        projected += amt;
-      }
-      if (tr.fromAccountId === `stash_${s.id}` || tr.fromAccountId === s.id) {
-        const amt = tr.fromCurrency && tr.fromCurrency !== s.currency ? convert(tr.fromAmount, tr.fromCurrency, s.currency) : tr.fromAmount;
-        projected -= amt;
-      }
-    }
+  for (const t of transfers) {
+    if (t.date && t.date > todayDate && t.date <= targetDate) projected += transferStashDelta(t, s);
   }
-
-  return {
-    current,
-    projected,
-    isFuture: true,
-    targetDate,
-  };
+  return { current, projected, isFuture: true, targetDate };
 }
 
-/**
- * Returns a Map of accountId (and stash_ id) -> { current: number, projected: number }
- * as of targetDate.
- */
+/** Map of accountId (and stash id / stash_ id) → { current, projected } on targetDate */
 export function calcAllProjectedAccountBalances(
   accounts: Account[],
   targetDate: string,
@@ -483,7 +490,11 @@ export function calcAllProjectedAccountBalances(
   return map;
 }
 
-/** Total liquid balance across all accounts converted into the target currency */
+// ---------------------------------------------------------------------------------------------
+// Totals
+// ---------------------------------------------------------------------------------------------
+
+/** Total liquid money of this user: all accounts + this user's share of unhoused stashes */
 export function calcTotalLiquidBalance(
   accounts: Account[],
   payments: Payment[],
@@ -493,25 +504,15 @@ export function calcTotalLiquidBalance(
   targetCurrency = 'EUR'
 ): number {
   let sum = 0;
-  for (const a of accounts) {
-    const bal = calcAccountBalance(a, payments, transfers, plans, stashes);
-    sum += convert(bal, a.currency, targetCurrency);
-  }
+  for (const a of accounts) sum += convert(calcAccountBalance(a, payments, transfers, plans, stashes), a.currency, targetCurrency);
   for (const s of stashes) {
-    const isShared = Boolean(
-      s.isShared ||
-      (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
-    );
-    if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
-      const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
-      sum += convert(sBal, s.currency || targetCurrency, targetCurrency);
-    }
+    if (isHoused(s, accounts)) continue;
+    sum += convert(calcStashReserved(s, payments, transfers, plans), s.currency || targetCurrency, targetCurrency);
   }
   return sum;
 }
 
-/** Calculate breakdown of total stashed funds across all accounts: total, personal, shared */
+/** Breakdown of total stashed funds: total, personal, shared (in target currency) */
 export function calcTotalStashedBreakdown(
   accounts: Account[],
   stashes: Stash[],
@@ -520,29 +521,14 @@ export function calcTotalStashedBreakdown(
   plans: Plan[] = [],
   targetCurrency = 'EUR'
 ): { total: number; personal: number; shared: number } {
-  let totalPersonal = 0;
-  let totalShared = 0;
-  for (const a of accounts) {
-    const bd = calcAccountStashedBreakdown(a, stashes, payments, transfers, plans, accounts);
-    totalPersonal += convert(bd.personal, a.currency, targetCurrency);
-    totalShared += convert(bd.shared, a.currency, targetCurrency);
-  }
+  let personal = 0;
+  let shared = 0;
   for (const s of stashes) {
-    const isShared = Boolean(
-      s.isShared ||
-      (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
-    );
-    if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
-      const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
-      totalShared += convert(sBal, s.currency || targetCurrency, targetCurrency);
-    }
+    const reserved = convert(calcStashReserved(s, payments, transfers, plans), s.currency || targetCurrency, targetCurrency);
+    if (isSharedStash(s)) shared += reserved;
+    else personal += reserved;
   }
-  return {
-    total: totalPersonal + totalShared,
-    personal: totalPersonal,
-    shared: totalShared,
-  };
+  return { total: personal + shared, personal, shared };
 }
 
 /** Formats stashed breakdown: "50 € in stashes: 30 € in personal, 👥 20 € in shared" */
@@ -562,7 +548,6 @@ export function formatStashedBreakdown(
   return `🔒 ${money(totalStashed, currency)} in stashes`;
 }
 
-/** Total stashed / reserved funds across all accounts converted into target currency */
 export function calcTotalStashedBalance(
   accounts: Account[],
   stashes: Stash[],
@@ -574,31 +559,7 @@ export function calcTotalStashedBalance(
   return calcTotalStashedBreakdown(accounts, stashes, payments, transfers, plans, targetCurrency).total;
 }
 
-/** Total funds sitting in shared stashes converted into target currency */
-export function calcTotalSharedStashedBalance(
-  stashes: Stash[],
-  payments: Payment[] = [],
-  transfers: Transfer[] = [],
-  plans: Plan[] = [],
-  targetCurrency = 'EUR',
-  currentUserId?: string | null
-): number {
-  let sum = 0;
-  for (const s of stashes) {
-    const isShared = Boolean(
-      s.isShared ||
-      (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && currentUserId && s.ownerId !== currentUserId)
-    );
-    if (isShared) {
-      const sBal = Math.max(0, calcStashBalance(s, payments, transfers, plans));
-      sum += convert(sBal, s.currency || targetCurrency, targetCurrency);
-    }
-  }
-  return sum;
-}
-
-/** Total free / available spending cash across all accounts converted into target currency */
+/** Free money across all accounts (may be negative) */
 export function calcTotalAvailableBalance(
   accounts: Account[],
   stashes: Stash[],
@@ -607,10 +568,15 @@ export function calcTotalAvailableBalance(
   plans: Plan[] = [],
   targetCurrency = 'EUR'
 ): number {
-  const total = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, targetCurrency);
-  const stashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, targetCurrency);
-  return Math.max(0, total - stashed);
+  return (
+    calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, targetCurrency) -
+    calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, targetCurrency)
+  );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Funds checks
+// ---------------------------------------------------------------------------------------------
 
 export interface CheckAccountFundsResult {
   hasAccount: boolean;
@@ -625,7 +591,25 @@ export interface CheckAccountFundsResult {
   shortBy: number;
 }
 
-/** Check if an account or stash has sufficient balance for a specific payment/expense */
+/** Reserved amount of stash `s` (in stash currency), read from a calcAllAccountBalances map */
+function reservedFromMap(s: Stash, balances: Map<string, number>): number {
+  return Math.max(0, balances.get(reservedKey(s.id)) ?? balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0);
+}
+
+/**
+ * Money reserved in stashes inside account `a` (in the account's currency), from a calcAllAccountBalances map.
+ * Every screen that shows "free" vs "reserved" must use this so they always agree. For shared stashes only
+ * this user's own share is reserved.
+ */
+export function calcAccountReservedFromMap(a: Account, stashes: Stash[], balances: Map<string, number>): number {
+  let reserved = 0;
+  for (const s of stashes) {
+    if (s.accountId === a.id) reserved += conv(reservedFromMap(s, balances), s.currency, a.currency);
+  }
+  return reserved;
+}
+
+/** Check if an account or stash has enough free money for a payment */
 export function checkAccountFunds(
   accountId: string | undefined,
   amount: number,
@@ -634,19 +618,12 @@ export function checkAccountFunds(
   balances: Map<string, number>,
   stashes: Stash[] = []
 ): CheckAccountFundsResult {
-  if (!accountId) {
-    return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
-  }
+  if (!accountId) return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
 
-  const isStash = accountId.startsWith('stash_') || stashes.some(s => s.id === accountId);
-  if (isStash) {
-    const sId = accountId.startsWith('stash_') ? accountId.replace('stash_', '') : accountId;
-    const stash = stashes.find(s => s.id === sId);
-    if (!stash) return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
-    const bal = balances.get(accountId) ?? balances.get(stash.id) ?? stash.startAmount;
-    const neededInAccCur = convert(amount, currency, stash.currency);
-    const isShort = bal < neededInAccCur;
-    const shortBy = Math.max(0, neededInAccCur - bal);
+  const stash = findStashByRef(accountId, stashes);
+  if (stash) {
+    const bal = balances.get(`stash_${stash.id}`) ?? balances.get(stash.id) ?? stash.startAmount ?? 0;
+    const neededInAccCur = conv(amount, currency, stash.currency);
     return {
       hasAccount: true,
       accountName: `${stash.emoji} ${stash.name} (Stash)`,
@@ -655,40 +632,18 @@ export function checkAccountFunds(
       stashedBalance: 0,
       accountCurrency: stash.currency,
       neededInAccCur,
-      isShort,
-      shortBy,
+      isShort: bal < neededInAccCur,
+      shortBy: Math.max(0, neededInAccCur - bal),
     };
   }
 
   const acc = accounts.find(a => a.id === accountId);
-  if (!acc) {
-    return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
-  }
+  if (!acc) return { hasAccount: false, neededInAccCur: amount, isShort: false, shortBy: 0 };
   const totalBal = balances.get(acc.id) ?? 0;
-  let stashedBal = 0;
-  const stashesInAcc: Stash[] = [];
-  for (const s of stashes) {
-    const isShared = Boolean(
-      s.isShared ||
-      (s.sharedWith && s.sharedWith.length > 0) ||
-      (s.ownerId && accounts.length > 0 && !accounts.some(a => a.id === s.accountId))
-    );
-    const hasValidAcc = s.accountId && accounts.some(a => a.id === s.accountId);
-    const parentId = hasValidAcc ? s.accountId : (!isShared ? accounts[0]?.id : undefined);
-    if (parentId === acc.id) {
-      const sBal = Math.max(0, balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0);
-      const converted = s.currency === acc.currency ? sBal : convert(sBal, s.currency, acc.currency);
-      stashedBal += converted;
-      if (sBal > 0) {
-        stashesInAcc.push(s);
-      }
-    }
-  }
-  const freeBal = Math.max(0, totalBal - stashedBal);
-  const neededInAccCur = convert(amount, currency, acc.currency);
-  const isShort = freeBal < neededInAccCur;
-  const shortBy = Math.max(0, neededInAccCur - freeBal);
-
+  const stashedBal = calcAccountReservedFromMap(acc, stashes, balances);
+  const stashesInAcc = stashes.filter(s => s.accountId === acc.id && reservedFromMap(s, balances) > 0);
+  const freeBal = totalBal - stashedBal;
+  const neededInAccCur = conv(amount, currency, acc.currency);
   return {
     hasAccount: true,
     accountName: acc.name,
@@ -698,8 +653,8 @@ export function checkAccountFunds(
     stashesInAccount: stashesInAcc,
     accountCurrency: acc.currency,
     neededInAccCur,
-    isShort,
-    shortBy,
+    isShort: freeBal < neededInAccCur,
+    shortBy: Math.max(0, neededInAccCur - freeBal),
   };
 }
 
@@ -714,86 +669,66 @@ export interface AccountShortfallWarning {
   shortBy: number;
 }
 
-/** Check which accounts don't have enough money for their scheduled pending items in a given period */
+/** Accounts whose free balance dips below zero while paying the given pending items */
 export function findAccountShortfalls(
   accounts: Account[],
-  occurrences: Occurrence[],
+  occs: Occurrence[],
   balances: Map<string, number>,
   stashes: Stash[] = [],
   transfers: Transfer[] = [],
   ym?: string
 ): AccountShortfallWarning[] {
   const warnings: AccountShortfallWarning[] = [];
-  const pending = occurrences.filter(o => o.status === 'pending');
+  const pending = occs.filter(o => o.status === 'pending');
   const todayStr = today();
 
   for (const a of accounts) {
     const totalBal = balances.get(a.id) ?? 0;
-    let stashedInAcc = 0;
-    for (const s of stashes) {
-      const isShared = Boolean(
-        s.isShared ||
-        (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
-      );
-      const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
-      const parentId = hasValidAcc ? s.accountId : (!isShared ? accounts[0]?.id : undefined);
-      if (parentId === a.id) {
-        const sBal = Math.max(0, balances.get(`stash_${s.id}`) ?? balances.get(s.id) ?? 0);
-        stashedInAcc += s.currency === a.currency ? sBal : convert(sBal, s.currency, a.currency);
-      }
-    }
-    const bal = Math.max(0, totalBal - stashedInAcc);
+    const stashedInAcc = calcAccountReservedFromMap(a, stashes, balances);
+    // Not clamped: an already-overdrawn account must report the full shortfall.
+    const bal = totalBal - stashedInAcc;
     let outSum = 0;
     let inSum = 0;
-
-    // Net balance change per effective date (incoming transfers count as money in)
     const deltaByDate = new Map<string, number>();
     const addDelta = (date: string, d: number) => deltaByDate.set(date, (deltaByDate.get(date) ?? 0) + d);
 
     for (const o of pending) {
-      const effDate = o.date || o.dueDate;
-      const isSource = o.accountId === a.id;
-      const isTransferTarget = o.kind === 'transfer' && o.toAccountId === a.id;
-      if (isSource && isTransferTarget) continue; // transfer to itself: no effect
-
+      // Overdue items are assumed to be paid now
+      const effDate = (o.date || o.dueDate) < todayStr ? todayStr : o.date || o.dueDate;
+      const source = o.accountId || o.plan?.accountId;
+      const isSource = source === a.id;
+      const isTransferTarget = o.kind === 'transfer' && (o.toAccountId || o.plan?.toAccountId) === a.id;
+      if (isSource && isTransferTarget) continue;
       if (isSource) {
-        const amtInAcc = convert(o.amount, o.currency, a.currency);
-        if (o.kind === 'income') {
-          inSum += amtInAcc;
-          addDelta(effDate, amtInAcc);
-        } else {
-          outSum += amtInAcc;
-          addDelta(effDate, -amtInAcc);
-        }
+        const amt = conv(o.amount, o.currency, a.currency);
+        if (o.kind === 'income') { inSum += amt; addDelta(effDate, amt); }
+        else { outSum += amt; addDelta(effDate, -amt); }
       } else if (isTransferTarget) {
-        const toAmt = o.toAmount ?? o.amount;
-        const toCur = o.toCurrency ?? o.currency;
-        const amtInAcc = convert(toAmt, toCur, a.currency);
-        inSum += amtInAcc;
-        addDelta(effDate, amtInAcc);
+        const t = occurrenceAsTransfer(o);
+        const amt = conv(t.toAmount, t.toCurrency, a.currency);
+        inSum += amt;
+        addDelta(effDate, amt);
       }
     }
 
     for (const tr of transfers) {
-      if (tr.status === 'cancelled') continue;
+      if (tr.status === 'cancelled' || tr.foreign) continue;
       if (!tr.date || tr.date <= todayStr) continue;
       if (ym && !tr.date.startsWith(ym)) continue;
       const isSource = tr.fromAccountId === a.id;
       const isTarget = tr.toAccountId === a.id;
       if (isSource && isTarget) continue;
       if (isSource) {
-        const amtInAcc = tr.fromCurrency && tr.fromCurrency !== a.currency ? convert(tr.fromAmount, tr.fromCurrency, a.currency) : tr.fromAmount;
-        outSum += amtInAcc;
-        addDelta(tr.date, -amtInAcc);
+        const amt = convAt(tr.fromAmount, tr.fromCurrency, a.currency, tr.fx);
+        outSum += amt;
+        addDelta(tr.date, -amt);
       } else if (isTarget) {
-        const amtInAcc = tr.toCurrency && tr.toCurrency !== a.currency ? convert(tr.toAmount, tr.toCurrency, a.currency) : tr.toAmount;
-        inSum += amtInAcc;
-        addDelta(tr.date, amtInAcc);
+        const amt = convAt(tr.toAmount, tr.toCurrency, a.currency, tr.fx);
+        inSum += amt;
+        addDelta(tr.date, amt);
       }
     }
 
-    // Walk through the period day by day and find the lowest balance
     let running = bal;
     let lowest = bal;
     for (const date of [...deltaByDate.keys()].sort()) {
@@ -801,7 +736,6 @@ export function findAccountShortfalls(
       if (running < lowest) lowest = running;
     }
 
-    const projected = bal + inSum - outSum;
     if (lowest < -0.005) {
       warnings.push({
         accountId: a.id,
@@ -810,14 +744,17 @@ export function findAccountShortfalls(
         currentBalance: bal,
         scheduledOutgoing: outSum,
         scheduledIncoming: inSum,
-        projectedBalance: projected,
+        projectedBalance: bal + inSum - outSum,
         shortBy: -lowest,
       });
     }
   }
-
   return warnings;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Month planner
+// ---------------------------------------------------------------------------------------------
 
 export interface MonthBalanceProjection {
   accountBalances: Map<string, number>;
@@ -827,11 +764,11 @@ export interface MonthBalanceProjection {
 }
 
 /**
- * Calculates the projected starting balances for each account and total liquid balance
- * at the start of a given month (targetYm), taking into account pending scheduled transactions.
- * - For current month: returns live balances today.
- * - For future months: adjusts today's live balance by all pending items scheduled before the 1st of targetYm.
- * - For past months: unwinds confirmed transactions that occurred on or after the 1st of targetYm.
+ * Balances at the start of month `targetYm`:
+ * - current month: live balances today
+ * - future months: today's balances + everything expected before the 1st (pending items within the
+ *   overdue window, future-dated confirmed records)
+ * - past months: balances at the end of the previous month
  */
 export function calcMonthStartingBalances(
   accounts: Account[],
@@ -844,197 +781,66 @@ export function calcMonthStartingBalances(
   todayDate = today()
 ): MonthBalanceProjection {
   const curYm = todayDate.slice(0, 7);
-  const liveBalances = calcAllAccountBalances(accounts, payments, transfers, plans, stashes);
-  const totalStashed = calcTotalStashedBalance(accounts, stashes, payments, transfers, plans, targetCurrency);
 
-  if (targetYm === curYm) {
-    const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, targetCurrency);
-    return {
-      accountBalances: liveBalances,
-      totalLiquid,
-      totalStashed,
-      totalAvailable: Math.max(0, totalLiquid - totalStashed),
-    };
+  if (targetYm < curYm) {
+    const asOf = addDays(`${targetYm}-01`, -1);
+    const accountBalances = calcAllAccountBalances(accounts, payments, transfers, plans, stashes, asOf);
+    return summarize(accounts, stashes, accountBalances, targetCurrency);
   }
 
-  if (targetYm > curYm) {
-    // Future month: Starting balance at targetYm-01 = live balance today
-    // + all pending transactions between today and the end of the previous month.
-    const fromDate = addDays(todayDate, -60);
-    const toDate = monthRange(shiftMonth(targetYm, -1))[1];
-    const priorPending = occurrences(plans, payments, fromDate, toDate).filter(o => o.status === 'pending');
+  const live = calcAllAccountBalances(accounts, payments, transfers, plans, stashes, todayDate);
+  if (targetYm === curYm) return summarize(accounts, stashes, live, targetCurrency);
 
-    const accBals = new Map<string, number>(liveBalances);
-    let projectedStashed = totalStashed;
-    let unassignedNet = 0;
-
-    for (const o of priorPending) {
-      if (o.kind === 'transfer') {
-        const physFrom = getPhysicalAccountId(o.accountId, stashes, accounts[0]?.id, accounts);
-        const physTo = getPhysicalAccountId(o.toAccountId, stashes, accounts[0]?.id, accounts);
-        if (physFrom !== physTo) {
-          if (physFrom) {
-            const fromAcc = accounts.find(a => a.id === physFrom);
-            if (fromAcc) {
-              const amtInFrom = convert(o.amount, o.currency, fromAcc.currency);
-              accBals.set(fromAcc.id, (accBals.get(fromAcc.id) ?? 0) - amtInFrom);
-            }
-          }
-          if (physTo) {
-            const toAcc = accounts.find(a => a.id === physTo);
-            if (toAcc) {
-              const toAmt = o.toAmount ?? o.amount;
-              const toCur = o.toCurrency ?? o.currency;
-              const amtInTo = convert(toAmt, toCur, toAcc.currency);
-              accBals.set(toAcc.id, (accBals.get(toAcc.id) ?? 0) + amtInTo);
-            }
-          }
-        }
-        const sFrom = stashes.find(s => s.id === o.accountId || `stash_${s.id}` === o.accountId);
-        if (sFrom) {
-          const amtInS = convert(o.amount, o.currency, sFrom.currency);
-          const nextS = (accBals.get(sFrom.id) ?? 0) - amtInS;
-          accBals.set(sFrom.id, nextS);
-          accBals.set(`stash_${sFrom.id}`, nextS);
-          projectedStashed = Math.max(0, projectedStashed - convert(o.amount, o.currency, targetCurrency));
-        }
-        const sTo = stashes.find(s => s.id === o.toAccountId || `stash_${s.id}` === o.toAccountId);
-        if (sTo) {
-          const toAmt = o.toAmount ?? o.amount;
-          const toCur = o.toCurrency ?? o.currency;
-          const amtInS = convert(toAmt, toCur, sTo.currency);
-          const nextS = (accBals.get(sTo.id) ?? 0) + amtInS;
-          accBals.set(sTo.id, nextS);
-          accBals.set(`stash_${sTo.id}`, nextS);
-          projectedStashed += convert(toAmt, toCur, targetCurrency);
-        }
-        continue;
-      }
-
-      if (o.kind === 'saving') {
-        const stashId = o.stashId ?? o.plan?.stashId;
-        const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-        if (s) {
-          const amtInS = convert(o.amount, o.currency, s.currency);
-          const nextS = (accBals.get(s.id) ?? 0) + amtInS;
-          accBals.set(s.id, nextS);
-          accBals.set(`stash_${s.id}`, nextS);
-        }
-        projectedStashed += convert(o.amount, o.currency, targetCurrency);
-        continue;
-      }
-
-      const rawAccId = o.accountId || o.plan?.accountId;
-      const sPay = rawAccId ? stashes.find(s => s.id === rawAccId || `stash_${s.id}` === rawAccId) : undefined;
-      if (sPay) {
-        const amtInS = convert(o.amount, o.currency, sPay.currency);
-        const deltaS = o.kind === 'income' ? amtInS : -amtInS;
-        const nextS = (accBals.get(sPay.id) ?? 0) + deltaS;
-        accBals.set(sPay.id, nextS);
-        accBals.set(`stash_${sPay.id}`, nextS);
-        const amtTarget = convert(o.amount, o.currency, targetCurrency);
-        projectedStashed = Math.max(0, projectedStashed + (o.kind === 'income' ? amtTarget : -amtTarget));
-      }
-
-      const physAccId = getPhysicalAccountId(rawAccId, stashes, undefined, accounts);
-      if (physAccId) {
-        const acc = accounts.find(a => a.id === physAccId);
-        if (acc) {
-          const amtInAcc = convert(o.amount, o.currency, acc.currency);
-          const curr = accBals.get(acc.id) ?? 0;
-          if (o.kind === 'income') {
-            accBals.set(acc.id, curr + amtInAcc);
-          } else {
-            accBals.set(acc.id, curr - amtInAcc);
-          }
-        }
-      } else if (!rawAccId) {
-        // Pending item without a designated account still impacts total liquid funds
-        const amtInTarget = convert(o.amount, o.currency, targetCurrency);
-        if (o.kind === 'income') unassignedNet += amtInTarget;
-        else unassignedNet -= amtInTarget;
-      }
+  // Future month
+  const toDate = monthRange(shiftMonth(targetYm, -1))[1];
+  const bals = new Map(live);
+  const applyAcc = (ds: AccountDelta[]) => {
+    for (const d of ds) {
+      const acc = accounts.find(a => a.id === d.accountId);
+      if (acc) bals.set(acc.id, (bals.get(acc.id) ?? 0) + convAt(d.amount, d.currency, acc.currency, d.fx));
     }
-
-    for (const tr of transfers) {
-      if (tr.status === 'cancelled') continue;
-      if (tr.date && tr.date > todayDate && tr.date <= toDate) {
-        const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, accounts[0]?.id, accounts);
-        const physTo = getPhysicalAccountId(tr.toAccountId, stashes, accounts[0]?.id, accounts);
-        if (physFrom !== physTo) {
-          if (physFrom) {
-            const fromAcc = accounts.find(a => a.id === physFrom);
-            if (fromAcc) {
-              const amt = tr.fromCurrency && tr.fromCurrency !== fromAcc.currency ? convert(tr.fromAmount, tr.fromCurrency, fromAcc.currency) : tr.fromAmount;
-              accBals.set(fromAcc.id, (accBals.get(fromAcc.id) ?? 0) - amt);
-            }
-          }
-          if (physTo) {
-            const toAcc = accounts.find(a => a.id === physTo);
-            if (toAcc) {
-              const amt = tr.toCurrency && tr.toCurrency !== toAcc.currency ? convert(tr.toAmount, tr.toCurrency, toAcc.currency) : tr.toAmount;
-              accBals.set(toAcc.id, (accBals.get(toAcc.id) ?? 0) + amt);
-            }
-          }
-        }
-        const sFrom = stashes.find(s => s.id === tr.fromAccountId || `stash_${s.id}` === tr.fromAccountId);
-        if (sFrom) {
-          const amt = tr.fromCurrency && tr.fromCurrency !== sFrom.currency ? convert(tr.fromAmount, tr.fromCurrency, sFrom.currency) : tr.fromAmount;
-          const nextS = (accBals.get(sFrom.id) ?? 0) - amt;
-          accBals.set(sFrom.id, nextS);
-          accBals.set(`stash_${sFrom.id}`, nextS);
-          projectedStashed = Math.max(0, projectedStashed - convert(tr.fromAmount, tr.fromCurrency || targetCurrency, targetCurrency));
-        }
-        const sTo = stashes.find(s => s.id === tr.toAccountId || `stash_${s.id}` === tr.toAccountId);
-        if (sTo) {
-          const amt = tr.toCurrency && tr.toCurrency !== sTo.currency ? convert(tr.toAmount, tr.toCurrency, sTo.currency) : tr.toAmount;
-          const nextS = (accBals.get(sTo.id) ?? 0) + amt;
-          accBals.set(sTo.id, nextS);
-          accBals.set(`stash_${sTo.id}`, nextS);
-          projectedStashed += convert(tr.toAmount, tr.toCurrency || targetCurrency, targetCurrency);
-        }
-      }
-    }
-
-    let projectedTotal = 0;
-    for (const a of accounts) {
-      const bal = accBals.get(a.id) ?? 0;
-      projectedTotal += convert(bal, a.currency, targetCurrency);
-    }
-    for (const s of stashes) {
-      const isShared = Boolean(
-        s.isShared ||
-        (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
-      );
-      if (isShared && !accounts.some(acc => acc.id === s.accountId)) {
-        const sBal = Math.max(0, accBals.get(s.id) ?? 0);
-        projectedTotal += convert(sBal, s.currency || targetCurrency, targetCurrency);
-      }
-    }
-    projectedTotal += unassignedNet;
-
-    return {
-      accountBalances: accBals,
-      totalLiquid: projectedTotal,
-      totalStashed: projectedStashed,
-      totalAvailable: Math.max(0, projectedTotal - projectedStashed),
-    };
-  }
-
-  // Past month: Compute historical balances as of targetYm-01 using transactions strictly before targetYm-01
-  const startOfPastMonth = `${targetYm}-01`;
-  const pastPayments = payments.filter(p => p.date < startOfPastMonth);
-  const pastTransfers = transfers.filter(t => !t.date || t.date < startOfPastMonth);
-
-  const histAccountBalances = calcAllAccountBalances(accounts, pastPayments, pastTransfers, plans, stashes);
-  const histTotalLiquid = calcTotalLiquidBalance(accounts, pastPayments, pastTransfers, plans, stashes, targetCurrency);
-  const histTotalStashed = calcTotalStashedBalance(accounts, stashes, pastPayments, pastTransfers, plans, targetCurrency);
-
-  return {
-    accountBalances: histAccountBalances,
-    totalLiquid: histTotalLiquid,
-    totalStashed: histTotalStashed,
-    totalAvailable: Math.max(0, histTotalLiquid - histTotalStashed),
   };
+  // Pending items are always this user's own plans, so they also change the user's own share.
+  const applyStash = (delta: (s: Stash) => number) => {
+    for (const s of stashes) {
+      const d = delta(s);
+      if (!d) continue;
+      bals.set(s.id, (bals.get(s.id) ?? 0) + d);
+      bals.set(`stash_${s.id}`, bals.get(s.id)!);
+      bals.set(reservedKey(s.id), Math.max(0, (bals.get(reservedKey(s.id)) ?? 0) + d));
+    }
+  };
+
+  for (const o of pendingForProjection(plans, payments, todayDate, toDate)) {
+    applyAcc(occurrenceAccountDeltas(o, stashes));
+    applyStash(s => occurrenceStashDelta(o, s));
+  }
+  const byId = planIndex(plans);
+  for (const p of payments) {
+    if (p.status !== 'confirmed' || !(p.date > todayDate && p.date <= toDate)) continue;
+    applyAcc(paymentAccountDeltas(p, byId.get(p.planId), stashes));
+    applyStash(s => paymentStashDelta(p, byId.get(p.planId), s));
+  }
+  for (const t of transfers) {
+    if (!t.date || !(t.date > todayDate && t.date <= toDate)) continue;
+    applyAcc(transferAccountDeltas(t, stashes));
+    applyStash(s => transferStashDelta(t, s));
+  }
+  // Keep reserved within the stash balance
+  for (const s of stashes) {
+    bals.set(reservedKey(s.id), Math.max(0, Math.min(bals.get(reservedKey(s.id)) ?? 0, Math.max(0, bals.get(s.id) ?? 0))));
+  }
+  return summarize(accounts, stashes, bals, targetCurrency);
+}
+
+function summarize(accounts: Account[], stashes: Stash[], bals: Map<string, number>, targetCurrency: string): MonthBalanceProjection {
+  let totalLiquid = 0;
+  let totalStashed = 0;
+  for (const a of accounts) totalLiquid += convert(bals.get(a.id) ?? 0, a.currency, targetCurrency);
+  for (const s of stashes) {
+    const reserved = convert(bals.get(reservedKey(s.id)) ?? 0, s.currency || targetCurrency, targetCurrency);
+    totalStashed += reserved;
+    if (!isHoused(s, accounts)) totalLiquid += reserved;
+  }
+  return { accountBalances: bals, totalLiquid, totalStashed, totalAvailable: totalLiquid - totalStashed };
 }

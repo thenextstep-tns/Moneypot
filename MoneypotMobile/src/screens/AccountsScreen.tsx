@@ -97,7 +97,7 @@ export function AccountsScreen() {
         title="Accounts"
         subtitle="Cards, Wallets & Cash"
         rightAction={
-          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd}>
+          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd} accessibilityRole="button">
             <Text style={styles.addBtnText}>+ Add</Text>
           </TouchableOpacity>
         }
@@ -114,7 +114,7 @@ export function AccountsScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity style={styles.transferBtn} onPress={() => handleOpenTransfer()}>
+        <TouchableOpacity style={styles.transferBtn} onPress={() => handleOpenTransfer()} accessibilityRole="button">
           <Text style={styles.transferBtnText}>⇄ Move Money</Text>
         </TouchableOpacity>
       </View>
@@ -144,13 +144,17 @@ export function AccountsScreen() {
                   style={styles.cardMainClick}
                   onPress={() => handleAccountPress(acc)}
                   disabled={isActive}
+                  accessibilityRole="button"
                 >
                   <View style={styles.accLeft}>
                     <TouchableOpacity
                       style={styles.dragHandle}
                       onPressIn={drag}
                       disabled={isActive}
+                      accessibilityLabel="Drag to reorder"
+                      accessibilityHint="Press and hold, then move"
                       hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      accessibilityRole="button"
                     >
                       <GripVerticalIcon size={18} color={isActive ? theme.colors.brand : '#9CA3AF'} />
                     </TouchableOpacity>
@@ -192,6 +196,7 @@ export function AccountsScreen() {
                         currentBalance: totalBal,
                       });
                     }}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.actionPillText}>⚖️ Balance Correction</Text>
                   </TouchableOpacity>
@@ -200,6 +205,7 @@ export function AccountsScreen() {
                     style={styles.actionPill}
                     disabled={isActive}
                     onPress={() => handleOpenTransfer(acc.id)}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.actionPillText}>⇄ Transfer</Text>
                   </TouchableOpacity>

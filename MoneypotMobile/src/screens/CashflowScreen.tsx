@@ -167,6 +167,8 @@ export function CashflowScreen() {
                 triggerHaptic('light');
                 setRangeMode(r.key as any);
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: Boolean(active) }}
             >
               <Text style={[styles.rangeChipText, active && styles.rangeChipTextActive]}>
                 {r.label}
@@ -194,6 +196,7 @@ export function CashflowScreen() {
               triggerHaptic('light');
               setSelectedDate(overdrawnAccounts[0].worstDate);
             }}
+            accessibilityRole="button"
           >
             <Text style={{ fontSize: 13, fontWeight: '800', color: '#991B1B' }}>
               ⚠️ Projected Account Shortfall

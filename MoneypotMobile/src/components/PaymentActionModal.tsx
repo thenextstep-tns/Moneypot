@@ -165,7 +165,7 @@ export function PaymentActionModal({
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>{isPayEarly ? `⚡ ${earlyTitleVerb}: ${occurrence.name}` : occurrence.name}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -187,6 +187,7 @@ export function PaymentActionModal({
                       onClose();
                       onOpenTransfer(undefined, selectedAccountId);
                     }}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.moveMoneyText}>⇄ Move Money into this Account</Text>
                   </TouchableOpacity>
@@ -203,6 +204,7 @@ export function PaymentActionModal({
                 onChangeText={setAmountStr}
                 keyboardType="numeric"
                 selectTextOnFocus
+                accessibilityLabel="Amount"
               />
               <Text style={styles.currencyBadge}>{occurrence.currency}</Text>
             </View>
@@ -220,6 +222,8 @@ export function PaymentActionModal({
                       triggerHaptic('light');
                       setSelectedAccountId(acc.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>
                       {acc.name}
@@ -242,6 +246,8 @@ export function PaymentActionModal({
                       triggerHaptic('light');
                       setSelectedCategoryId(cat.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>
                       {cat.emoji} {cat.name}
@@ -259,6 +265,7 @@ export function PaymentActionModal({
               placeholderTextColor={theme.colors.mute}
               value={note}
               onChangeText={setNote}
+              accessibilityLabel="Note"
             />
 
             {/* Actions */}
@@ -279,6 +286,7 @@ export function PaymentActionModal({
                       },
                     ]}
                     onPress={handleConfirm}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.confirmBtnText}>
                       {isPayEarly
@@ -302,11 +310,12 @@ export function PaymentActionModal({
                         triggerHaptic('light');
                         setPostponeMode(true);
                       }}
+                      accessibilityRole="button"
                     >
                       <Text style={styles.laterBtnText}>⏳ Postpone</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
+                    <TouchableOpacity style={styles.skipBtn} onPress={handleSkip} accessibilityRole="button">
                       <Text style={styles.skipBtnText}>✕ Skip</Text>
                     </TouchableOpacity>
                   </View>
@@ -315,19 +324,20 @@ export function PaymentActionModal({
                 <View style={styles.postponeOptions}>
                   <Text style={styles.postponeTitle}>Postpone to:</Text>
                   <View style={styles.postponeBtnRow}>
-                    <TouchableOpacity style={styles.postponeChip} onPress={() => handlePostpone(1)}>
+                    <TouchableOpacity style={styles.postponeChip} onPress={() => handlePostpone(1)} accessibilityRole="button">
                       <Text style={styles.postponeChipText}>Tomorrow</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.postponeChip} onPress={() => handlePostpone(3)}>
+                    <TouchableOpacity style={styles.postponeChip} onPress={() => handlePostpone(3)} accessibilityRole="button">
                       <Text style={styles.postponeChipText}>In 3 Days</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.postponeChip} onPress={() => handlePostpone(7)}>
+                    <TouchableOpacity style={styles.postponeChip} onPress={() => handlePostpone(7)} accessibilityRole="button">
                       <Text style={styles.postponeChipText}>Next Week</Text>
                     </TouchableOpacity>
                   </View>
                   <TouchableOpacity
                     style={styles.cancelPostponeBtn}
                     onPress={() => setPostponeMode(false)}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.cancelPostponeText}>Back</Text>
                   </TouchableOpacity>

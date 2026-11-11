@@ -109,12 +109,12 @@ export function Plans() {
                     <div className="title">
                       {p.name}
                       {p.freq === 'once' && (
-                        <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>
+                        <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>
                           One-off · {dayLabel(p.startDate)}
                         </span>
                       )}
                       {isTransfer && (
-                        <span className="tag" style={{ background: '#EEF2FF', color: '#4338CA' }}>
+                        <span className="tag" style={{ background: 'var(--info-bg)', color: '#4338CA' }}>
                           {fromName} → {toName}
                         </span>
                       )}
@@ -373,8 +373,8 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
             {selParty && isFuture && selBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -400,7 +400,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         paddingTop: 4,
-                        borderTop: '1px dashed #E2E8F0',
+                        borderTop: '1px dashed var(--line)',
                       }}
                     >
                       <span style={{ color: 'var(--mute)' }}>
@@ -418,7 +418,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
             {selParty && isFuture && selBals && p.amount > 0 && (() => {
               const effFromAmt = convert(p.amount, p.currency, selParty.currency);
               return selBals.projected - effFromAmt < 0 ? (
-                <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+                <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13, marginTop: 8 }}>
                   ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(effFromAmt - selBals.projected, selParty.currency)} short.
                 </div>
               ) : null;
@@ -446,8 +446,8 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
             {toParty && isFuture && toBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -460,7 +460,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: p.amount > 0 ? 4 : 0 }}>
                   <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(targetDate)}:</span>
-                  <b style={{ color: '#2563EB' }}>
+                  <b style={{ color: 'var(--info-ink)' }}>
                     {money(toBals.projected, toParty.currency)}
                   </b>
                 </div>
@@ -471,13 +471,13 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
+                      borderTop: '1px dashed var(--line)',
                     }}
                   >
                     <span style={{ color: 'var(--mute)' }}>
                       After receiving transfer:
                     </span>
-                    <b style={{ color: '#166534' }}>
+                    <b style={{ color: 'var(--good-ink)' }}>
                       {money(toBals.projected + convert(p.toAmount ?? p.amount, p.toCurrency ?? p.currency, toParty.currency), toParty.currency)}
                     </b>
                   </div>
@@ -602,8 +602,8 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
             {selParty && isFuture && selBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -630,7 +630,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         paddingTop: 4,
-                        borderTop: '1px dashed #E2E8F0',
+                        borderTop: '1px dashed var(--line)',
                       }}
                     >
                       <span style={{ color: 'var(--mute)' }}>
@@ -648,7 +648,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
             {selParty && isFuture && selBals && p.kind !== 'income' && p.amount > 0 && (() => {
               const effAmt = convert(p.amount, p.currency, selParty.currency);
               return selBals.projected - effAmt < 0 ? (
-                <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, marginTop: 8 }}>
+                <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13, marginTop: 8 }}>
                   ⚠️ <b>Low projected funds:</b> On {dayLabel(targetDate)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(effAmt - selBals.projected, selParty.currency)} short.
                 </div>
               ) : null;
@@ -661,7 +661,7 @@ export function PlanForm({ plan, kind, onClose }: { plan?: Plan; kind?: Kind; on
         <textarea rows={2} value={p.note ?? ''} placeholder="What does it include? e.g. electricity + water" onChange={e => set({ note: e.target.value || undefined })} />
       </Field>
       <button className="btn primary wide" disabled={!valid} onClick={submit}>{plan ? 'Save changes' : 'Add to plan'}</button>
-      {plan && <button className="btn ghost wide danger" onClick={() => { remove('plans', plan.id); onClose(); }}>Delete (past payments are kept)</button>}
+      {plan && <button type="button" className="btn ghost wide danger" onClick={() => { if (!confirm(`Delete the plan "${plan.name}"? Future occurrences disappear; past payments are kept.`)) return; remove('plans', plan.id); onClose(); }}>Delete (past payments are kept)</button>}
     </Modal>
   );
 }

@@ -1,3 +1,4 @@
+// GENERATED from src/defaults.ts by scripts/sync-domain.mjs — do not edit here, edit src/defaults.ts and re-run.
 import type { Account, Category, Plan, QuickTemplate, Stash, Transfer } from './types';
 import { shiftMonth, thisMonth } from './schedule';
 
@@ -7,6 +8,7 @@ export const DEFAULT_TEMPLATES: QuickTemplate[] = [
   { id: 't_groceries', name: 'Supermarket', emoji: '🛒', amount: 35, currency: 'EUR', categoryId: 'food', subcategory: 'Groceries' },
   { id: 't_metro', name: 'Public Transport', emoji: '🚇', amount: 2.4, currency: 'EUR', categoryId: 'transport', subcategory: 'Public transport' },
 ];
+
 
 export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'home', name: 'Life & Bills', emoji: '🏠', color: '#6C8EF5', kind: 'expense', subcategories: ['Clothes', 'Flat rent', 'Household chemicals', 'Insurance', 'Mental & physical health', 'Mobile phone', 'Pharmacy', 'Treat myself', 'Work expenses'] },
@@ -77,3 +79,4 @@ export const DEMO = {
   ],
   templates: DEFAULT_TEMPLATES,
 };
+

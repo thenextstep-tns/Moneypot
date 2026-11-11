@@ -1,5 +1,7 @@
 // ---- Data model (Firestore: users/{uid}/{collection}/{id}) ----
-// Every document carries `ownerId` (= uid, injected by the store and enforced by security rules).
+// Personal documents live under users/{uid} and are readable/writable only by that user.
+// Shared pots/stashes live in shared_items/{sharedId} (members only); records that touch a shared
+// item are mirrored into shared_items/{sharedId}/payments|transfers. See sharedSync.ts.
 
 export type Kind = 'income' | 'expense' | 'saving' | 'transfer';
 export type Freq = 'once' | 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -25,8 +27,10 @@ export interface Category extends Owned {
   kind: Kind;
   hints?: string[];             // example sub-items shown to the user
   subcategories?: string[];     // user-defined subcategories for this pot
-  sharedWith?: string[];        // emails of confirmed members
+  sharedWith?: string[];        // emails of confirmed members (derived from the shared item)
   ownerEmail?: string;          // email of the creator
+  sharedId?: string;            // id of shared_items/{sharedId} when this pot is shared
+  isForeignOwned?: boolean;     // computed: shared by someone else (never stored)
   order?: number;
 }
 
@@ -73,27 +77,44 @@ export interface Stash extends Owned {
   subcategory?: string;         // default subcategory (e.g. stash name)
   isInstantAccess?: boolean;    // true = allows paying directly from this stash (default true for personal stashes)
   isShared?: boolean;           // part of a shared stash
+  sharedId?: string;            // id of shared_items/{sharedId} when this stash is shared
+  isForeignOwned?: boolean;     // computed: shared by someone else (never stored)
   order?: number;
 }
 
-/** Invitation to share a pot or stash with an email and one-off masked access code */
-export interface ShareInvite extends Owned {
+/**
+ * Invitation to join a shared pot or stash. Stored at invites/{sha256(code)} so it can only be
+ * fetched by someone who knows the code. The plaintext code is never stored.
+ */
+export interface ShareInvite {
+  id: string;                  // sha256 of the normalized code
+  ownerId: string;             // uid of the inviter
+  sharedId: string;            // shared_items/{sharedId}
   targetType: 'pot' | 'stash';
-  targetId: string;
   targetName: string;
   targetEmoji: string;
-  targetData?: Category | Stash;
   inviterEmail: string;
   inviterName?: string;
-  inviteeEmail: string;
-  maskedCode: string;          // e.g. "MP-8492-31"
-  codeKey?: string;            // normalized alphanumeric key, e.g. "MP849231"
-  codeHash: string;            // hashed verification token
-  status: 'pending' | 'accepted' | 'declined';
+  inviteeEmail: string;        // lower-cased; '' = anyone holding the code
+  status: 'pending' | 'accepted' | 'revoked';
   createdAt: number;
+  expiresAt: number;
   acceptedByEmail?: string;
   acceptedByUid?: string;
   acceptedAt?: number;
+}
+
+/** A member-visible shared pot or stash: shared_items/{id} */
+export interface SharedItem {
+  id: string;
+  type: 'pot' | 'stash';
+  ownerId: string;
+  ownerEmail?: string;
+  memberIds: string[];
+  members: Record<string, { email?: string | null; name?: string | null }>;
+  data: Record<string, unknown>;
+  updatedAt?: number;
+  joinInviteId?: string;
 }
 
 
@@ -122,6 +143,10 @@ export interface Payment extends Owned {
   isCorrection?: boolean;
   contributorEmail?: string;
   contributorName?: string;
+  contributorUid?: string;
+  /** Exchange rates (units per 1 EUR) frozen when the record was made, so history never re-prices */
+  fx?: Record<string, number>;
+  foreign?: boolean;            // computed: recorded by another member of a shared item (never stored)
 }
 
 /** Money movement between two accounts (with currency exchange support) */
@@ -141,6 +166,10 @@ export interface Transfer extends Owned {
   isShared?: boolean;
   contributorEmail?: string;
   contributorName?: string;
+  contributorUid?: string;
+  /** Exchange rates (units per 1 EUR) frozen when the transfer was made */
+  fx?: Record<string, number>;
+  foreign?: boolean;          // computed: recorded by another member of a shared item (never stored)
 }
 
 export interface Settings {
@@ -186,5 +215,6 @@ export interface Occurrence {
   isShared?: boolean;
   contributorEmail?: string;
   contributorName?: string;
+  fx?: Record<string, number>;  // rates frozen on the confirmed payment, if any
 }
 

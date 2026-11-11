@@ -85,7 +85,7 @@ export function BalanceCorrectionModal({
         <View style={styles.modalContent}>
           <View style={styles.header}>
             <Text style={styles.title}>⚖️ Balance Correction</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -111,6 +111,7 @@ export function BalanceCorrectionModal({
                 onChangeText={setActualBalanceInput}
                 keyboardType="numeric"
                 selectTextOnFocus
+                accessibilityLabel="Enter Actual Real Balance"
               />
               <Text style={styles.currencyBadge}>{targetCur}</Text>
             </View>
@@ -127,7 +128,7 @@ export function BalanceCorrectionModal({
             </View>
           )}
 
-          <TouchableOpacity style={styles.saveBtn} onPress={handleApply}>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleApply} accessibilityRole="button">
             <Text style={styles.saveBtnText}>Save Correction</Text>
           </TouchableOpacity>
         </View>

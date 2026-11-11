@@ -12,7 +12,7 @@ import {
 import { useData, uid } from '../context/DataContext';
 import { convert, getRate } from '../domain/fx';
 import { today, money } from '../domain/schedule';
-import { calcAllAccountBalances } from '../domain/balances';
+import { calcAllAccountBalances, calcAccountReservedFromMap } from '../domain/balances';
 import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -42,19 +42,9 @@ export function QuickTransferModal({
   const selectableSources = useMemo(() => [
     ...accounts.map(a => {
       const bal = currentBalMap.get(a.id) ?? 0;
-      const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
-      const stashedAmt = (stashes || []).reduce((sum, s) => {
-        const isShared = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)));
-        const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
-        const parentAccId = hasValidAcc ? s.accountId : (!isShared && isFallbackPrimary ? a.id : undefined);
-        if (parentAccId === a.id) {
-          const sBal = Math.max(0, currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0);
-          const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
-          return sum + converted;
-        }
-        return sum;
-      }, 0);
-      const freeBal = Math.max(0, bal - stashedAmt);
+      // Same rule as the Accounts screen (shared stashes reserve only your own share)
+      const stashedAmt = calcAccountReservedFromMap(a, stashes || [], currentBalMap);
+      const freeBal = bal - stashedAmt; // may be negative when overdrawn, like on the Accounts screen
       return {
         id: a.id,
         name: a.name,
@@ -167,7 +157,7 @@ export function QuickTransferModal({
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>⇄ Move Money</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -186,6 +176,8 @@ export function QuickTransferModal({
                       triggerHaptic('light');
                       setFromId(s.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.accountChipText, active && styles.accountChipTextActive]}>
                       {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
@@ -208,6 +200,8 @@ export function QuickTransferModal({
                       triggerHaptic('light');
                       setToId(s.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.accountChipText, active && styles.accountChipTextActive]}>
                       {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
@@ -228,6 +222,7 @@ export function QuickTransferModal({
                   value={fromAmountStr}
                   onChangeText={handleFromAmountChange}
                   keyboardType="numeric"
+                  accessibilityLabel={`Amount sent in ${fromSource.currency}`}
                 />
               </View>
 
@@ -241,6 +236,7 @@ export function QuickTransferModal({
                     value={toAmountStr}
                     onChangeText={setToAmountStr}
                     keyboardType="numeric"
+                    accessibilityLabel={`Amount received in ${toSource.currency}`}
                   />
                 </View>
               )}
@@ -267,6 +263,7 @@ export function QuickTransferModal({
                       setFromId(curTo);
                       setToId(curFrom);
                     }}
+                    accessibilityRole="button"
                   >
                     <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600' }}>
                       ⇄ Swap direction to withdraw from {toSource.name}
@@ -284,6 +281,7 @@ export function QuickTransferModal({
               placeholderTextColor={theme.colors.mute}
               value={note}
               onChangeText={setNote}
+              accessibilityLabel="Note (Optional)"
             />
 
             {/* Confirmation Banner */}
@@ -293,7 +291,7 @@ export function QuickTransferModal({
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.submitBtn} onPress={handleTransfer}>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleTransfer} accessibilityRole="button">
               <Text style={styles.submitBtnText}>Confirm Transfer</Text>
             </TouchableOpacity>
           </ScrollView>

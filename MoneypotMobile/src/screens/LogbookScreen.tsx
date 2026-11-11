@@ -15,6 +15,7 @@ import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
 import type { Payment, Transfer } from '../domain/types';
+import { contributorLabel, partyLabel } from '../domain/sharedSync';
 
 interface LogItem {
   id: string;
@@ -46,15 +47,7 @@ export function LogbookScreen() {
   // Build combined unified audit list of confirmed items
   const logItems: LogItem[] = [];
 
-  const resolvePartyName = (id?: string) => {
-    if (!id) return 'Account';
-    const acc = accounts.find(a => a.id === id);
-    if (acc) return acc.name;
-    const sId = id.startsWith('stash_') ? id.replace('stash_', '') : id;
-    const st = stashes.find(s => s.id === sId);
-    if (st) return `${st.emoji} ${st.name}`;
-    return 'Account';
-  };
+  const resolvePartyName = (id?: string, record?: Payment | Transfer) => partyLabel(id, accounts, stashes, record);
 
   for (const p of payments) {
     if (p.status !== 'confirmed') continue;
@@ -87,8 +80,8 @@ export function LogbookScreen() {
 
   for (const tr of transfers) {
     if (tr.status === 'cancelled') continue;
-    const fromName = resolvePartyName(tr.fromAccountId);
-    const toName = resolvePartyName(tr.toAccountId);
+    const fromName = resolvePartyName(tr.fromAccountId, tr);
+    const toName = resolvePartyName(tr.toAccountId, tr);
 
     logItems.push({
       id: tr.id,
@@ -100,8 +93,8 @@ export function LogbookScreen() {
       kind: 'transfer',
       accountName: `${fromName} → ${toName}`,
       emoji: '⇄',
-      isShared: tr.isShared,
-      contributorName: tr.contributorName,
+      isShared: tr.isShared || tr.foreign,
+      contributorName: tr.foreign ? contributorLabel(tr) : tr.contributorName,
       note: tr.note,
       raw: tr,
     });
@@ -183,9 +176,10 @@ export function LogbookScreen() {
           placeholder="Search by title, account, note..."
           value={search}
           onChangeText={setSearch}
+          accessibilityLabel="Search by title, account, note..."
         />
         {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
+          <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="Clear search" hitSlop={8} accessibilityRole="button">
             <Text style={styles.clearSearch}>✕</Text>
           </TouchableOpacity>
         )}
@@ -204,6 +198,8 @@ export function LogbookScreen() {
             triggerHaptic('light');
             setSelectedAccountFilter('all');
           }}
+          accessibilityRole="button"
+          accessibilityState={{ selected: Boolean(selectedAccountFilter === 'all') }}
         >
           <Text style={[styles.chipText, selectedAccountFilter === 'all' && styles.chipTextActive]}>
             All Accounts
@@ -218,6 +214,8 @@ export function LogbookScreen() {
               triggerHaptic('light');
               setSelectedAccountFilter(selectedAccountFilter === a.id ? 'all' : a.id);
             }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: Boolean(selectedAccountFilter === a.id) }}
           >
             <Text style={[styles.chipText, selectedAccountFilter === a.id && styles.chipTextActive]}>
               {a.name}
@@ -281,13 +279,17 @@ export function LogbookScreen() {
                   {money(item.amount, item.currency)}
                 </Text>
 
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => handleDeleteItem(item)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.deleteBtnText}>✕</Text>
-                </TouchableOpacity>
+                {!item.raw.foreign && (
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    accessibilityLabel={`Delete ${item.name ?? 'record'}`}
+                    onPress={() => handleDeleteItem(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.deleteBtnText}>✕</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           ))

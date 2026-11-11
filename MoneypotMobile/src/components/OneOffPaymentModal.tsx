@@ -12,7 +12,7 @@ import {
 import { useData, uid } from '../context/DataContext';
 import { convert, getRate } from '../domain/fx';
 import { today, money } from '../domain/schedule';
-import { calcAllAccountBalances, checkAccountFunds } from '../domain/balances';
+import { calcAllAccountBalances, checkAccountFunds, calcAccountReservedFromMap } from '../domain/balances';
 import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -49,19 +49,9 @@ export function OneOffPaymentModal({
   const accountOptions = useMemo(() => [
     ...accounts.map(a => {
       const bal = currentBalMap.get(a.id) ?? 0;
-      const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
-      const stashedAmt = (stashes || []).reduce((sum, s) => {
-        const isShared = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)));
-        const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
-        const parentAccId = hasValidAcc ? s.accountId : (!isShared && isFallbackPrimary ? a.id : undefined);
-        if (parentAccId === a.id) {
-          const sBal = Math.max(0, currentBalMap.get(`stash_${s.id}`) ?? currentBalMap.get(s.id) ?? 0);
-          const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
-          return sum + converted;
-        }
-        return sum;
-      }, 0);
-      const freeBal = Math.max(0, bal - stashedAmt);
+      // Same rule as the Accounts screen (shared stashes reserve only your own share)
+      const stashedAmt = calcAccountReservedFromMap(a, stashes || [], currentBalMap);
+      const freeBal = bal - stashedAmt; // may be negative when overdrawn, like on the Accounts screen
       return {
         id: a.id,
         name: a.name,
@@ -325,10 +315,12 @@ export function OneOffPaymentModal({
             </View>
             <TouchableOpacity
               style={styles.closeBtn}
+              accessibilityLabel="Close"
               onPress={() => {
                 triggerHaptic('light');
                 onClose();
               }}
+              accessibilityRole="button"
             >
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
@@ -347,6 +339,8 @@ export function OneOffPaymentModal({
                     triggerHaptic('light');
                     setOpType(t);
                   }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: Boolean(active) }}
                 >
                   <Text style={[styles.segBtnText, active && styles.segBtnTextActive]}>
                     {label}
@@ -367,6 +361,7 @@ export function OneOffPaymentModal({
                   value={name}
                   onChangeText={setName}
                   autoFocus={true}
+                  accessibilityLabel="What was it?"
                 />
 
                 <Text style={styles.fieldLabel}>Amount</Text>
@@ -378,6 +373,7 @@ export function OneOffPaymentModal({
                     value={amountStr}
                     onChangeText={setAmountStr}
                     keyboardType="decimal-pad"
+                    accessibilityLabel="Amount"
                   />
                   <Text style={styles.currencyBadge}>{operationCurrency}</Text>
                 </View>
@@ -394,6 +390,8 @@ export function OneOffPaymentModal({
                           triggerHaptic('light');
                           setSelectedAccountId(acc.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {acc.name} · {acc.stashedAmt > 0 ? `${money(acc.freeBal, acc.currency)} free` : money(acc.bal, acc.currency)}
@@ -425,6 +423,7 @@ export function OneOffPaymentModal({
                                   triggerHaptic('light');
                                   setSelectedAccountId(`stash_${s.id}`);
                                 }}
+                                accessibilityRole="button"
                               >
                                 <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600' }}>
                                   {s.emoji} Pay from {s.name} ({money(sBal, s.currency)})
@@ -450,6 +449,8 @@ export function OneOffPaymentModal({
                           triggerHaptic('light');
                           setSelectedCategoryId(cat.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {cat.emoji} {cat.name}
@@ -466,6 +467,7 @@ export function OneOffPaymentModal({
                   placeholderTextColor={theme.colors.mute}
                   value={note}
                   onChangeText={setNote}
+                  accessibilityLabel="Note (Optional)"
                 />
 
                 <TouchableOpacity
@@ -474,12 +476,13 @@ export function OneOffPaymentModal({
                     triggerHaptic('light');
                     setSaveAsTemplate(!saveAsTemplate);
                   }}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.toggleCheckbox}>{saveAsTemplate ? '☑' : '☐'}</Text>
                   <Text style={styles.toggleLabel}>Save as 1-tap quick template</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense}>
+                <TouchableOpacity style={styles.submitBtn} onPress={handleSaveExpense} accessibilityRole="button">
                   <Text style={styles.submitBtnText}>✓ Save Expense</Text>
                 </TouchableOpacity>
               </>
@@ -495,6 +498,7 @@ export function OneOffPaymentModal({
                   value={name}
                   onChangeText={setName}
                   autoFocus={true}
+                  accessibilityLabel="Source / What is it?"
                 />
 
                 <Text style={styles.fieldLabel}>Amount</Text>
@@ -506,6 +510,7 @@ export function OneOffPaymentModal({
                     value={amountStr}
                     onChangeText={setAmountStr}
                     keyboardType="decimal-pad"
+                    accessibilityLabel="Amount"
                   />
                   <Text style={styles.currencyBadge}>{operationCurrency}</Text>
                 </View>
@@ -522,6 +527,8 @@ export function OneOffPaymentModal({
                           triggerHaptic('light');
                           setSelectedAccountId(acc.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {acc.name} · {acc.stashedAmt > 0 ? `${money(acc.freeBal, acc.currency)} free` : money(acc.bal, acc.currency)}
@@ -543,6 +550,8 @@ export function OneOffPaymentModal({
                           triggerHaptic('light');
                           setSelectedCategoryId(cat.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {cat.emoji} {cat.name}
@@ -559,6 +568,7 @@ export function OneOffPaymentModal({
                   placeholderTextColor={theme.colors.mute}
                   value={note}
                   onChangeText={setNote}
+                  accessibilityLabel="Note (Optional)"
                 />
 
                 <TouchableOpacity
@@ -567,12 +577,13 @@ export function OneOffPaymentModal({
                     triggerHaptic('light');
                     setSaveAsTemplate(!saveAsTemplate);
                   }}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.toggleCheckbox}>{saveAsTemplate ? '☑' : '☐'}</Text>
                   <Text style={styles.toggleLabel}>Save as 1-tap quick template</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSaveIncome}>
+                <TouchableOpacity style={styles.submitBtn} onPress={handleSaveIncome} accessibilityRole="button">
                   <Text style={styles.submitBtnText}>✓ Save Income</Text>
                 </TouchableOpacity>
               </>
@@ -592,6 +603,8 @@ export function OneOffPaymentModal({
                           triggerHaptic('light');
                           setTransferFromId(s.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
@@ -613,6 +626,8 @@ export function OneOffPaymentModal({
                           triggerHaptic('light');
                           setTransferToId(s.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {s.name} · {s.stashedAmt > 0 ? `${money(s.freeBal, s.currency)} free` : money(s.bal, s.currency)}
@@ -642,6 +657,7 @@ export function OneOffPaymentModal({
                           }
                         }}
                         keyboardType="decimal-pad"
+                        accessibilityLabel={`Amount sent in ${fromSource.currency}`}
                       />
                     </View>
                     <View style={styles.transferAmountCol}>
@@ -653,6 +669,7 @@ export function OneOffPaymentModal({
                         value={transferToAmountStr}
                         onChangeText={setTransferToAmountStr}
                         keyboardType="decimal-pad"
+                        accessibilityLabel={`Amount received in ${toSource.currency}`}
                       />
                     </View>
                   </View>
@@ -670,6 +687,7 @@ export function OneOffPaymentModal({
                           setTransferToAmountStr(text);
                         }}
                         keyboardType="decimal-pad"
+                        accessibilityLabel={`Amount in ${fromSource?.currency || 'EUR'}`}
                       />
                       <Text style={styles.currencyBadge}>{fromSource?.currency || 'EUR'}</Text>
                     </View>
@@ -697,6 +715,7 @@ export function OneOffPaymentModal({
                           setTransferFromId(curTo);
                           setTransferToId(curFrom);
                         }}
+                        accessibilityRole="button"
                       >
                         <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600' }}>
                           ⇄ Swap direction to withdraw from {toSource.name}
@@ -713,9 +732,10 @@ export function OneOffPaymentModal({
                   placeholderTextColor={theme.colors.mute}
                   value={transferNote}
                   onChangeText={setTransferNote}
+                  accessibilityLabel="Note (Optional)"
                 />
 
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSaveTransfer}>
+                <TouchableOpacity style={styles.submitBtn} onPress={handleSaveTransfer} accessibilityRole="button">
                   <Text style={styles.submitBtnText}>✓ Move Money</Text>
                 </TouchableOpacity>
               </>

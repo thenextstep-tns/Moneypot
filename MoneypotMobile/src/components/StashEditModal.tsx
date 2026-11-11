@@ -199,7 +199,7 @@ export function StashEditModal({
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>{stashToEdit ? 'Edit Stash' : 'New Savings Stash'}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -213,6 +213,7 @@ export function StashEditModal({
                   triggerHaptic('light');
                   setEmojiPickerVisible(true);
                 }}
+                accessibilityRole="button"
               >
                 <Text style={styles.emojiDisplay}>{emoji}</Text>
               </TouchableOpacity>
@@ -221,6 +222,7 @@ export function StashEditModal({
                 placeholder="Stash name (e.g. Vacation, Car...)"
                 value={name}
                 onChangeText={setName}
+                accessibilityLabel="Close"
               />
             </View>
 
@@ -233,6 +235,7 @@ export function StashEditModal({
                 value={targetStr}
                 onChangeText={setTargetStr}
                 keyboardType="numeric"
+                accessibilityLabel="Savings Target Goal"
               />
               <Text style={styles.currencyBadge}>{currency}</Text>
             </View>
@@ -248,6 +251,7 @@ export function StashEditModal({
                     value={starterBalanceStr}
                     onChangeText={setStarterBalanceStr}
                     keyboardType="numeric"
+                    accessibilityLabel="Starter Amount"
                   />
                   <Text style={styles.currencyBadge}>{currency}</Text>
                 </View>
@@ -260,6 +264,7 @@ export function StashEditModal({
                   onClose();
                   onOpenCorrection?.(stashToEdit);
                 }}
+                accessibilityRole="button"
               >
                 <View>
                   <Text style={styles.balanceCorrTitle}>⚖️ Balance Correction</Text>
@@ -282,6 +287,8 @@ export function StashEditModal({
                       triggerHaptic('light');
                       setAccountId(a.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{a.name}</Text>
                   </TouchableOpacity>
@@ -300,6 +307,7 @@ export function StashEditModal({
                 </Text>
               </View>
               <Switch
+                accessibilityLabel="Instant access: allow paying directly from this stash"
                 value={isInstantAccess}
                 onValueChange={val => {
                   triggerHaptic('light');
@@ -311,12 +319,12 @@ export function StashEditModal({
             </View>
 
             {/* Save & Delete */}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} accessibilityRole="button">
               <Text style={styles.saveBtnText}>{stashToEdit ? 'Save Stash' : 'Create Stash'}</Text>
             </TouchableOpacity>
 
             {stashToEdit && (
-              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} accessibilityRole="button">
                 <Text style={styles.deleteBtnText}>Delete Stash</Text>
               </TouchableOpacity>
             )}

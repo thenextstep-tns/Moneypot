@@ -61,7 +61,7 @@ export function PlansScreen() {
         title="Plans"
         subtitle={`${plans.length} recurring & scheduled movements`}
         rightAction={
-          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd}>
+          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd} accessibilityRole="button">
             <Text style={styles.addBtnText}>+ Add</Text>
           </TouchableOpacity>
         }
@@ -89,6 +89,8 @@ export function PlansScreen() {
                 triggerHaptic('light');
                 setFilter(item.key as any);
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: Boolean(active) }}
             >
               <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
                 {item.label}
@@ -152,6 +154,7 @@ export function PlansScreen() {
                 key={p.id}
                 style={styles.planCard}
                 onPress={() => handlePlanPress(p)}
+                accessibilityRole="button"
               >
                 <View style={styles.planHeader}>
                   <View style={styles.iconCircle}>

@@ -110,7 +110,7 @@ export function AccountEditModal({
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>{accountToEdit ? 'Edit Account' : 'New Account'}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -135,6 +135,8 @@ export function AccountEditModal({
                       triggerHaptic('light');
                       setType(t);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
                       {labels[t]}
@@ -151,6 +153,7 @@ export function AccountEditModal({
               placeholder="e.g. Revolut Card, Main Checking, Cash..."
               value={name}
               onChangeText={setName}
+              accessibilityLabel="Account Name"
             />
 
             {/* Institution */}
@@ -160,6 +163,7 @@ export function AccountEditModal({
               placeholder="e.g. Revolut, Barclays, Wise..."
               value={institution}
               onChangeText={setInstitution}
+              accessibilityLabel="Institution / Bank (Optional)"
             />
 
             {/* Currency */}
@@ -175,6 +179,8 @@ export function AccountEditModal({
                       triggerHaptic('light');
                       setCurrency(c);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.curChipText, active && styles.curChipTextActive]}>{c}</Text>
                   </TouchableOpacity>
@@ -193,6 +199,7 @@ export function AccountEditModal({
                     value={startBalanceStr}
                     onChangeText={setStartBalanceStr}
                     keyboardType="numeric"
+                    accessibilityLabel="Starting Balance"
                   />
                   <Text style={styles.currencyBadge}>{currency}</Text>
                 </View>
@@ -204,6 +211,7 @@ export function AccountEditModal({
                   onClose();
                   onOpenCorrection?.(accountToEdit);
                 }}
+                accessibilityRole="button"
               >
                 <View>
                   <Text style={styles.balanceCorrTitle}>⚖️ Balance Correction</Text>
@@ -230,18 +238,21 @@ export function AccountEditModal({
                       triggerHaptic('light');
                       setColor(col);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Colour ${col}`}
+                    accessibilityState={{ selected: Boolean(active) }}
                   />
                 );
               })}
             </View>
 
             {/* Save & Delete */}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} accessibilityRole="button">
               <Text style={styles.saveBtnText}>{accountToEdit ? 'Save Account' : 'Create Account'}</Text>
             </TouchableOpacity>
 
             {accountToEdit && (
-              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} accessibilityRole="button">
                 <Text style={styles.deleteBtnText}>Delete Account</Text>
               </TouchableOpacity>
             )}

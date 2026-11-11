@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisMonth } from '../schedule';
 import { convert } from '../fx';
-import { calcAllAccountBalances, calcMonthStartingBalances, findAccountShortfalls } from '../balances';
+import { calcAllAccountBalances, calcMonthStartingBalances, convAt, findAccountShortfalls } from '../balances';
 import type { Category, Occurrence } from '../types';
 import { Bar, DragHandle, Empty, HelpButton } from '../ui';
 import { CategoryModal } from './CategoryModal';
@@ -10,7 +10,7 @@ import { TransferModal } from './Money';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
 
-const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + convert(o.amount, o.currency, targetCur), 0);
+const sum = (xs: Occurrence[], targetCur: string) => xs.reduce((s, o) => s + convAt(o.amount, o.currency, targetCur, o.fx), 0);
 
 /** MAIN FLOW #2 — monthly pots: planned vs done vs still needed */
 export function Pots() {
@@ -109,12 +109,12 @@ export function Pots() {
     <div className="page">
       <header className="page-head">
         <div className="month">
-          <button className="icon" onClick={() => setYm(shiftMonth(ym, -1))}>‹</button>
+          <button type="button" className="icon" aria-label="Previous month" onClick={() => setYm(shiftMonth(ym, -1))}>‹</button>
           <h1>
             {monthLabel(ym)}
             <HelpButton onClick={() => setHelpOpen(true)} title="How pots work" />
           </h1>
-          <button className="icon" onClick={() => setYm(shiftMonth(ym, 1))}>›</button>
+          <button type="button" className="icon" aria-label="Next month" onClick={() => setYm(shiftMonth(ym, 1))}>›</button>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {ym !== thisMonth() && <button className="btn ghost" onClick={() => setYm(thisMonth())}>Back to now</button>}
@@ -197,21 +197,21 @@ export function Pots() {
             <div
               key={s.accountId}
               className="item"
-              style={{ background: '#FFFBEB', borderLeft: '4px solid #F59E0B', margin: 0, padding: '12px 16px' }}
+              style={{ background: 'var(--warn-bg)', borderLeft: '4px solid #F59E0B', margin: 0, padding: '12px 16px' }}
             >
-              <div className="emoji" style={{ background: '#FEF3C7', fontSize: 18 }}>⚠️</div>
+              <div className="emoji" style={{ background: 'var(--warn-bg)', fontSize: 18 }}>⚠️</div>
               <div className="grow">
-                <div className="title" style={{ color: '#92400E', fontSize: 14 }}>
+                <div className="title" style={{ color: 'var(--warn-ink)', fontSize: 14 }}>
                   Low balance alert: {s.accountName}
                 </div>
-                <div className="sub" style={{ color: '#B45309', fontSize: 13 }}>
+                <div className="sub" style={{ color: 'var(--warn-ink)', fontSize: 13 }}>
                   {isFutureMonth ? 'Projected available entering month: ' : 'Available: '}<b>{money(s.currentBalance, s.accountCurrency)}</b> · Scheduled to pay this month: <b>{money(s.scheduledOutgoing, s.accountCurrency)}</b> (short by {money(s.shortBy, s.accountCurrency)})
                 </div>
               </div>
               <button
                 type="button"
                 className="btn"
-                style={{ borderColor: '#F59E0B', color: '#92400E', fontWeight: 600, background: '#FEF3C7' }}
+                style={{ borderColor: '#F59E0B', color: 'var(--warn-ink)', fontWeight: 600, background: 'var(--warn-bg)' }}
                 onClick={() => setShowTransfer(true)}
               >
                 ⇄ Move money
@@ -405,7 +405,7 @@ function Pot({
     const map = new Map<string, number>();
     for (const item of items) {
       const key = item.subcategory || 'General';
-      map.set(key, (map.get(key) ?? 0) + convert(item.amount, item.currency, cur));
+      map.set(key, (map.get(key) ?? 0) + convAt(item.amount, item.currency, cur, item.fx));
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [items, cur]);

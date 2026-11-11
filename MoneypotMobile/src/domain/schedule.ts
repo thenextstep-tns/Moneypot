@@ -1,3 +1,4 @@
+// GENERATED from src/schedule.ts by scripts/sync-domain.mjs — do not edit here, edit src/schedule.ts and re-run.
 import type { Occurrence, Payment, Plan } from './types';
 
 export const pad = (n: number) => String(n).padStart(2, '0');
@@ -6,6 +7,12 @@ export const parse = (s: string) => { const [y, m, d] = s.split('-').map(Number)
 export const today = () => toISO(new Date());
 export const addDays = (s: string, n: number) => { const d = parse(s); d.setDate(d.getDate() + n); return toISO(d); };
 export const thisMonth = () => today().slice(0, 7);
+/**
+ * How far back an unconfirmed (overdue) occurrence is still treated as "to do".
+ * Used by the Today queue on web and mobile AND by every balance projection, so the
+ * same overdue bill is never shown in one place and ignored in another.
+ */
+export const OVERDUE_WINDOW_DAYS = 60;
 export const shiftMonth = (ym: string, n: number) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
 export const monthRange = (ym: string): [string, string] => { const [y, m] = ym.split('-').map(Number); return [`${ym}-01`, toISO(new Date(y, m, 0))]; };
 export const monthLabel = (ym: string) => parse(`${ym}-01`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -122,7 +129,7 @@ const ghost = (p: Payment): Plan => ({
   id: p.planId, name: p.name ?? 'Removed item', kind: p.kind ?? 'expense', categoryId: p.categoryId ?? 'other',
   subcategory: p.subcategory, stashId: p.stashId, amount: p.amount, currency: p.currency,
   accountId: p.accountId, toAccountId: p.toAccountId, toAmount: p.toAmount, toCurrency: p.toCurrency,
-  freq: 'once', every: 1, startDate: p.dueDate,
+  freq: 'once', every: 1, startDate: p.dueDate || p.date,
 });
 
 export function isBalanceCorrectionPayment(p: Payment): boolean {
@@ -173,6 +180,7 @@ export function occurrences(
     isShared: p?.isShared ?? plan.isShared,
     contributorEmail: p?.contributorEmail,
     contributorName: p?.contributorName,
+    fx: p?.fx,
   });
   const out: Occurrence[] = [];
   for (const plan of plans) {
@@ -208,7 +216,7 @@ export const toPayment = (o: Occurrence, status: Payment['status'], patch: Parti
   id: o.key, planId: o.plan.id, dueDate: o.dueDate, date: o.date, amount: o.amount, currency: o.currency,
   accountId: o.accountId, toAccountId: o.toAccountId, toAmount: o.toAmount, toCurrency: o.toCurrency,
   name: o.name, kind: o.kind, categoryId: o.categoryId, subcategory: o.subcategory, stashId: o.stashId, note: o.note,
-  isShared: o.isShared, contributorEmail: o.contributorEmail, contributorName: o.contributorName,
+  isShared: o.isShared, contributorEmail: o.contributorEmail, contributorName: o.contributorName, fx: o.fx,
   ...patch, status,
 });
 

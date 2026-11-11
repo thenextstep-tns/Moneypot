@@ -71,10 +71,12 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
             </View>
             <TouchableOpacity
               style={styles.closeBtn}
+              accessibilityLabel="Close"
               onPress={() => {
                 triggerHaptic('light');
                 onClose();
               }}
+              accessibilityRole="button"
             >
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
@@ -91,9 +93,10 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
               onChangeText={setQuery}
               autoFocus={false}
               clearButtonMode="while-editing"
+              accessibilityLabel="Search upcoming bills (rent, gym, wifi)..."
             />
             {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')}>
+              <TouchableOpacity onPress={() => setQuery('')} accessibilityLabel="Clear search" hitSlop={8} accessibilityRole="button">
                 <Text style={styles.clearText}>✕</Text>
               </TouchableOpacity>
             )}
@@ -127,6 +130,7 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
                     style={styles.itemCard}
                     activeOpacity={0.7}
                     onPress={() => handleSelect(o)}
+                    accessibilityRole="button"
                   >
                     <View style={styles.itemHeader}>
                       <View style={styles.iconCircle}>
@@ -164,6 +168,7 @@ export function PayEarlyModal({ visible, onClose, onSelect }: PayEarlyModalProps
                           },
                         ]}
                         onPress={() => handleSelect(o)}
+                        accessibilityRole="button"
                       >
                         <Text style={styles.payTodayBtnText}>
                           {o.kind === 'income'

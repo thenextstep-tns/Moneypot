@@ -113,7 +113,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
             style={styles.logoImage}
             resizeMode="contain"
           />
-          <Text style={styles.brandTitle}>{title}</Text>
+          <Text style={styles.brandTitle} accessibilityRole="header">{title}</Text>
         </View>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
@@ -129,6 +129,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
           }}
           activeOpacity={0.7}
           accessibilityLabel="Open menu"
+          accessibilityRole="button"
         >
           <Text style={styles.hamburgerIcon}>☰</Text>
         </TouchableOpacity>
@@ -146,6 +147,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
             style={styles.drawerBackdrop}
             activeOpacity={1}
             onPress={() => setDrawerOpen(false)}
+            accessibilityRole="button"
           />
 
           <View
@@ -170,6 +172,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                 style={styles.closeBtn}
                 onPress={() => setDrawerOpen(false)}
                 accessibilityLabel="Close menu"
+                accessibilityRole="button"
               >
                 <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
@@ -195,6 +198,8 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                       setActiveTab(tab.id);
                       setDrawerOpen(false);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(activeTab === tab.id) }}
                   >
                     <Text style={styles.menuItemIcon}>{tab.icon}</Text>
                     <Text
@@ -222,6 +227,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                     setDrawerOpen(false);
                     setShowHowItWorks(true);
                   }}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.menuItemIcon}>💡</Text>
                   <Text style={styles.menuItemLabel}>How it works</Text>
@@ -230,6 +236,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                 <TouchableOpacity
                   style={[styles.menuItem, styles.menuItemDownload]}
                   onPress={handleShareApp}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.menuItemIcon}>🌐</Text>
                   <View style={styles.downloadLabelGroup}>
@@ -261,6 +268,8 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                           triggerHaptic('light');
                           setSettings({ currency: cur });
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(settings.currency === cur) }}
                       >
                         <Text
                           style={[
@@ -294,6 +303,8 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                           triggerHaptic('light');
                           setSettings({ theme: t.id as any });
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean((settings.theme || 'system') === t.id) }}
                       >
                         <Text
                           style={[
@@ -312,6 +323,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                   <TouchableOpacity
                     style={styles.resetDemoBtn}
                     onPress={handleResetDemo}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.resetDemoText}>🔄 Reset demo data</Text>
                   </TouchableOpacity>
@@ -320,6 +332,7 @@ export function TopHeader({ title = 'Moneypot', subtitle, rightAction }: TopHead
                 <TouchableOpacity
                   style={styles.logoutBtn}
                   onPress={handleSignOut}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.logoutBtnText}>
                     {isDemoMode ? '🚪 Exit demo mode' : '🚪 Log out'}

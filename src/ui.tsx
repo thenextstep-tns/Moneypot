@@ -1,23 +1,64 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Account, Payment, Stash } from './types';
 import { dayLabel, money, today } from './schedule';
 import { uid, useData } from './store';
-import { calcAccountBalance } from './balances';
+import { calcAccountBalance, calcAccountReservedFromMap } from './balances';
 import { convert } from './fx';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     document.body.style.overflow = 'hidden';
+    // Move focus into the dialog (first field if any, otherwise the dialog itself)
+    const first = dialogRef.current?.querySelector<HTMLElement>('input, select, textarea');
+    (first ?? dialogRef.current)?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      // Keep keyboard focus inside the dialog
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      );
+      if (!focusable.length) return;
+      const firstEl = focusable[0];
+      const lastEl = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
     return () => {
+      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = originalOverflow;
+      previouslyFocused?.focus?.();
     };
   }, []);
 
   return (
     <div className="backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-head"><h3>{title}</h3><button className="icon" onClick={onClose}>✕</button></div>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="modal-head">
+          <h3 id={titleId}>{title}</h3>
+          <button type="button" className="icon" onClick={onClose} aria-label="Close dialog">✕</button>
+        </div>
         {children}
       </div>
     </div>
@@ -182,7 +223,7 @@ export function AccountForm({
           </Field>
         </div>
       ) : (
-        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 16px', margin: '14px 0' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 16px', margin: '14px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700, letterSpacing: '0.04em' }}>
@@ -203,8 +244,8 @@ export function AccountForm({
           </div>
 
           {showCorrection && (
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #E2E8F0' }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#1E293B', marginBottom: 4 }}>
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)', marginBottom: 4 }}>
                 Set Current Balance Manually
               </div>
               <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
@@ -282,6 +323,12 @@ export function AccountForm({
         <button
           className="btn ghost wide danger"
           onClick={() => {
+            const usedByPlans = plans.filter(p => p.accountId === acc.id || p.toAccountId === acc.id).length;
+            const usedByStashes = stashes.filter(s => s.accountId === acc.id).length;
+            const extra = usedByPlans || usedByStashes
+              ? `\n\n${usedByPlans} plan(s) and ${usedByStashes} stash(es) use this account; they will be detached and need a new account.`
+              : '';
+            if (!confirm(`Delete the account "${acc.name}"? Its balance disappears from your totals. Past records are kept.${extra}`)) return;
             remove('accounts', acc.id);
             onClose();
           }}
@@ -350,18 +397,8 @@ export function AccountCardsSelect({
         {accounts.map(a => {
           const isSel = activeId === a.id;
           const bal = balances?.get(a.id);
-          const isFallbackPrimary = accounts.length > 0 && accounts[0].id === a.id;
-          const stashedAmt = (stashes || []).reduce((sum, s) => {
-            const isShared = Boolean(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId)));
-            const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
-            const parentAccId = hasValidAcc ? s.accountId : (!isShared && isFallbackPrimary ? a.id : undefined);
-            if (parentAccId === a.id) {
-              const sBal = Math.max(0, balances?.get(`stash_${s.id}`) ?? balances?.get(s.id) ?? 0);
-              const converted = s.currency && s.currency !== a.currency ? convert(sBal, s.currency, a.currency) : sBal;
-              return sum + converted;
-            }
-            return sum;
-          }, 0);
+          // Same rule as the Accounts screen (shared stashes reserve only your own share)
+          const stashedAmt = balances ? calcAccountReservedFromMap(a, stashes || [], balances) : 0;
           const freeAmt = bal !== undefined ? bal - stashedAmt : undefined;
 
           let projBal: number | undefined;
@@ -390,7 +427,7 @@ export function AccountCardsSelect({
                   {bal !== undefined && stashedAmt > 0 ? (
                     <>
                       <span>
-                        {a.currency} · <b style={(freeAmt ?? 0) < 0 ? { color: '#DC2626' } : undefined}>{money(freeAmt ?? 0, a.currency)} free</b>
+                        {a.currency} · <b style={(freeAmt ?? 0) < 0 ? { color: 'var(--bad-ink)' } : undefined}>{money(freeAmt ?? 0, a.currency)} free</b>
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--mute)' }}>
                         Total: {money(bal, a.currency)} (🔒 {money(stashedAmt, a.currency)} reserved)
@@ -440,7 +477,7 @@ export function AccountCardsSelect({
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>⚡ Instant Access Stashes</span>
-            <span style={{ fontSize: 10, fontWeight: 500, background: '#F1F5F9', padding: '1px 6px', borderRadius: 4 }}>
+            <span style={{ fontSize: 10, fontWeight: 500, background: 'var(--surface-2)', padding: '1px 6px', borderRadius: 4 }}>
               Can pay directly from these
             </span>
           </div>
@@ -472,7 +509,7 @@ export function AccountCardsSelect({
                   <div className="acc-card-info">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span className="acc-card-name">{s.name}</span>
-                      <span style={{ fontSize: 10, fontWeight: 600, background: '#ECFDF5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, background: 'var(--good-bg)', color: 'var(--good-ink)', padding: '1px 5px', borderRadius: 4 }}>
                         {(s.isShared || s.sharedWith?.length) ? 'Shared Stash' : 'Stash'}
                       </span>
                     </div>

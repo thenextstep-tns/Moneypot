@@ -55,7 +55,7 @@ export function EmojiPickerModal({
         <SafeAreaView style={styles.sheetContainer}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Choose Icon</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button">
               <Text style={styles.closeText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -77,6 +77,8 @@ export function EmojiPickerModal({
                     triggerHaptic('light');
                     setActiveGroup(g.name);
                   }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: Boolean(isActive) }}
                 >
                   <Text style={styles.tabIcon}>{g.icon}</Text>
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
@@ -96,6 +98,8 @@ export function EmojiPickerModal({
                   key={emoji}
                   style={[styles.emojiItem, isSelected && styles.emojiItemSelected]}
                   onPress={() => handleSelect(emoji)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: Boolean(isSelected) }}
                 >
                   <Text style={styles.emojiText}>{emoji}</Text>
                 </TouchableOpacity>
@@ -113,6 +117,7 @@ export function EmojiPickerModal({
               value={customText}
               onChangeText={handleCustomChange}
               maxLength={4}
+              accessibilityLabel="Or type any emoji"
             />
           </View>
         </SafeAreaView>

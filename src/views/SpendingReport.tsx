@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { addDays, isBalanceCorrectionPayment, monthLabel, monthRange, money, shiftMonth, thisMonth, today } from '../schedule';
 import { convert } from '../fx';
+import { convAt } from '../balances';
 import { Empty, Field, HelpButton } from '../ui';
 import { ScreenHelpModal } from './ScreenHelpModal';
 
@@ -219,7 +220,7 @@ export function SpendingReport() {
       const subcategory = (p.subcategory || '').trim() || 'General';
 
       const key = `${potId}:::${subcategory}`;
-      const convertedAmt = convert(p.amount, p.currency, curCurrency);
+      const convertedAmt = convAt(p.amount, p.currency, curCurrency, p.fx);
 
       const existing = itemMap.get(key) || {
         potId,

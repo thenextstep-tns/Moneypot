@@ -15,7 +15,7 @@ import {
   occurrences,
   money,
 } from '../domain/schedule';
-import { calcMonthStartingBalances } from '../domain/balances';
+import { calcMonthStartingBalances, convAt } from '../domain/balances';
 import { convert } from '../domain/fx';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
@@ -62,7 +62,7 @@ export function PotsScreen() {
 
   for (const o of monthOccurrences) {
     if (o.kind === 'transfer') continue; // Excluded from Pots budget
-    const amtInMain = convert(o.amount, o.currency, settings.currency);
+    const amtInMain = convAt(o.amount, o.currency, settings.currency, o.fx);
 
     if (o.kind === 'income') {
       if (o.status === 'confirmed') incomePaid += amtInMain;
@@ -126,7 +126,7 @@ export function PotsScreen() {
         title="Pots"
         subtitle="Monthly Budget Envelopes"
         rightAction={
-          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd}>
+          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd} accessibilityRole="button">
             <Text style={styles.addBtnText}>+ Add Pot</Text>
           </TouchableOpacity>
         }
@@ -134,18 +134,18 @@ export function PotsScreen() {
 
       {/* Month Selector Bar */}
       <View style={styles.monthSelectorBar}>
-        <TouchableOpacity style={styles.monthNavBtn} onPress={handlePrevMonth}>
+        <TouchableOpacity style={styles.monthNavBtn} onPress={handlePrevMonth} accessibilityLabel="Previous month" accessibilityRole="button">
           <Text style={styles.monthNavIcon}>‹</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={handleBackToNow}>
+        <TouchableOpacity onPress={handleBackToNow} accessibilityRole="button">
           <Text style={styles.monthTitle}>{monthLabel(selectedYm)}</Text>
           {selectedYm !== currentYm && (
             <Text style={styles.backToNowSub}>Tap to return to now</Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.monthNavBtn} onPress={handleNextMonth}>
+        <TouchableOpacity style={styles.monthNavBtn} onPress={handleNextMonth} accessibilityLabel="Next month" accessibilityRole="button">
           <Text style={styles.monthNavIcon}>›</Text>
         </TouchableOpacity>
       </View>
@@ -239,7 +239,7 @@ export function PotsScreen() {
           let plannedAmt = 0;
 
           for (const o of catOccurrences) {
-            const amtInMain = convert(o.amount, o.currency, settings.currency);
+            const amtInMain = convAt(o.amount, o.currency, settings.currency, o.fx);
             if (o.status === 'confirmed') paidAmt += amtInMain;
             else if (o.status === 'pending') plannedAmt += amtInMain;
           }
@@ -253,6 +253,7 @@ export function PotsScreen() {
                 <TouchableOpacity
                   onPress={() => handleCategoryPress(cat)}
                   disabled={isActive}
+                  accessibilityRole="button"
                 >
                   <View style={styles.potHeader}>
                     <View style={styles.potLeft}>
@@ -260,7 +261,10 @@ export function PotsScreen() {
                         style={styles.dragHandle}
                         onPressIn={drag}
                         disabled={isActive}
+                        accessibilityLabel="Drag to reorder"
+                        accessibilityHint="Press and hold, then move"
                         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        accessibilityRole="button"
                       >
                         <GripVerticalIcon size={18} color={isActive ? theme.colors.brand : '#9CA3AF'} />
                       </TouchableOpacity>

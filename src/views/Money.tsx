@@ -202,7 +202,7 @@ export function Stashes() {
               {s.sharedWith && s.sharedWith.length > 0 && v > 0 && contribs.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
                   {contribs.map(c => (
-                    <span key={c.name} style={{ fontSize: 11, background: '#F1F5F9', padding: '2px 6px', borderRadius: 6, color: 'var(--ink)' }}>
+                    <span key={c.name} style={{ fontSize: 11, background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 6, color: 'var(--ink)' }}>
                       👤 {c.name}: <b>{money(c.amount, s.currency)}</b>
                     </span>
                   ))}
@@ -538,7 +538,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           />
         </Field>
       ) : (
-        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 16px', margin: '14px 0' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 16px', margin: '14px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700, letterSpacing: '0.04em' }}>
@@ -559,8 +559,8 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           </div>
 
           {showCorrection && (
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #E2E8F0' }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#1E293B', marginBottom: 4 }}>
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)', marginBottom: 4 }}>
                 Set Current Balance Manually
               </div>
               <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
@@ -624,7 +624,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
 
       {/* Instant access parameter */}
       <div style={{ margin: '6px 0 14px' }}>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: isSharedStash ? 'not-allowed' : 'pointer', background: '#F8FAFC', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--line)' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: isSharedStash ? 'not-allowed' : 'pointer', background: 'var(--surface-2)', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--line)' }}>
           <input
             type="checkbox"
             checked={isSharedStash ? false : isInstant}
@@ -643,7 +643,7 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           <div>
             <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>⚡ Instant Access Stash</span>
-              {isInstant && !isSharedStash && <span style={{ fontSize: 10, background: '#ECFDF5', color: '#065F46', padding: '1px 5px', borderRadius: 4 }}>Default</span>}
+              {isInstant && !isSharedStash && <span style={{ fontSize: 10, background: 'var(--good-bg)', color: 'var(--good-ink)', padding: '1px 5px', borderRadius: 4 }}>Default</span>}
             </div>
             <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
               {isSharedStash
@@ -690,12 +690,12 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
         💡 Stashes act as dedicated money buckets. Transferring money between accounts and stashes adjusts your available account balances.
       </div>
       {stash && currentBal > 0 && contribs.length > 0 && (
-        <div style={{ background: '#F8FAFC', border: '1px solid var(--line)', borderRadius: 12, padding: 12, margin: '0 0 14px' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: 12, margin: '0 0 14px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 8 }}>
             👥 Contributors Breakdown
           </div>
           {contribs.map(c => (
-            <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid #F1F5F9' }}>
+            <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
               <span>👤 {c.name}</span>
               <b>{money(c.amount, s.currency)}</b>
             </div>
@@ -736,7 +736,25 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           <span>Share stash with others {s.sharedWith?.length ? `(${s.sharedWith.length})` : ''}</span>
         </button>
       )}
-      {stash && <button className="btn ghost wide danger" style={{ marginTop: 8 }} onClick={() => { remove('stashes', stash.id); onClose(); }}>Delete</button>}
+      {stash && (
+        <button
+          type="button"
+          className="btn ghost wide danger"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            const msg = stash.isForeignOwned
+              ? `Leave the shared stash "${stash.name}"? It will disappear from your Moneypot; the other members keep it.`
+              : stash.sharedId
+                ? `Delete the shared stash "${stash.name}" for everyone? This removes it for all members and cannot be undone.`
+                : `Delete the stash "${stash.name}"? Money in it is released back to its account. This cannot be undone.`;
+            if (!confirm(msg)) return;
+            remove('stashes', stash.id);
+            onClose();
+          }}
+        >
+          {stash.isForeignOwned ? 'Leave shared stash' : 'Delete'}
+        </button>
+      )}
       {showSharing && <SharingModal type="stash" item={s} onClose={() => setShowSharing(false)} />}
       {topUp && stash && (
         <OneOffPaymentModal
@@ -1142,13 +1160,13 @@ export function TransferModal({
 
       {/* Projection summary card */}
       {fromParty && toParty && fromBals && toBals && (
-        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 14px', margin: '4px 0 14px' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '4px 0 14px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mute)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
             <span>{isFuture ? `🗓 Projected balances on ${dayLabel(date)}` : '💳 Live balances'}</span>
             {isFuture && <span style={{ color: 'var(--brand)', textTransform: 'none', fontWeight: 600 }}>Includes scheduled transactions</span>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>From: {fromParty.icon} {fromParty.name}</div>
               <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
                 {fromStashedBal > 0 ? (
@@ -1168,13 +1186,13 @@ export function TransferModal({
                 </div>
               )}
               {fromAmount > 0 && (
-                <div style={{ fontSize: 11, color: effectiveFromBal - fromAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
+                <div style={{ fontSize: 11, color: effectiveFromBal - fromAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed var(--line)' }}>
                   After move: <b>{money(effectiveFromBal - fromAmount, fromParty.currency)}</b> free
                 </div>
               )}
             </div>
 
-            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>To: {toParty.icon} {toParty.name}</div>
               <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
                 {toStashedBal > 0 ? (
@@ -1189,12 +1207,12 @@ export function TransferModal({
                 )}
               </div>
               {isFuture && (
-                <div style={{ fontSize: 11, color: '#2563EB', marginTop: 2, fontWeight: 600 }}>
+                <div style={{ fontSize: 11, color: 'var(--info-ink)', marginTop: 2, fontWeight: 600 }}>
                   Projected: <b>{money(toBals.projected, toParty.currency)}</b>
                 </div>
               )}
               {toAmount > 0 && (
-                <div style={{ fontSize: 11, color: '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
+                <div style={{ fontSize: 11, color: 'var(--good-ink)', marginTop: 4, paddingTop: 4, borderTop: '1px dashed var(--line)' }}>
                   After move: <b>{money((isFuture ? toBals.projected : toBals.current) + toAmount, toParty.currency)}</b>
                 </div>
               )}
@@ -1241,7 +1259,7 @@ export function TransferModal({
       )}
 
       {isShort && (
-        <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>⚠️</span>
             <span>
@@ -1254,7 +1272,7 @@ export function TransferModal({
               <button
                 type="button"
                 className="btn"
-                style={{ padding: '3px 8px', fontSize: 11, background: '#FFFFFF', border: '1px solid #F8B4B4', color: '#9B1C1C', cursor: 'pointer' }}
+                style={{ padding: '3px 8px', fontSize: 11, background: 'var(--card)', border: '1px solid var(--bad-line)', color: 'var(--bad-ink)', cursor: 'pointer' }}
                 onClick={() => {
                   const curFrom = fromId;
                   const curTo = toId;
@@ -1271,7 +1289,7 @@ export function TransferModal({
       )}
 
       {isFuture && fromParty && fromAmount > 0 && fromAmount > (fromBals?.current ?? 0) && fromAmount <= (fromBals?.projected ?? 0) && (
-        <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="preview" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)', borderColor: 'var(--info-line)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>ℹ️</span>
           <span>
             Current balance is {money(fromBals?.current ?? 0, fromParty.currency)}, but projected to reach {money(fromBals?.projected ?? 0, fromParty.currency)} by {dayLabel(date)} from scheduled incoming money.
@@ -1294,7 +1312,7 @@ export function TransferModal({
       </Field>
 
       {!transfer && (
-        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 12px', margin: '10px 0 14px' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', margin: '10px 0 14px' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13, margin: 0 }}>
             <input
               type="checkbox"
@@ -1336,6 +1354,7 @@ export function TransferModal({
         <button
           className="btn ghost wide danger"
           onClick={() => {
+            if (!confirm('Delete this transfer permanently? Both account balances will be restored.')) return;
             remove('transfers', transfer.id);
             if (transfer.id.startsWith('tr_')) {
               remove('payments', transfer.id.slice(3));

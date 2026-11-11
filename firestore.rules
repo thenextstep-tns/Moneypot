@@ -1,47 +1,122 @@
 rules_version = '2';
+
+// Moneypot security model
+//   users/{uid}/**                     personal data — only that user
+//   shared_items/{sid}                 a shared pot/stash — only its members (memberIds)
+//   shared_items/{sid}/{coll}/{id}     records mirrored into a shared item — members only
+//   invites/{sha256(code)}             one-time, expiring invites; fetchable only with the code
+// Everything else (including the legacy invites / shared_stashes / shared_payments /
+// shared_transfers collections) is denied.
 service cloud.firestore {
   match /databases/{db}/documents {
-    function isSignedIn() { return request.auth != null; }
-    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function item(sid) { return get(/databases/$(db)/documents/shared_items/$(sid)).data; }
+    function isMemberOf(sid) { return signedIn() && exists(/databases/$(db)/documents/shared_items/$(sid)) && me() in item(sid).memberIds; }
+    function verifiedEmail() {
+      return 'email' in request.auth.token && request.auth.token.email is string
+        && request.auth.token.get('email_verified', false) == true;
+    }
 
-    // users/{uid} holds settings; everything else lives in its subcollections
+    // ---- Personal data ----
     match /users/{uid} {
-      allow read, write: if isOwner(uid);
-
-      // accounts | categories | plans | stashes | payments | transfers | invites | templates
-      match /{coll}/{id} {
-        allow read, delete: if isOwner(uid) || (
-          isSignedIn() && coll in ['categories', 'stashes', 'payments', 'transfers', 'invites']
-        );
-        allow create, update: if isSignedIn()
-          && coll in ['accounts', 'categories', 'plans', 'stashes', 'payments', 'transfers', 'invites', 'templates']
-          && (
-            isOwner(uid)
-            || coll in ['categories', 'stashes', 'payments', 'transfers', 'invites']
-          );
+      allow read, write: if signedIn() && me() == uid;
+      match /{document=**} {
+        allow read, write: if signedIn() && me() == uid;
       }
     }
 
-    // Shared collaboration collections for invites, shared stashes, shared payments, and shared transfers
-    match /invites/{id} {
-      allow read, write: if isSignedIn();
-    }
-    match /shared_stashes/{id} {
-      allow read, write: if isSignedIn();
-    }
-    match /shared_payments/{id} {
-      allow read, write: if isSignedIn();
-    }
-    match /shared_transfers/{id} {
-      allow read, write: if isSignedIn();
+    // ---- Shared pots / stashes ----
+    match /shared_items/{sid} {
+      allow read: if signedIn() && me() in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && sid.matches('^sh_[a-z0-9]{16,40}$')
+        && request.resource.data.id == sid
+        && request.resource.data.ownerId == me()
+        && request.resource.data.type in ['pot', 'stash']
+        && request.resource.data.memberIds == [me()]
+        && request.resource.data.members.keys().hasOnly([me()])
+        && request.resource.data.data is map;
+
+      allow update: if signedIn() && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.id == resource.data.id
+        && (
+          // any member edits the shared fields (name, target, …)
+          (me() in resource.data.memberIds && changed().hasOnly(['data', 'updatedAt']) && request.resource.data.data is map)
+          // the owner removes members (can't add anyone without an invite, and stays a member)
+          || (me() == resource.data.ownerId && me() in request.resource.data.memberIds
+              && changed().hasOnly(['data', 'updatedAt', 'memberIds', 'members'])
+              && resource.data.memberIds.toSet().hasAll(request.resource.data.memberIds.toSet())
+              && resource.data.members.keys().toSet().hasAll(request.resource.data.members.keys().toSet()))
+          // a member leaves
+          || (me() in resource.data.memberIds && me() != resource.data.ownerId
+              && changed().hasOnly(['memberIds', 'members', 'updatedAt'])
+              && request.resource.data.memberIds == resource.data.memberIds.removeAll([me()])
+              && !(me() in request.resource.data.members)
+              && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()]))
+          // someone joins with an invite they accepted for this item
+          || (!(me() in resource.data.memberIds)
+              && changed().hasOnly(['memberIds', 'members', 'joinInviteId', 'updatedAt'])
+              && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().union([me()].toSet())
+              && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+              && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
+              && me() in request.resource.data.members
+              && get(/databases/$(db)/documents/invites/$(request.resource.data.joinInviteId)).data.sharedId == sid
+              && get(/databases/$(db)/documents/invites/$(request.resource.data.joinInviteId)).data.status == 'accepted'
+              && get(/databases/$(db)/documents/invites/$(request.resource.data.joinInviteId)).data.acceptedByUid == me())
+        );
+
+      allow delete: if signedIn() && me() == resource.data.ownerId;
+
+      // Records (payments / transfers) mirrored into the shared item
+      match /{coll}/{rid} {
+        allow read: if coll in ['payments', 'transfers'] && isMemberOf(sid);
+        allow create: if coll in ['payments', 'transfers'] && isMemberOf(sid)
+          && request.resource.data.contributorUid == me()
+          && request.resource.data.id == rid;
+        allow update: if coll in ['payments', 'transfers'] && isMemberOf(sid)
+          && (resource.data.contributorUid == me() || item(sid).ownerId == me())
+          && request.resource.data.contributorUid == resource.data.contributorUid
+          && request.resource.data.id == rid;
+        allow delete: if coll in ['payments', 'transfers'] && signedIn()
+          && (resource.data.contributorUid == me() || item(sid).ownerId == me());
+      }
     }
 
-    // collectionGroup queries (invites lookup and owner docs)
-    match /{path=**}/invites/{id} {
-      allow read, write: if isSignedIn();
-    }
-    match /{path=**}/{coll}/{id} {
-      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    // ---- Invites (doc id = sha256 of the code, the code itself is never stored) ----
+    match /invites/{iid} {
+      // fetching a single invite requires knowing the code; listing only shows your own invites
+      allow get: if signedIn();
+      allow list: if signedIn() && resource.data.ownerId == me();
+
+      allow create: if signedIn()
+        && iid.matches('^[0-9a-f]{64}$')
+        && request.resource.data.id == iid
+        && request.resource.data.ownerId == me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.inviteeEmail is string
+        && request.resource.data.inviteeEmail == request.resource.data.inviteeEmail.lower()
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt <= request.time.toMillis() + 8 * 24 * 60 * 60 * 1000
+        && !('acceptedByUid' in request.resource.data)
+        && isMemberOf(request.resource.data.sharedId)
+        && item(request.resource.data.sharedId).ownerId == me();
+
+      // accept: once, before expiry, and only by the invited (verified) email address
+      allow update: if signedIn()
+        && resource.data.status == 'pending'
+        && request.time.toMillis() < resource.data.expiresAt
+        && resource.data.ownerId != me()
+        && changed().hasOnly(['status', 'acceptedByUid', 'acceptedByEmail', 'acceptedAt'])
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.acceptedByUid == me()
+        && (resource.data.inviteeEmail == ''
+            || (verifiedEmail() && request.auth.token.email.lower() == resource.data.inviteeEmail));
+
+      allow delete: if signedIn() && resource.data.ownerId == me();
     }
   }
 }

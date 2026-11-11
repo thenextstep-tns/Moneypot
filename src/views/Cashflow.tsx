@@ -475,7 +475,7 @@ export function Cashflow() {
 
         <div className="kpi-card">
           <span className="kpi-label">TOTAL INCOMES</span>
-          <b className="kpi-value" style={{ color: '#16A34A' }}>
+          <b className="kpi-value" style={{ color: 'var(--good-ink)' }}>
             +{money(kpis.income, mainCurrency)}
           </b>
           <small className="muted">Confirmed & scheduled</small>
@@ -483,7 +483,7 @@ export function Cashflow() {
 
         <div className="kpi-card">
           <span className="kpi-label">TOTAL OUTGOING</span>
-          <b className="kpi-value" style={{ color: '#DC2626' }}>
+          <b className="kpi-value" style={{ color: 'var(--bad-ink)' }}>
             -{money(kpis.expense, mainCurrency)}
           </b>
           <small className="muted">Bills & casual spending</small>
@@ -515,7 +515,7 @@ export function Cashflow() {
           </b>
           <small
             className="muted"
-            style={kpis.worstShortfall || kpis.minBal < -0.005 ? { color: '#DC2626', fontWeight: 600 } : undefined}
+            style={kpis.worstShortfall || kpis.minBal < -0.005 ? { color: 'var(--bad-ink)', fontWeight: 600 } : undefined}
           >
             {kpis.worstShortfall
               ? `⚠️ ${kpis.worstShortfall.accountName} on ${kpis.worstShortfall.dayLabel}${kpis.worstShortfall.isPhysicalOverdraft ? ' (below 0)' : ' (into stash)'}`
@@ -531,7 +531,7 @@ export function Cashflow() {
         <div
           style={{
             background: 'rgba(254, 242, 242, 0.9)',
-            border: '1px solid #FCA5A5',
+            border: '1px solid var(--bad-line)',
             borderLeft: '4px solid #DC2626',
             borderRadius: 12,
             padding: '12px 16px',
@@ -546,10 +546,10 @@ export function Cashflow() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 18 }}>⚠️</span>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: '#991B1B' }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--bad-ink)' }}>
                 Projected Account Shortfall Detected
               </div>
-              <div style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 2 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--bad-ink)', marginTop: 2 }}>
                 {kpis.overdrawnAccounts.map((oa, idx) => (
                   <span key={oa.accountId}>
                     {idx > 0 ? ' · ' : ''}
@@ -629,7 +629,7 @@ export function Cashflow() {
             </div>
             {days.some(d => (d.totalStashed ?? 0) > 0) && (
               <div className="legend-item" title="Money put away into stashes (reserved from spending)">
-                <span className="legend-color-dot" style={{ background: '#94A3B8', border: '1px dashed #64748B' }} />
+                <span className="legend-color-dot" style={{ background: '#94A3B8', border: '1px dashed var(--mute)' }} />
                 <span className="legend-name">🔒 Stashed (Reserved)</span>
               </div>
             )}
@@ -1261,13 +1261,13 @@ function CashflowSvgChart({
               <div className="day-card-title-labels">
                 <b style={{ fontSize: 15, marginRight: 6 }}>{activeDayObj.fullLabel}</b>
                 {activeDayObj.isToday && <span className="tag ok-badge">Today</span>}
-                {activeDayObj.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected</span>}
+                {activeDayObj.isFuture && <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>Projected</span>}
                 {hoveredDate && hoveredDate !== pinnedDate ? (
-                  <span className="tag" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                  <span className="tag" style={{ background: 'var(--warn-bg)', color: 'var(--warn-ink)' }}>
                     👁️ Hovering
                   </span>
                 ) : (
-                  <span className="tag" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>
+                  <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>
                     📌 Pinned
                   </span>
                 )}
@@ -1295,7 +1295,7 @@ function CashflowSvgChart({
             {activeDayObj.totalStashed > 0 && (
               <div className="day-metric-box stashed-metric">
                 <span className="metric-label">🔒 STASHED (RESERVED)</span>
-                <b className="metric-val" style={{ color: '#475569' }}>
+                <b className="metric-val" style={{ color: 'var(--mute)' }}>
                   {money(activeDayObj.totalStashed, mainCurrency)}
                 </b>
               </div>
@@ -1328,8 +1328,8 @@ function CashflowSvgChart({
                     isWarn
                       ? {
                           background: 'rgba(254, 242, 242, 0.95)',
-                          borderColor: '#FCA5A5',
-                          color: '#DC2626',
+                          borderColor: 'var(--bad-line)',
+                          color: 'var(--bad-ink)',
                         }
                       : undefined
                   }
@@ -1338,7 +1338,7 @@ function CashflowSvgChart({
                   <span>
                     {isWarn ? '⚠️ ' : ''}
                     {ab.accountName}:{' '}
-                    <b style={isWarn ? { color: '#DC2626' } : undefined}>
+                    <b style={isWarn ? { color: 'var(--bad-ink)' } : undefined}>
                       {money(ab.availableOriginal, ab.currency)} free
                     </b>
                     {(ab.stashedOriginal > 0 || isPhysNeg) && (
@@ -1387,13 +1387,13 @@ function CashflowSvgChart({
                         <div className="item-title-row">
                           <span className="item-title">{it.name}</span>
                           {it.kind === 'saving' && (
-                            <span className="tag" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
+                            <span className="tag" style={{ background: 'var(--good-bg)', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
                               🌱 Stashed
                             </span>
                           )}
                         </div>
                         <div className="item-sub">
-                          {it.category && <span className="tag" style={{ background: '#F1F5F9', color: '#475569', fontSize: 11, padding: '1px 5px' }}>{it.category}</span>}
+                          {it.category && <span className="tag" style={{ background: 'var(--surface-2)', color: 'var(--mute)', fontSize: 11, padding: '1px 5px' }}>{it.category}</span>}
                           {it.accountName && <span>({it.accountName})</span>}
                           <span>• {it.status === 'confirmed' ? '✓ Confirmed' : '⏰ Scheduled'}</span>
                         </div>
@@ -1606,7 +1606,7 @@ function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenMo
             <div
               key={d.date}
               className={`cal-cell ${d.isToday ? 'today-cell' : ''} ${isSelected ? 'selected-cell' : ''}`}
-              style={hasNegAcc && !isSelected ? { borderColor: '#FCA5A5', background: 'rgba(254, 242, 242, 0.35)' } : undefined}
+              style={hasNegAcc && !isSelected ? { borderColor: 'var(--bad-line)', background: 'rgba(254, 242, 242, 0.35)' } : undefined}
               onClick={() => onPinDate(d.date)}
               onDoubleClick={() => onOpenModal(d)}
               title="Click to view details in the rundown above, double-click for details"
@@ -1618,7 +1618,7 @@ function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenMo
                 </span>
                 <span
                   className="cal-cell-bal"
-                  style={hasNegAcc || d.totalBalance < -0.005 ? { color: '#DC2626', fontWeight: 700 } : undefined}
+                  style={hasNegAcc || d.totalBalance < -0.005 ? { color: 'var(--bad-ink)', fontWeight: 700 } : undefined}
                   title={
                     hasNegAcc
                       ? `Shortfall on ${negAccounts.map(a => `${a.accountName} (${money(a.balanceOriginal < -0.005 ? a.balanceOriginal : a.availableOriginal, a.currency)})`).join(', ')}`
@@ -1636,7 +1636,7 @@ function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenMo
                   style={{
                     fontSize: 10,
                     fontWeight: 700,
-                    color: '#DC2626',
+                    color: 'var(--bad-ink)',
                     background: 'rgba(254, 226, 226, 0.85)',
                     borderRadius: 4,
                     padding: '1px 5px',
@@ -1708,7 +1708,7 @@ function WeekOrRangeCalendarList({
           <div
             key={d.date}
             className={`week-day-card ${d.isToday ? 'today-card' : ''} ${isSelected ? 'selected-card' : ''}`}
-            style={negAccounts.length > 0 && !isSelected ? { borderColor: '#FCA5A5' } : undefined}
+            style={negAccounts.length > 0 && !isSelected ? { borderColor: 'var(--bad-line)' } : undefined}
             onClick={() => onPinDate(d.date)}
             onDoubleClick={() => onOpenModal(d)}
           >
@@ -1716,7 +1716,7 @@ function WeekOrRangeCalendarList({
               <div>
                 <b style={{ fontSize: 15 }}>{d.fullLabel}</b>
                 {d.isToday && <span className="tag ok-badge">Today</span>}
-                {d.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected</span>}
+                {d.isFuture && <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>Projected</span>}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block' }}>BALANCE</span>
@@ -1731,9 +1731,9 @@ function WeekOrRangeCalendarList({
                 style={{
                   fontSize: 11.5,
                   fontWeight: 700,
-                  color: '#DC2626',
+                  color: 'var(--bad-ink)',
                   background: 'rgba(254, 242, 242, 0.9)',
-                  border: '1px solid #FCA5A5',
+                  border: '1px solid var(--bad-line)',
                   borderRadius: 6,
                   padding: '4px 8px',
                   marginBottom: 6,
@@ -1803,12 +1803,12 @@ function DayDetailModal({
     <Modal title={day.fullLabel} onClose={onClose}>
       <div style={{ display: 'flex', gap: 6, marginTop: -4, marginBottom: 8 }}>
         {day.isToday && <span className="tag ok-badge">Today</span>}
-        {day.isPast && <span className="tag" style={{ background: '#F1F5F9', color: '#475569' }}>Historical</span>}
-        {day.isFuture && <span className="tag" style={{ background: '#E0F2FE', color: '#0369A1' }}>Projected Schedule</span>}
+        {day.isPast && <span className="tag" style={{ background: 'var(--surface-2)', color: 'var(--mute)' }}>Historical</span>}
+        {day.isFuture && <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>Projected Schedule</span>}
       </div>
 
       {/* Day End Total Balance & Net */}
-      <div style={{ display: 'grid', gridTemplateColumns: day.totalStashed > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10, background: '#F8FAFC', padding: 14, borderRadius: 12, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: day.totalStashed > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 10, background: 'var(--surface-2)', padding: 14, borderRadius: 12, marginBottom: 14 }}>
         <div>
           <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
             AVAILABLE CASH
@@ -1830,7 +1830,7 @@ function DayDetailModal({
             <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
               🔒 STASHED
             </span>
-            <b style={{ fontSize: 18, color: '#475569' }}>
+            <b style={{ fontSize: 18, color: 'var(--mute)' }}>
               {money(day.totalStashed, mainCurrency)}
             </b>
           </div>
@@ -1905,8 +1905,8 @@ function DayDetailModal({
                   padding: '8px 12px',
                   borderRadius: 10,
                   background: 'var(--card)',
-                  border: '1px dashed #94A3B8',
-                  borderLeft: '4px solid #64748B',
+                  border: '1px dashed var(--mute)',
+                  borderLeft: '4px solid var(--mute)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1921,7 +1921,7 @@ function DayDetailModal({
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <b style={{ color: '#1E293B' }}>{money(s.balanceOriginal, s.currency)}</b>
+                  <b style={{ color: 'var(--ink)' }}>{money(s.balanceOriginal, s.currency)}</b>
                   {s.currency !== mainCurrency && (
                     <small className="muted" style={{ display: 'block', fontSize: 11 }}>
                       ≈ {money(s.balanceInMain, mainCurrency)}
@@ -1941,7 +1941,7 @@ function DayDetailModal({
         </div>
 
         {day.items.length === 0 ? (
-          <div style={{ padding: 18, textAlign: 'center', background: '#F8FAFC', borderRadius: 10, color: 'var(--mute)' }}>
+          <div style={{ padding: 18, textAlign: 'center', background: 'var(--surface-2)', borderRadius: 10, color: 'var(--mute)' }}>
             No transactions on this date.
           </div>
         ) : (
@@ -1955,8 +1955,8 @@ function DayDetailModal({
                   justifyContent: 'space-between',
                   padding: '9px 12px',
                   borderRadius: 10,
-                  background: '#FFFFFF',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--card)',
+                  border: '1px solid var(--line)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1965,7 +1965,7 @@ function DayDetailModal({
                     <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>{it.name}</span>
                       {it.kind === 'saving' && (
-                        <span className="tag" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
+                        <span className="tag" style={{ background: 'var(--good-bg)', color: '#0F766E', fontSize: 10.5, padding: '1px 6px' }}>
                           🌱 Stashed
                         </span>
                       )}

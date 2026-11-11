@@ -164,7 +164,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>{planToEdit ? 'Edit Plan' : 'New Plan'}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -188,6 +188,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                       triggerHaptic('light');
                       setKind(k);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.kindChipText, active && styles.kindChipTextActive]}>
                       {labels[k]}
@@ -205,6 +207,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
               placeholderTextColor={theme.colors.mute}
               value={name}
               onChangeText={setName}
+              accessibilityLabel="Title"
             />
 
             {/* Amount */}
@@ -217,6 +220,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                 value={amountStr}
                 onChangeText={setAmountStr}
                 keyboardType="numeric"
+                accessibilityLabel="Amount"
               />
               <Text style={styles.currencyBadge}>{currency}</Text>
             </View>
@@ -235,6 +239,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                       setAccountId(a.id);
                       if (a.currency) setCurrency(a.currency);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{a.name}</Text>
                   </TouchableOpacity>
@@ -252,6 +258,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                       setAccountId(sId);
                       if (s.currency) setCurrency(s.currency);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{s.emoji} {s.name}</Text>
                   </TouchableOpacity>
@@ -274,6 +282,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                           triggerHaptic('light');
                           setToAccountId(a.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>{a.name}</Text>
                       </TouchableOpacity>
@@ -290,6 +300,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                           triggerHaptic('light');
                           setToAccountId(sId);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>{s.emoji} {s.name}</Text>
                       </TouchableOpacity>
@@ -315,6 +327,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                           setCategoryId(c.id);
                           setSubcategory(undefined);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {c.emoji} {c.name}
@@ -336,6 +350,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                             triggerHaptic('light');
                             setSubcategory(undefined);
                           }}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: Boolean(!subcategory) }}
                         >
                           <Text style={[styles.chipText, !subcategory && styles.chipTextActive]}>General</Text>
                         </TouchableOpacity>
@@ -349,6 +365,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                                 triggerHaptic('light');
                                 setSubcategory(sub);
                               }}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: Boolean(active) }}
                             >
                               <Text style={[styles.chipText, active && styles.chipTextActive]}>{sub}</Text>
                             </TouchableOpacity>
@@ -376,6 +394,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                           triggerHaptic('light');
                           setStashId(s.id);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.chipText, active && styles.chipTextActive]}>
                           {s.emoji} {s.name}
@@ -400,6 +420,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                       triggerHaptic('light');
                       setFreq(f);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.freqChipText, active && styles.freqChipTextActive]}>
                       {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -423,6 +445,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                           triggerHaptic('light');
                           setMonthMode(m);
                         }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: Boolean(active) }}
                       >
                         <Text style={[styles.freqChipText, active && styles.freqChipTextActive]}>{label}</Text>
                       </TouchableOpacity>
@@ -444,6 +468,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                               triggerHaptic('light');
                               setNth(n);
                             }}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: Boolean(active) }}
                           >
                             <Text style={[styles.chipText, active && styles.chipTextActive]}>{NTH[n]}</Text>
                           </TouchableOpacity>
@@ -463,6 +489,8 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                               triggerHaptic('light');
                               setNthWeekday(d);
                             }}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: Boolean(active) }}
                           >
                             <Text style={[styles.chipText, active && styles.chipTextActive]}>{WEEKDAYS_LONG[d]}</Text>
                           </TouchableOpacity>
@@ -487,15 +515,16 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
               placeholderTextColor={theme.colors.mute}
               value={note}
               onChangeText={setNote}
+              accessibilityLabel="Note (Optional)"
             />
 
             {/* Save & Delete */}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} accessibilityRole="button">
               <Text style={styles.saveBtnText}>{planToEdit ? 'Save Changes' : 'Create Plan'}</Text>
             </TouchableOpacity>
 
             {planToEdit && (
-              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} accessibilityRole="button">
                 <Text style={styles.deleteBtnText}>Delete Plan</Text>
               </TouchableOpacity>
             )}

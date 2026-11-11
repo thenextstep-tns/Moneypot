@@ -30,7 +30,8 @@ Firebase has no built-in Discord provider, so we use a tiny Cloud Function that 
 
 1. https://discord.com/developers/applications → **New Application** → **OAuth2**:
    - copy **Client ID** and **Client Secret**
-   - add Redirects: `http://localhost:5173/auth/discord` and `https://<your-domain>/auth/discord`
+   - add Redirects (the app's own URL, with trailing slash): `http://localhost:5173/` and `https://thenextstep-tns.github.io/Moneypot/`
+   - the function only accepts redirect URIs listed in its `DISCORD_ALLOWED_REDIRECTS` parameter (same list, comma-separated)
 2. ```
    cd functions && npm install && cd ..
    firebase functions:secrets:set DISCORD_CLIENT_ID
@@ -42,6 +43,23 @@ Firebase has no built-in Discord provider, so we use a tiny Cloud Function that 
 
 ## Deploy
 `npm run build && firebase deploy --only hosting` — then add the hosting domain under **Authentication → Settings → Authorized domains** (and to Discord redirects).
+
+## Security model & sharing
+- `users/{uid}/**` is readable and writable only by that user.
+- Shared pots/stashes live in `shared_items/{id}` and are visible only to their `memberIds`; records that touch a shared
+  item are mirrored into `shared_items/{id}/payments|transfers`. Other members' records never affect your account balances.
+- Invites are stored at `invites/{sha256(code)}` (the code itself is never stored), are bound to the invitee's verified
+  email, expire after 7 days and can be used once — all enforced in [firestore.rules](firestore.rules).
+- Tests: `npm test` (money logic + mobile copy in sync) and `npm run test:rules` (rules in the emulator; needs Java 17+).
+- Shared money logic lives in `src/` and is copied to the Android app with `npm run sync:domain` — never edit
+  `MoneypotMobile/src/domain/*` except `fx.ts`/`emojis.ts`.
+- Android release builds must be signed with a private key — see [MoneypotMobile/README-signing.md](MoneypotMobile/README-signing.md).
+
+### Upgrading from ≤ v0.9.6
+Deploy the new rules and the new clients together (`firebase deploy --only firestore:rules,functions` + web + APK).
+The old `invites`, `shared_stashes`, `shared_payments` and `shared_transfers` collections are locked by the new rules,
+so existing shares must be re-created once: the owner opens the pot/stash → Share → invites the partner again.
+Personal data is unaffected.
 
 ## Skeleton TODOs
 - Currency conversion (pots currently sum amounts across currencies as-is)

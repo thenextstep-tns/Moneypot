@@ -511,9 +511,9 @@ export function OneOffPaymentModal({
             <div
               className="preview"
               style={{
-                background: '#EFF6FF',
-                color: '#1E40AF',
-                borderColor: '#BFDBFE',
+                background: 'var(--info-bg)',
+                color: 'var(--info-ink)',
+                borderColor: 'var(--info-line)',
                 fontSize: 13,
                 display: 'flex',
                 alignItems: 'center',
@@ -606,8 +606,8 @@ export function OneOffPaymentModal({
             if (!sharedStashForCat) return null;
             const isUsingStash = accountId === `stash_${sharedStashForCat.id}`;
             return (
-              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '8px 12px', margin: '-4px 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>
+              <div style={{ background: 'var(--good-bg)', border: '1px solid var(--good-line)', borderRadius: 10, padding: '8px 12px', margin: '-4px 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--good-ink)', fontWeight: 500 }}>
                   👥 Linked shared stash: <b>{sharedStashForCat.emoji} {sharedStashForCat.name}</b>
                 </span>
                 <button
@@ -636,8 +636,8 @@ export function OneOffPaymentModal({
             {selParty && isFuture && selBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -661,7 +661,7 @@ export function OneOffPaymentModal({
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
+                      borderTop: '1px dashed var(--line)',
                     }}
                   >
                     <span style={{ color: 'var(--mute)' }}>After this payment:</span>
@@ -682,7 +682,7 @@ export function OneOffPaymentModal({
           </Field>
 
           {!isFuture && funds?.isShort && (
-            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div>
                 ⚠️ <b>Low free balance:</b> {funds.accountName} only has <b>{money(funds.balance ?? 0, funds.accountCurrency)} free</b> to spend
                 {funds.stashedBalance && funds.stashedBalance > 0 ? (
@@ -699,7 +699,7 @@ export function OneOffPaymentModal({
                         key={s.id}
                         type="button"
                         className="btn"
-                        style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, background: '#FFFFFF', border: '1px solid #F8B4B4', color: '#9B1C1C', cursor: 'pointer' }}
+                        style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--card)', border: '1px solid var(--bad-line)', color: 'var(--bad-ink)', cursor: 'pointer' }}
                         onClick={() => handleAccountChange(`stash_${s.id}`)}
                       >
                         <span>{s.emoji} Pay from {s.name} ({money(sBal, s.currency)})</span>
@@ -712,13 +712,13 @@ export function OneOffPaymentModal({
           )}
 
           {isFuture && selParty && Number(amount) > 0 && selBals && selBals.projected < amtInSelCur && (
-            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13 }}>
+            <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13 }}>
               ⚠️ <b>Low projected balance:</b> On {dayLabel(date)}, {selParty.name} is projected to have {money(selBals.projected, selParty.currency)}, which is {money(amtInSelCur - selBals.projected, selParty.currency)} short.
             </div>
           )}
 
           {isFuture && selParty && Number(amount) > 0 && selBals && selBals.current < amtInSelCur && selBals.projected >= amtInSelCur && (
-            <div className="preview" style={{ background: '#EFF6FF', color: '#1E40AF', borderColor: '#BFDBFE', fontSize: 13 }}>
+            <div className="preview" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)', borderColor: 'var(--info-line)', fontSize: 13 }}>
               ℹ️ Current balance is {money(selBals.current, selParty.currency)}, but projected to reach {money(selBals.projected, selParty.currency)} by {dayLabel(date)} (sufficient funds expected).
             </div>
           )}
@@ -811,9 +811,9 @@ export function OneOffPaymentModal({
             <div
               className="preview"
               style={{
-                background: '#EFF6FF',
-                color: '#1E40AF',
-                borderColor: '#BFDBFE',
+                background: 'var(--info-bg)',
+                color: 'var(--info-ink)',
+                borderColor: 'var(--info-line)',
                 fontSize: 13,
                 display: 'flex',
                 alignItems: 'center',
@@ -913,8 +913,8 @@ export function OneOffPaymentModal({
             {selParty && selBals && (
               <div
                 style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
                   borderRadius: 12,
                   padding: '10px 14px',
                   marginTop: 8,
@@ -928,7 +928,7 @@ export function OneOffPaymentModal({
                 {isFuture && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <span style={{ color: 'var(--mute)' }}>Projected on {dayLabel(date)}:</span>
-                    <b style={{ color: '#2563EB' }}>
+                    <b style={{ color: 'var(--info-ink)' }}>
                       {money(selBals.projected, selParty.currency)}
                     </b>
                   </div>
@@ -940,11 +940,11 @@ export function OneOffPaymentModal({
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: 4,
-                      borderTop: '1px dashed #E2E8F0',
+                      borderTop: '1px dashed var(--line)',
                     }}
                   >
                     <span style={{ color: 'var(--mute)' }}>After this income:</span>
-                    <b style={{ color: '#166534' }}>
+                    <b style={{ color: 'var(--good-ink)' }}>
                       {money((isFuture ? selBals.projected : selBals.current) + amtInSelCur, selParty.currency)}
                     </b>
                   </div>
@@ -993,9 +993,9 @@ export function OneOffPaymentModal({
             <div
               className="preview"
               style={{
-                background: '#EFF6FF',
-                color: '#1E40AF',
-                borderColor: '#BFDBFE',
+                background: 'var(--info-bg)',
+                color: 'var(--info-ink)',
+                borderColor: 'var(--info-line)',
                 fontSize: 13,
                 display: 'flex',
                 alignItems: 'center',
@@ -1072,13 +1072,13 @@ export function OneOffPaymentModal({
 
           {/* Projection summary card */}
           {fromParty && toParty && fromBals && toBals && (
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 14px', margin: '4px 0 14px' }}>
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', margin: '4px 0 14px' }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mute)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
                 <span>{isFuture ? `🗓 Projected balances on ${dayLabel(date)}` : '💳 Live balances'}</span>
                 {isFuture && <span style={{ color: 'var(--brand)', textTransform: 'none', fontWeight: 600 }}>Includes scheduled transactions</span>}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
+                <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>From: {fromParty.icon} {fromParty.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
                     {fromStashedBal > 0 ? (
@@ -1098,13 +1098,13 @@ export function OneOffPaymentModal({
                     </div>
                   )}
                   {+transferAmount > 0 && (
-                    <div style={{ fontSize: 11, color: effectiveFromBal - +transferAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
+                    <div style={{ fontSize: 11, color: effectiveFromBal - +transferAmount < 0 ? '#DC2626' : '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed var(--line)' }}>
                       After move: <b>{money(effectiveFromBal - +transferAmount, fromParty.currency)}</b> free
                     </div>
                   )}
                 </div>
 
-                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 10px' }}>
+                <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>To: {toParty.icon} {toParty.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
                     {toStashedBal > 0 ? (
@@ -1119,12 +1119,12 @@ export function OneOffPaymentModal({
                     )}
                   </div>
                   {isFuture && (
-                    <div style={{ fontSize: 11, color: '#2563EB', marginTop: 2, fontWeight: 600 }}>
+                    <div style={{ fontSize: 11, color: 'var(--info-ink)', marginTop: 2, fontWeight: 600 }}>
                       Projected: <b>{money(toBals.projected, toParty.currency)}</b>
                     </div>
                   )}
                   {+transferToAmount > 0 && (
-                    <div style={{ fontSize: 11, color: '#166534', marginTop: 4, paddingTop: 4, borderTop: '1px dashed #E2E8F0' }}>
+                    <div style={{ fontSize: 11, color: 'var(--good-ink)', marginTop: 4, paddingTop: 4, borderTop: '1px dashed var(--line)' }}>
                       After move: <b>{money((isFuture ? toBals.projected : toBals.current) + +transferToAmount, toParty.currency)}</b>
                     </div>
                   )}
@@ -1170,7 +1170,7 @@ export function OneOffPaymentModal({
           )}
 
           {transferIsShort && (
-            <div className="preview" style={{ background: '#FDE8E8', color: '#9B1C1C', borderColor: '#F8B4B4', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="preview" style={{ background: 'var(--bad-bg)', color: 'var(--bad-ink)', borderColor: 'var(--bad-line)', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>⚠️</span>
                 <span>
@@ -1183,7 +1183,7 @@ export function OneOffPaymentModal({
                   <button
                     type="button"
                     className="btn"
-                    style={{ padding: '3px 8px', fontSize: 11, background: '#FFFFFF', border: '1px solid #F8B4B4', color: '#9B1C1C', cursor: 'pointer' }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: 'var(--card)', border: '1px solid var(--bad-line)', color: 'var(--bad-ink)', cursor: 'pointer' }}
                     onClick={() => {
                       const curFrom = fromId;
                       const curTo = toId;

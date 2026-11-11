@@ -5,13 +5,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Share,
 } from 'react-native';
-import { useData, uid } from '../context/DataContext';
+import { useData } from '../context/DataContext';
 import { calcStashBalance } from '../domain/balances';
 import { convert } from '../domain/fx';
 import { money, today } from '../domain/schedule';
-import { generateMaskedCode, hashAccessCode } from '../domain/sharing';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import { TopHeader } from '../components/TopHeader';
@@ -19,6 +17,7 @@ import { StashEditModal } from '../components/StashEditModal';
 import { BalanceCorrectionModal } from '../components/BalanceCorrectionModal';
 import { OneOffPaymentModal } from '../components/OneOffPaymentModal';
 import { GripVerticalIcon } from '../components/GripVerticalIcon';
+import { JoinSharedModal, ShareItemModal } from '../components/SharingModals';
 import DraggableFlatList, {
   ScaleDecorator,
   RenderItemParams,
@@ -56,32 +55,11 @@ export function StashesScreen() {
     setModalVisible(true);
   };
 
-  const handleShareStash = async (s: Stash) => {
+  const [shareTarget, setShareTarget] = useState<Stash | null>(null);
+  const [joinVisible, setJoinVisible] = useState(false);
+  const handleShareStash = (s: Stash) => {
     triggerHaptic('light');
-    const code = generateMaskedCode();
-    const codeHash = await hashAccessCode(code);
-    const inviteId = `inv_${uid()}`;
-
-    await save('invites', {
-      id: inviteId,
-      targetType: 'stash',
-      targetId: s.id,
-      targetName: s.name,
-      targetEmoji: s.emoji,
-      inviterEmail: user?.email || 'user@moneypot.app',
-      inviterName: user?.displayName || 'Partner',
-      inviteeEmail: '',
-      maskedCode: code,
-      codeHash,
-      status: 'pending',
-      createdAt: Date.now(),
-    });
-
-    try {
-      await Share.share({
-        message: `Join my Moneypot stash "${s.emoji} ${s.name}"! Use code: ${code}\nOpen Moneypot: moneypot://invite?code=${code}`,
-      });
-    } catch {}
+    setShareTarget(s);
   };
 
   return (
@@ -90,9 +68,14 @@ export function StashesScreen() {
         title="Stashes"
         subtitle="Savings Goals & Cushions"
         rightAction={
-          <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd}>
-            <Text style={styles.addBtnText}>+ Add Stash</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => setJoinVisible(true)} accessibilityRole="button" accessibilityLabel="Join a shared stash with an invite code">
+              <Text style={styles.addBtnText}>Join</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addBtn} onPress={handleOpenAdd} accessibilityRole="button" accessibilityLabel="Add stash">
+              <Text style={styles.addBtnText}>+ Add Stash</Text>
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -180,14 +163,17 @@ export function StashesScreen() {
             return (
               <ScaleDecorator>
                 <View style={[styles.stashCard, isActive && styles.cardActive]}>
-                  <TouchableOpacity onPress={() => handleStashPress(s)} disabled={isActive}>
+                  <TouchableOpacity onPress={() => handleStashPress(s)} disabled={isActive} accessibilityRole="button">
                     <View style={styles.stashHeader}>
                       <View style={styles.stashTitleRow}>
                         <TouchableOpacity
                           style={styles.dragHandle}
                           onPressIn={drag}
                           disabled={isActive}
+                          accessibilityLabel="Drag to reorder"
+                          accessibilityHint="Press and hold, then move"
                           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                          accessibilityRole="button"
                         >
                           <GripVerticalIcon size={18} color={isActive ? theme.colors.brand : '#9CA3AF'} />
                         </TouchableOpacity>
@@ -254,6 +240,7 @@ export function StashesScreen() {
                       triggerHaptic('light');
                       setTopUpStash(s);
                     }}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.actionBtnPrimaryText}>+ Top up</Text>
                   </TouchableOpacity>
@@ -268,6 +255,7 @@ export function StashesScreen() {
                         currentBalance: currentBal,
                       });
                     }}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.actionBtnSecondaryText}>⚖️ Correct</Text>
                   </TouchableOpacity>
@@ -275,8 +263,9 @@ export function StashesScreen() {
                   <TouchableOpacity
                     style={styles.actionBtnSecondary}
                     onPress={() => handleShareStash(s)}
+                    accessibilityRole="button"
                   >
-                    <Text style={styles.actionBtnSecondaryText}>🔗 Share</Text>
+                    <Text style={styles.actionBtnSecondaryText}>{s.isForeignOwned ? '👥 Members' : '🔗 Share'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -295,6 +284,9 @@ export function StashesScreen() {
           setCorrectionTarget({ type: 'stash', item: st, currentBalance: bal });
         }}
       />
+
+      <ShareItemModal visible={!!shareTarget} type="stash" item={shareTarget} onClose={() => setShareTarget(null)} />
+      <JoinSharedModal visible={joinVisible} onClose={() => setJoinVisible(false)} />
 
       {/* Balance Correction Modal */}
       <BalanceCorrectionModal

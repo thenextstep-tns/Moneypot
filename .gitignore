@@ -3,3 +3,14 @@ dist
 .env.local
 functions/node_modules
 .firebase
+
+# Built APKs (the downloadable copy lives in public/)
+/*.apk
+# Signing keys must never be committed
+*.keystore
+!MoneypotMobile/android/app/debug.keystore
+*.jks
+# Firebase emulator logs
+*-debug.log
+# Local Claude preview config
+.claude/launch.json

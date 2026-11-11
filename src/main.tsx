@@ -1,17 +1,26 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { onAuthStateChanged, type User } from 'firebase/auth';
-import { auth, discordEnabled, finishDiscordLogin, isConfigured, loginDiscord, loginGoogle, logout } from './firebase';
+import { auth, discordEnabled, finishDiscordLogin, isConfigured, isDiscordCallback, loginDiscord, loginGoogle, logout } from './firebase';
 import { DataProvider, resetDemo, useData } from './store';
 import { Today } from './views/Today';
-import { Cashflow } from './views/Cashflow';
-import { Pots } from './views/Pots';
-import { Plans } from './views/Plans';
-import { Accounts, Stashes } from './views/Money';
-import { LogBook } from './views/LogBook';
-import { SpendingReport } from './views/SpendingReport';
-import { AcceptInviteModal } from './views/SharingModal';
-import { OnboardingModal } from './views/OnboardingModal';
+// Screens other than Today are loaded on demand to keep the first download small
+const Cashflow = lazy(() => import('./views/Cashflow').then(m => ({ default: m.Cashflow })));
+const Pots = lazy(() => import('./views/Pots').then(m => ({ default: m.Pots })));
+const Plans = lazy(() => import('./views/Plans').then(m => ({ default: m.Plans })));
+const Accounts = lazy(() => import('./views/Money').then(m => ({ default: m.Accounts })));
+const Stashes = lazy(() => import('./views/Money').then(m => ({ default: m.Stashes })));
+const LogBook = lazy(() => import('./views/LogBook').then(m => ({ default: m.LogBook })));
+const SpendingReport = lazy(() => import('./views/SpendingReport').then(m => ({ default: m.SpendingReport })));
+const AcceptInviteModal = lazy(() => import('./views/SharingModal').then(m => ({ default: m.AcceptInviteModal })));
+const OnboardingModal = lazy(() => import('./views/OnboardingModal').then(m => ({ default: m.OnboardingModal })));
+
+const Loading = () => (
+  <div className="page" role="status" aria-live="polite" style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+    <img src="./logo.png" alt="" className="login-brand-logo pulse" />
+    <span className="sr-only">Loading…</span>
+  </div>
+);
 import { CurrencySelect, ThemeSelect } from './ui';
 import { APP_VERSION, APK_FILENAME } from './version';
 import './styles.css';
@@ -38,21 +47,25 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [inviteCodeParam, setInviteCodeParam] = useState('');
-  const [inviteIdParam, setInviteIdParam] = useState('');
-  const { settings, setSettings } = useData();
+  const { settings, setSettings, error, clearError } = useData();
 
   useEffect(() => {
-    // Check query params for invite link (?accept=ID&code=MP-XXXX-XX)
+    // Invite link: ?code=MP-XXXX-XXXX (kept in sessionStorage across the sign-in step)
     const params = new URLSearchParams(window.location.search);
-    const acceptId = params.get('accept');
-    const code = params.get('code');
-    if (acceptId || code) {
-      setInviteIdParam(acceptId ?? '');
-      setInviteCodeParam(code ?? '');
+    const code = (!isDiscordCallback() && params.get('code')) || sessionStorage.getItem('moneypot-pending-invite');
+    if (code) {
+      sessionStorage.removeItem('moneypot-pending-invite');
+      setInviteCodeParam(code);
       setShowAcceptInvite(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(clearError, 8000);
+    return () => clearTimeout(t);
+  }, [error, clearError]);
 
   const currentTab = ALL_TABS.find(t => t[0] === tab);
   const View = (currentTab ? currentTab[3] : Today);
@@ -148,7 +161,9 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
 
       {/* Main Content Area */}
       <main>
-        <View />
+        <Suspense fallback={<Loading />}>
+          <View />
+        </Suspense>
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
@@ -299,27 +314,37 @@ function Shell({ user, demo, onExit }: { user: User | null; demo: boolean; onExi
 
       {/* "How it works" Onboarding Modal */}
       {showHowItWorks && (
-        <OnboardingModal onClose={() => setShowHowItWorks(false)} />
+        <Suspense fallback={null}>
+          <OnboardingModal onClose={() => setShowHowItWorks(false)} />
+        </Suspense>
       )}
 
       {/* Share / Invite Accept Modal */}
       {showAcceptInvite && (
+        <Suspense fallback={null}>
         <AcceptInviteModal
-          initialInviteId={inviteIdParam}
           initialCode={inviteCodeParam}
           onClose={() => {
             setShowAcceptInvite(false);
-            setInviteIdParam('');
             setInviteCodeParam('');
           }}
         />
+        </Suspense>
+      )}
+
+      {error && (
+        <div className="error-toast" role="alert">
+          <span style={{ flex: 1 }}>⚠️ Couldn't sync a change: {error}</span>
+          <button type="button" onClick={clearError} aria-label="Dismiss error">✕</button>
+        </div>
       )}
     </div>
   );
 }
 
-function Login({ onDemo }: { onDemo: () => void }) {
-  const [err, setErr] = useState('');
+function Login({ onDemo, initialError = '' }: { onDemo: () => void; initialError?: string }) {
+  const [err, setErr] = useState(initialError);
+  useEffect(() => setErr(initialError), [initialError]);
   return (
     <div className="login">
       <div className="login-card">
@@ -332,7 +357,7 @@ function Login({ onDemo }: { onDemo: () => void }) {
           </button>
         )}
         {discordEnabled && (
-          <button className="btn wide discord" onClick={loginDiscord}>
+          <button className="btn wide discord" onClick={() => loginDiscord().catch(e => setErr(e.message))}>
             Continue with Discord
           </button>
         )}
@@ -358,10 +383,21 @@ function Login({ onDemo }: { onDemo: () => void }) {
 function App() {
   const [user, setUser] = useState<User | null | undefined>(isConfigured ? undefined : null);
   const [demo, setDemo] = useState(localStorage.getItem('pots-mode') === 'demo');
+  const [authErr, setAuthErr] = useState('');
   useEffect(() => {
+    // Remember an invite code from the URL so it survives the sign-in redirect
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (code && !isDiscordCallback()) sessionStorage.setItem('moneypot-pending-invite', code);
     if (!auth) return;
-    finishDiscordLogin().catch(console.error);
-    return onAuthStateChanged(auth, setUser);
+    finishDiscordLogin().catch(e => setAuthErr(e instanceof Error ? e.message : 'Discord sign-in failed'));
+    return onAuthStateChanged(auth, u => {
+      setUser(u);
+      // Signing in always leaves demo mode, so the UI never says "Demo mode" for a real account
+      if (u) {
+        localStorage.removeItem('pots-mode');
+        setDemo(false);
+      }
+    });
   }, []);
   const setMode = (d: boolean) => {
     d ? localStorage.setItem('pots-mode', 'demo') : localStorage.removeItem('pots-mode');
@@ -369,10 +405,10 @@ function App() {
   };
 
   if (user === undefined) return <div className="login"><img src="./logo.png" alt="Moneypot" className="login-brand-logo pulse" /></div>;
-  if (!user && !demo) return <Login onDemo={() => setMode(true)} />;
+  if (!user && !demo) return <Login onDemo={() => setMode(true)} initialError={authErr} />;
   return (
-    <DataProvider user={user && !demo ? user : null} key={user?.uid ?? 'demo'}>
-      <Shell user={user} demo={!user || demo} onExit={() => (user && !demo ? logout() : setMode(false))} />
+    <DataProvider user={user ?? null} key={user?.uid ?? 'demo'}>
+      <Shell user={user} demo={!user} onExit={() => (user ? logout() : setMode(false))} />
     </DataProvider>
   );
 }

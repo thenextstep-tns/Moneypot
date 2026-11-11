@@ -11,6 +11,7 @@ import {
 import Svg, { Path, G, Text as SvgText } from 'react-native-svg';
 import { useData } from '../context/DataContext';
 import { convert } from '../domain/fx';
+import { convAt } from '../domain/balances';
 import {
   today,
   addDays,
@@ -192,7 +193,7 @@ export function SpendingScreen() {
       const subcategory = (p.subcategory || '').trim() || 'General';
 
       const key = `${potId}:::${subcategory}`;
-      const convertedAmt = convert(p.amount, p.currency, curCurrency);
+      const convertedAmt = convAt(p.amount, p.currency, curCurrency, p.fx);
 
       const existing = itemMap.get(key) || {
         potId,
@@ -318,6 +319,8 @@ export function SpendingScreen() {
                 setPeriod(val);
                 setSelectedKey(null);
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: Boolean(period === val) }}
             >
               <Text style={[styles.periodChipText, period === val && styles.periodChipTextActive]}>
                 {label}
@@ -472,7 +475,7 @@ export function SpendingScreen() {
                     <Text style={styles.detailTitle}>
                       {activeItem.potEmoji} {activeItem.potName} › {activeItem.subcategory}
                     </Text>
-                    <TouchableOpacity onPress={() => setSelectedKey(null)}>
+                    <TouchableOpacity onPress={() => setSelectedKey(null)} accessibilityLabel="Close details" hitSlop={12} accessibilityRole="button">
                       <Text style={styles.closeBtn}>✕</Text>
                     </TouchableOpacity>
                   </View>
@@ -516,6 +519,8 @@ export function SpendingScreen() {
                       setSelectedKey(prev => (prev === item.key ? null : item.key));
                     }}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(isSelected) }}
                   >
                     <Text style={styles.rankNum}>#{idx + 1}</Text>
                     <View style={[styles.swatch, { backgroundColor: item.sliceColor }]} />

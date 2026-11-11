@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, isBalanceCorrectionPayment, money } from '../schedule';
 import type { Payment, Transfer } from '../types';
+import { contributorLabel, partyLabel } from '../sharedSync';
 import { AccountCardsSelect, CurrencySelect, Empty, Field, HelpButton, Modal } from '../ui';
 
 
@@ -32,6 +33,8 @@ interface LogItem {
   transfer?: Transfer;
   isShared?: boolean;
   contributorName?: string;
+  /** recorded by another member of a shared pot/stash: read-only here */
+  foreign?: boolean;
 }
 
 /** Complete transaction log book with search, filters, cancel (reverting money), and editing */
@@ -49,18 +52,7 @@ export function LogBook() {
   const stashMap = useMemo(() => new Map(stashes.map(s => [s.id, s])), [stashes]);
   const planMap = useMemo(() => new Map(plans.map(p => [p.id, p])), [plans]);
 
-  const resolvePartyName = (id?: string) => {
-    if (!id) return 'No account';
-    if (id.startsWith('stash_')) {
-      const sId = id.replace('stash_', '');
-      const st = stashMap.get(sId);
-      return st ? `${st.emoji} ${st.name} (Stash)` : 'Stash';
-    }
-    const st = stashMap.get(id);
-    if (st) return `${st.emoji} ${st.name} (Stash)`;
-    const acc = accMap.get(id);
-    return acc?.name ?? 'No account';
-  };
+  const resolvePartyName = (id?: string, record?: Payment | Transfer) => partyLabel(id, accounts, stashes, record);
 
   // Combine and sort all transactions
   const items: LogItem[] = useMemo(() => {
@@ -72,8 +64,8 @@ export function LogBook() {
       const kind = p.kind ?? plan?.kind ?? 'expense';
       if (kind === 'transfer' && p.status !== 'cancelled') continue;
       const effectiveAccId = p.accountId || (p.stashId ? `stash_${p.stashId}` : plan?.accountId);
-      const accName = resolvePartyName(effectiveAccId);
-      const toAccName = p.toAccountId ? resolvePartyName(p.toAccountId) : undefined;
+      const accName = resolvePartyName(effectiveAccId, p);
+      const toAccName = p.toAccountId ? resolvePartyName(p.toAccountId, p) : undefined;
       const isShared = Boolean(
         p.isShared ||
         (cat?.sharedWith && cat.sharedWith.length > 0) ||
@@ -101,12 +93,13 @@ export function LogBook() {
         payment: p,
         isShared,
         contributorName: p.contributorName || (p.contributorEmail ? p.contributorEmail.split('@')[0] : undefined),
+        foreign: p.foreign,
       });
     }
 
     for (const t of transfers) {
-      const fromName = resolvePartyName(t.fromAccountId);
-      const toName = resolvePartyName(t.toAccountId);
+      const fromName = resolvePartyName(t.fromAccountId, t);
+      const toName = resolvePartyName(t.toAccountId, t);
 
       list.push({
         id: t.id,
@@ -122,6 +115,9 @@ export function LogBook() {
         status: t.status,
         note: t.note,
         transfer: t,
+        isShared: t.isShared || t.foreign,
+        contributorName: t.foreign ? contributorLabel(t) : undefined,
+        foreign: t.foreign,
       });
     }
 
@@ -289,10 +285,10 @@ export function LogBook() {
               <div className="grow">
                 <div className="title">
                   {item.title}
-                  {isCorrection && <span className="tag" style={{ background: '#FEF3C7', color: '#92400E' }}>Manual correction</span>}
+                  {isCorrection && <span className="tag" style={{ background: 'var(--warn-bg)', color: 'var(--warn-ink)' }}>Manual correction</span>}
                   {item.subcategory && <span className="tag subcat-badge">{item.subcategory}</span>}
                   {item.isShared && <span className="tag shared-tag">👥 Shared</span>}
-                  {item.contributorName && <span className="tag" style={{ background: '#EFF6FF', color: '#1E40AF' }}>👤 {item.contributorName}</span>}
+                  {item.contributorName && <span className="tag" style={{ background: 'var(--info-bg)', color: 'var(--info-ink)' }}>👤 {item.contributorName}</span>}
                   {isCancelled && <span className="tag danger-tag">Cancelled (Money restored)</span>}
 
                 </div>
@@ -312,6 +308,11 @@ export function LogBook() {
                 </div>
               </div>
 
+              {item.foreign ? (
+                <div className="actions muted" style={{ paddingLeft: 52, fontSize: 12 }}>
+                  👥 Added by {item.contributorName ?? 'another member'} to a shared {item.potName ? 'pot' : 'stash'} — only they can change it. It doesn't affect your accounts.
+                </div>
+              ) : (
               <div className="actions" style={{ paddingLeft: 52 }}>
                 <button
                   type="button"
@@ -342,6 +343,7 @@ export function LogBook() {
                   ✕
                 </button>
               </div>
+              )}
             </div>
           );
         })}
@@ -425,7 +427,7 @@ function EditPaymentModal({ payment, onClose }: { payment: Payment; onClose: () 
       </Field>
 
       {payment.kind === 'saving' || payment.stashId ? (
-        <div className="preview" style={{ background: '#F0FDF4', color: '#166534', borderColor: '#BBF7D0', margin: '4px 0 10px' }}>
+        <div className="preview" style={{ background: 'var(--good-bg)', color: 'var(--good-ink)', borderColor: 'var(--good-line)', margin: '4px 0 10px' }}>
           🌱 Saving into stash: <b>{stashes.find(s => s.id === payment.stashId)?.name || name}</b>
         </div>
       ) : (

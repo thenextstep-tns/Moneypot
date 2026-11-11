@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,131 +12,105 @@ import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { useData } from '../context/DataContext';
-import { signInWithGoogleTokens } from '../services/firebase';
+import { base64UrlToBytes, bytesToBase64Url, secureRandomBytes, signInWithGoogleIdToken } from '../services/firebase';
+import { randomToken } from '../domain/sharing';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
 const GOOGLE_AUTH_URL = 'https://thenextstep-tns.github.io/Moneypot/auth-mobile.html';
+const PAD_BYTES = 4096; // one-time pad for the Google ID token (JWTs are ~1–2 KB)
+
+/*
+ * Google sign-in handoff
+ *  1. The app creates a random `state` and a one-time pad `key`, and opens the sign-in page with
+ *     ?state=…#k=<key>. The fragment never leaves the browser.
+ *  2. The page signs in with Google and returns moneypot://auth?state=…&ct=<idToken XOR key>.
+ *  3. The app accepts only its own pending `state`, decrypts the token and signs in to Firebase.
+ * Another app that registers the moneypot:// scheme sees only ciphertext, and a crafted link
+ * can't sign the user into someone else's account (wrong/missing state).
+ */
+interface PendingLogin { state: string; key: Uint8Array }
 
 function parseQueryParams(url: string): Record<string, string> {
   const params: Record<string, string> = {};
-  try {
-    const qIdx = url.indexOf('?');
-    if (qIdx === -1) return params;
-    const queryString = url.slice(qIdx + 1);
-    const pairs = queryString.split('&');
-    for (const pair of pairs) {
-      const eqIdx = pair.indexOf('=');
-      if (eqIdx !== -1) {
-        const key = pair.slice(0, eqIdx);
-        const val = pair.slice(eqIdx + 1);
-        if (key) {
-          params[decodeURIComponent(key)] = decodeURIComponent(val || '');
-        }
-      }
+  const qIdx = url.indexOf('?');
+  if (qIdx === -1) return params;
+  for (const pair of url.slice(qIdx + 1).split('#')[0].split('&')) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    try {
+      params[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
+    } catch {
+      // ignore malformed pairs
     }
-  } catch (e) {
-    console.warn('Error parsing params:', e);
   }
   return params;
 }
 
 export function AuthScreen() {
   const insets = useSafeAreaInsets();
-  const { setUser, setDemoMode } = useData();
+  const { setDemoMode } = useData();
   const styles = useStyles(getStyles);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const pending = useRef<PendingLogin | null>(null);
 
-  const handleAuthUrl = async (url: string) => {
-    try {
-      if (!url || !url.startsWith('moneypot://')) return false;
-      const params = parseQueryParams(url);
-      const uid = params.uid;
-      const email = params.email;
-      const displayName = params.displayName;
-      const idToken = params.idToken;
-      const accessToken = params.accessToken;
-
-      if (uid) {
-        try {
-          WebBrowser.dismissAuthSession();
-        } catch {}
-        if (idToken || accessToken) {
-          await signInWithGoogleTokens(idToken, accessToken);
-        }
-        triggerHaptic('success');
-        setLoading(false);
-        setUser({
-          uid,
-          email: email || `${displayName || 'user'}@gmail.com`,
-          displayName: displayName || email?.split('@')[0] || 'Google User',
-          idToken,
-          accessToken,
-        });
-        return true;
-      }
-    } catch (e) {
-      console.warn('Auth URL handling error:', e);
+  const handleAuthUrl = async (url: string): Promise<boolean> => {
+    if (!url || !url.startsWith('moneypot://auth')) return false;
+    const params = parseQueryParams(url);
+    const login = pending.current;
+    if (!login || !params.state || params.state !== login.state || !params.ct) {
+      // Not a response to a sign-in this app started: ignore it.
+      setErrorMsg('That sign-in link was not started from this app. Please try again.');
+      setLoading(false);
+      return false;
     }
-    return false;
+    pending.current = null;
+    try {
+      const ct = base64UrlToBytes(params.ct);
+      if (ct.length > login.key.length) throw new Error('Sign-in response is too long.');
+      let idToken = '';
+      for (let i = 0; i < ct.length; i++) idToken += String.fromCharCode(ct[i] ^ login.key[i]);
+      await signInWithGoogleIdToken(idToken);
+      triggerHaptic('success');
+      // The signed-in user arrives through onAuthStateChanged in DataContext.
+      return true;
+    } catch (e) {
+      console.warn('Google sign-in failed:', e);
+      setErrorMsg('Google sign-in failed. Please try again.');
+      return false;
+    } finally {
+      setLoading(false);
+      try { WebBrowser.dismissAuthSession(); } catch { /* not open */ }
+    }
   };
 
-  // Listen for incoming deep link callbacks (moneypot://auth?...)
+  // Deep-link callbacks (moneypot://auth?...) when the browser hands control back via an intent
   useEffect(() => {
-    const handleUrlEvent = (event: { url: string }) => {
-      if (handleAuthUrl(event.url)) {
-        setLoading(false);
-      }
-    };
-
-    const sub = Linking.addEventListener('url', handleUrlEvent);
-
-    Linking.getInitialURL().then(initialUrl => {
-      if (initialUrl) {
-        handleAuthUrl(initialUrl);
-      }
-    }).catch(() => {});
-
-    return () => {
-      sub.remove();
-    };
+    const sub = Linking.addEventListener('url', e => { void handleAuthUrl(e.url); });
+    return () => sub.remove();
   }, []);
 
   const handleGoogleLogin = async () => {
     triggerHaptic('light');
     setErrorMsg('');
     setLoading(true);
-
+    const state = randomToken(24);
+    const key = secureRandomBytes(PAD_BYTES);
+    pending.current = { state, key };
+    const authUrl = `${GOOGLE_AUTH_URL}?state=${encodeURIComponent(state)}#k=${bytesToBase64Url(key)}`;
     try {
-      // Add cache-busting timestamp to ensure the latest auth-mobile.html is always loaded
-      const authUrl = `${GOOGLE_AUTH_URL}?prompt=select_account&_v=${Date.now()}`;
-      const result = await WebBrowser.openAuthSessionAsync(
-        authUrl,
-        'moneypot://auth'
-      );
-
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, 'moneypot://auth');
       if (result.type === 'success' && result.url) {
-        handleAuthUrl(result.url);
+        await handleAuthUrl(result.url);
       } else {
         setLoading(false);
       }
-    } catch (err: any) {
-      console.warn('WebBrowser auth session error, falling back to Linking:', err);
-      try {
-        const fallbackUrl = `${GOOGLE_AUTH_URL}?prompt=select_account&_v=${Date.now()}`;
-        const supported = await Linking.canOpenURL(fallbackUrl);
-        if (supported) {
-          await Linking.openURL(fallbackUrl);
-        } else {
-          setErrorMsg('Unable to open web browser for Google sign in.');
-          setLoading(false);
-        }
-      } catch (fallbackErr: any) {
-        setErrorMsg('Could not open sign in window. Please try again.');
-        setLoading(false);
-      }
+    } catch (err) {
+      console.warn('Auth session error:', err);
+      setErrorMsg('Could not open the sign-in window. Please try again.');
+      setLoading(false);
     }
   };
 
@@ -175,6 +149,7 @@ export function AuthScreen() {
             onPress={handleGoogleLogin}
             disabled={loading}
             activeOpacity={0.85}
+            accessibilityRole="button"
           >
             {loading ? (
               <View style={styles.loadingRow}>
@@ -216,6 +191,7 @@ export function AuthScreen() {
             style={styles.demoBtn}
             onPress={handleDemoMode}
             activeOpacity={0.8}
+            accessibilityRole="button"
           >
             <Text style={styles.demoBtnText}>Try it without an account</Text>
           </TouchableOpacity>

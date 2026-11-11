@@ -113,8 +113,8 @@ export function PayEarlyModal({
                     <span
                       className="tag"
                       style={{
-                        background: '#FEF3C7',
-                        color: '#92400E',
+                        background: 'var(--warn-bg)',
+                        color: 'var(--warn-ink)',
                         fontWeight: 700,
                         fontSize: 11,
                       }}

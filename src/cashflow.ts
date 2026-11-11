@@ -1,7 +1,21 @@
 import type { Account, Category, Occurrence, Payment, Plan, Stash, Transfer } from './types';
 import { convert } from './fx';
-import { addDays, occurrences, parse, today } from './schedule';
-import { calcProjectedStashBalance, calcStashBalance, getPhysicalAccountId } from './balances';
+import { addDays, isBalanceCorrectionPayment, parse, today } from './schedule';
+import {
+  conv,
+  convAt,
+  findStashByRef,
+  isSharedStash,
+  occurrenceAccountDeltas,
+  occurrenceStashDelta,
+  paymentAccountDeltas,
+  paymentStashDelta,
+  pendingForProjection,
+  physicalAccountId,
+  transferAccountDeltas,
+  transferStashDelta,
+  type AccountDelta,
+} from './balances';
 
 export interface CashflowItem {
   id: string;
@@ -87,8 +101,18 @@ export function generateDateList(from: string, to: string): string[] {
   return dates;
 }
 
+interface BalanceEvent { date: string; key: string; amount: number } // amount in the key's own currency
+
+const pushTo = <T,>(map: Map<string, T[]>, key: string, v: T) => {
+  const arr = map.get(key);
+  if (arr) arr.push(v);
+  else map.set(key, [v]);
+};
+
 /**
- * Compute daily cashflows and stacked account balances across [fromDate, toDate]
+ * Daily cashflows and stacked account balances across [fromDate, toDate].
+ * `accounts` may be a filtered subset (account filter). All balance rules come from balances.ts,
+ * so this chart always agrees with the Accounts and Today screens.
  */
 export function calculateCashflowRange(
   fromDate: string,
@@ -102,211 +126,160 @@ export function calculateCashflowRange(
   mainCurrency = 'EUR'
 ): DayCashflow[] {
   const t = today();
-  const dateList = generateDateList(fromDate, toDate);
-
-  // Compute future pending occurrences from tomorrow up to toDate
   const futureStart = addDays(t, 1);
-  const futureOccurrences: Occurrence[] =
-    toDate >= futureStart
-      ? occurrences(plans, payments, futureStart, toDate).filter(o => o.status === 'pending')
-      : [];
+  const dateList = generateDateList(fromDate, toDate);
+  const planById = new Map(plans.map(p => [p.id, p]));
+  const accById = new Map(accounts.map(a => [a.id, a]));
 
-  // Map occurrences by effective date (respecting postponed dates)
-  const futureOccurrencesByDate = new Map<string, Occurrence[]>();
-  for (const o of futureOccurrences) {
-    const effDate = o.date || o.dueDate;
-    const arr = futureOccurrencesByDate.get(effDate) ?? [];
-    arr.push(o);
-    futureOccurrencesByDate.set(effDate, arr);
-  }
+  // Pending occurrences the projection assumes will happen. Overdue and today's unconfirmed items
+  // are assumed to happen on the first projected day, so they are never silently dropped.
+  const pending: Occurrence[] = toDate >= futureStart ? pendingForProjection(plans, payments, t, toDate) : [];
+  const pendingEff = (o: Occurrence) => {
+    const d = o.date || o.dueDate;
+    return d < futureStart ? futureStart : d;
+  };
+  const pendingByDate = new Map<string, Occurrence[]>();
+  for (const o of pending) pushTo(pendingByDate, pendingEff(o), o);
 
-  // Pre-filter confirmed payments and non-cancelled transfers
   const confirmedPayments = payments.filter(p => p.status === 'confirmed');
   const activeTransfers = transfers.filter(tr => tr.status !== 'cancelled');
 
-  // Helper: compute delta for an account from a payment
-  const getPaymentDelta = (p: Payment, a: Account): number => {
-    const plan = plans.find(x => x.id === p.planId);
-    const kind = p.kind ?? plan?.kind ?? 'expense';
-    if (kind === 'transfer') return 0; // Handled in activeTransfers
-    const stashId = p.stashId ?? plan?.stashId;
-    const s = stashId ? stashes.find(x => x.id === stashId) : undefined;
-    const rawAccId = p.accountId || plan?.accountId || s?.accountId;
-    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [a]);
-    const amt = p.currency && p.currency !== a.currency ? convert(p.amount, p.currency, a.currency) : p.amount;
-    let d = 0;
-    if (sourceAccId === a.id) {
-      if (kind === 'income') d += amt;
-      else if (kind === 'expense') d -= amt;
-      // Stash saving stays inside the physical account envelope
+  // ---- Balance events: account keys = account id, stash = `s:<id>`, own share = `r:<id>` ----
+  const events: BalanceEvent[] = [];
+  const pushAccount = (date: string, ds: AccountDelta[]) => {
+    for (const d of ds) {
+      const a = accById.get(d.accountId);
+      if (a) events.push({ date, key: a.id, amount: convAt(d.amount, d.currency, a.currency, d.fx) });
     }
-    return d;
   };
-
-  // Helper: compute delta for an account from a transfer
-  const getTransferDelta = (tr: Transfer, a: Account): number => {
-    const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, a.id, [a]);
-    const physTo = getPhysicalAccountId(tr.toAccountId, stashes, a.id, [a]);
-    if (physFrom === a.id && physTo === a.id) {
-      return 0;
+  const pushStash = (date: string, delta: (s: Stash) => number, own: boolean) => {
+    for (const s of stashes) {
+      const d = delta(s);
+      if (!d) continue;
+      events.push({ date, key: `s:${s.id}`, amount: d });
+      if (own) events.push({ date, key: `r:${s.id}`, amount: d });
     }
-    let d = 0;
-    if (physFrom === a.id) {
-      const amt = tr.fromCurrency && tr.fromCurrency !== a.currency ? convert(tr.fromAmount, tr.fromCurrency, a.currency) : tr.fromAmount;
-      d -= amt;
-    }
-    if (physTo === a.id) {
-      const amt = tr.toCurrency && tr.toCurrency !== a.currency ? convert(tr.toAmount, tr.toCurrency, a.currency) : tr.toAmount;
-      d += amt;
-    }
-    return d;
   };
-
-  // Helper: compute delta for an account from a future occurrence
-  const getOccurrenceDelta = (o: Occurrence, a: Account): number => {
-    const kind = o.kind ?? o.plan.kind ?? 'expense';
-    if (kind === 'transfer') {
-      const physFrom = getPhysicalAccountId(o.accountId, stashes, a.id, [a]);
-      const physTo = getPhysicalAccountId(o.toAccountId, stashes, a.id, [a]);
-      if (physFrom === a.id && physTo === a.id) {
-        return 0;
-      }
-      let d = 0;
-      if (physFrom === a.id) {
-        const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
-        d -= amt;
-      }
-      if (physTo === a.id) {
-        const toAmt = o.toAmount ?? o.amount;
-        const toCur = o.toCurrency ?? o.currency;
-        const amt = toCur !== a.currency ? convert(toAmt, toCur, a.currency) : toAmt;
-        d += amt;
-      }
-      return d;
-    }
-    const s = o.stashId ? stashes.find(x => x.id === o.stashId) : (o.plan.stashId ? stashes.find(x => x.id === o.plan.stashId) : undefined);
-    const rawAccId = o.accountId || o.plan.accountId || s?.accountId;
-    const sourceAccId = getPhysicalAccountId(rawAccId, stashes, undefined, [a]);
-    const amt = o.currency && o.currency !== a.currency ? convert(o.amount, o.currency, a.currency) : o.amount;
-    let d = 0;
-    if (sourceAccId === a.id) {
-      if (kind === 'income') d += amt;
-      else if (kind === 'expense') d -= amt;
-    }
-    return d;
-  };
-
-  // Calculate live balances as of today (excluding future-dated transfers/payments)
-  const liveBalancesToday = new Map<string, number>();
-  for (const a of accounts) {
-    let b = a.startBalance;
-    for (const p of confirmedPayments) {
-      if (p.date <= t) b += getPaymentDelta(p, a);
-    }
-    for (const tr of activeTransfers) {
-      if (!tr.date || tr.date <= t) b += getTransferDelta(tr, a);
-    }
-    liveBalancesToday.set(a.id, b);
+  const EPOCH = '0000-00-00';
+  for (const p of confirmedPayments) {
+    const plan = planById.get(p.planId);
+    const date = p.date || EPOCH;
+    pushAccount(date, paymentAccountDeltas(p, plan, stashes));
+    pushStash(date, s => paymentStashDelta(p, plan, s), !p.foreign);
   }
+  for (const tr of activeTransfers) {
+    const date = tr.date || EPOCH;
+    pushAccount(date, transferAccountDeltas(tr, stashes));
+    pushStash(date, s => transferStashDelta(tr, s), !tr.foreign);
+  }
+  for (const o of pending) {
+    const date = pendingEff(o);
+    pushAccount(date, occurrenceAccountDeltas(o, stashes));
+    pushStash(date, s => occurrenceStashDelta(o, s), true);
+  }
+  events.sort((a, b) => a.date.localeCompare(b.date));
+
+  const running = new Map<string, number>();
+  for (const a of accounts) running.set(a.id, a.startBalance || 0);
+  for (const s of stashes) {
+    running.set(`s:${s.id}`, s.startAmount || 0);
+    running.set(`r:${s.id}`, s.isForeignOwned ? 0 : s.startAmount || 0);
+  }
+  let ev = 0;
+  const advanceTo = (date: string) => {
+    while (ev < events.length && events[ev].date <= date) {
+      const e = events[ev++];
+      running.set(e.key, (running.get(e.key) ?? 0) + e.amount);
+    }
+  };
 
   const findParty = (id?: string) => {
     if (!id) return undefined;
-    const acc = accounts.find(a => a.id === id);
+    const acc = accById.get(id);
     if (acc) return { name: acc.name, color: acc.color };
-    const st = stashes.find(s => s.id === id || `stash_${s.id}` === id);
+    const st = findStashByRef(id, stashes);
     if (st) return { name: `${st.emoji} ${st.name}`, color: undefined };
     return undefined;
   };
+  const touchesVisibleAccount = (...ids: (string | undefined)[]) =>
+    ids.some(id => Boolean(id) && (accById.has(id!) || accById.has(physicalAccountId(id, stashes) ?? '')));
+
+  const confirmedByDate = new Map<string, Payment[]>();
+  for (const p of confirmedPayments) pushTo(confirmedByDate, p.date, p);
+  const transfersByDate = new Map<string, Transfer[]>();
+  for (const tr of activeTransfers) if (tr.date) pushTo(transfersByDate, tr.date, tr);
 
   const result: DayCashflow[] = [];
 
   for (const date of dateList) {
+    advanceTo(date);
     const isToday = date === t;
     const isPast = date < t;
     const isFuture = date > t;
     const dObj = parse(date);
-    const dayOfMonth = dObj.getDate();
-    const weekdayIndex = dObj.getDay();
     const dayLabel = `${String(dObj.getDate()).padStart(2, '0')}.${String(dObj.getMonth() + 1).padStart(2, '0')}`;
     const fullLabel = dObj.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
-    // Collect daily transactions / cashflow items
     const items: CashflowItem[] = [];
 
-    // 1. Confirmed payments on this date
-    for (const p of confirmedPayments) {
-      if (p.date === date) {
-        const plan = plans.find(x => x.id === p.planId);
-        const kind = p.kind ?? plan?.kind ?? 'expense';
-        if (kind === 'transfer') continue; // Handled in activeTransfers
-        const physAccId = getPhysicalAccountId(p.accountId || plan?.accountId, stashes, undefined, accounts);
-        if (p.accountId && !accounts.some(a => a.id === p.accountId || a.id === physAccId)) continue;
-        const catId = p.categoryId ?? plan?.categoryId;
-        const cat = catId ? categories.find(c => c.id === catId) : undefined;
-        const acc = accounts.find(a => a.id === p.accountId || a.id === physAccId);
-        const isCorrection = Boolean(
-          p.isCorrection ||
-          p.name === 'Balance correction' ||
-          p.name === 'Technical balance edit' ||
-          p.name?.includes('Balance correction') ||
-          p.id.startsWith('adj_') ||
-          p.planId?.startsWith('adj_')
-        );
-        items.push({
-          id: p.id,
-          name: p.name || plan?.name || (kind === 'income' ? 'Income' : 'Expense'),
-          amount: p.amount,
-          currency: p.currency,
-          amountInMain: convert(p.amount, p.currency, mainCurrency),
-          kind,
-          status: 'confirmed',
-          date,
-          accountId: p.accountId,
-          accountName: acc?.name,
-          accountColor: acc?.color,
-          category: cat?.name,
-          subcategory: p.subcategory || plan?.subcategory,
-          emoji: isCorrection ? '⚖️' : (kind === 'saving' ? (stashes.find(s => s.id === (p.stashId ?? plan?.stashId))?.emoji ?? '🌱') : cat?.emoji ?? (kind === 'income' ? '💰' : '💸')),
-          isShared: p.isShared ?? plan?.isShared,
-          isCorrection,
-        });
-      }
+    // 1. Confirmed payments on this date (only this user's own; other members' are not cashflow)
+    for (const p of confirmedByDate.get(date) ?? []) {
+      const plan = planById.get(p.planId);
+      const kind = p.kind ?? plan?.kind ?? 'expense';
+      if (kind === 'transfer' || p.foreign) continue;
+      const rawAcc = p.accountId || plan?.accountId;
+      if (rawAcc && !touchesVisibleAccount(rawAcc)) continue;
+      const catId = p.categoryId ?? plan?.categoryId;
+      const cat = catId ? categories.find(c => c.id === catId) : undefined;
+      const acc = accById.get(rawAcc ?? '') ?? accById.get(physicalAccountId(rawAcc, stashes) ?? '');
+      const isCorrection = isBalanceCorrectionPayment(p);
+      items.push({
+        id: p.id,
+        name: p.name || plan?.name || (kind === 'income' ? 'Income' : 'Expense'),
+        amount: p.amount,
+        currency: p.currency,
+        amountInMain: convAt(p.amount, p.currency, mainCurrency, p.fx),
+        kind,
+        status: 'confirmed',
+        date,
+        accountId: p.accountId,
+        accountName: acc?.name,
+        accountColor: acc?.color,
+        category: cat?.name,
+        subcategory: p.subcategory || plan?.subcategory,
+        emoji: isCorrection ? '⚖️' : (kind === 'saving' ? (stashes.find(s => s.id === (p.stashId ?? plan?.stashId))?.emoji ?? '🌱') : cat?.emoji ?? (kind === 'income' ? '💰' : '💸')),
+        isShared: p.isShared ?? plan?.isShared,
+        isCorrection,
+      });
     }
 
     // 2. Transfers on this date
-    for (const tr of activeTransfers) {
-      if (tr.date === date) {
-        const physFrom = getPhysicalAccountId(tr.fromAccountId, stashes, undefined, accounts);
-        const physTo = getPhysicalAccountId(tr.toAccountId, stashes, undefined, accounts);
-        if (!accounts.some(a => a.id === tr.fromAccountId || a.id === tr.toAccountId || a.id === physFrom || a.id === physTo)) continue;
-        const fromParty = findParty(tr.fromAccountId);
-        const toParty = findParty(tr.toAccountId);
-        items.push({
-          id: tr.id,
-          name: `Transfer (${fromParty?.name ?? 'Account'} → ${toParty?.name ?? 'Account'})`,
-          amount: tr.fromAmount,
-          currency: tr.fromCurrency,
-          amountInMain: convert(tr.fromAmount, tr.fromCurrency, mainCurrency),
-          kind: 'transfer',
-          status: 'confirmed',
-          date,
-          accountId: tr.fromAccountId,
-          accountName: fromParty?.name,
-          accountColor: fromParty?.color,
-          emoji: '⇄',
-        });
-      }
+    for (const tr of transfersByDate.get(date) ?? []) {
+      if (tr.foreign || !touchesVisibleAccount(tr.fromAccountId, tr.toAccountId)) continue;
+      const fromParty = findParty(tr.fromAccountId);
+      const toParty = findParty(tr.toAccountId);
+      items.push({
+        id: tr.id,
+        name: `Transfer (${fromParty?.name ?? 'Account'} → ${toParty?.name ?? 'Account'})`,
+        amount: tr.fromAmount,
+        currency: tr.fromCurrency,
+        amountInMain: convAt(tr.fromAmount, tr.fromCurrency, mainCurrency, tr.fx),
+        kind: 'transfer',
+        status: 'confirmed',
+        date,
+        accountId: tr.fromAccountId,
+        accountName: fromParty?.name,
+        accountColor: fromParty?.color,
+        emoji: '⇄',
+      });
     }
 
-    // 3. If future, include pending scheduled occurrences on this date
+    // 3. Pending scheduled occurrences expected on this (future) date
     if (isFuture) {
-      const dayOccurrences = futureOccurrencesByDate.get(date) ?? [];
-      for (const o of dayOccurrences) {
+      for (const o of pendingByDate.get(date) ?? []) {
         const kind = o.kind ?? o.plan.kind ?? 'expense';
         if (kind === 'transfer') {
-          const physFrom = getPhysicalAccountId(o.accountId, stashes, undefined, accounts);
-          const physTo = getPhysicalAccountId(o.toAccountId, stashes, undefined, accounts);
-          if (!accounts.some(a => a.id === o.accountId || a.id === o.toAccountId || a.id === physFrom || a.id === physTo)) continue;
+          if (!touchesVisibleAccount(o.accountId, o.toAccountId)) continue;
           const fromParty = findParty(o.accountId);
           const toParty = findParty(o.toAccountId);
           items.push({
@@ -325,14 +298,15 @@ export function calculateCashflowRange(
           });
           continue;
         }
-        const physAccId = getPhysicalAccountId(o.accountId || o.plan.accountId, stashes, undefined, accounts);
-        if (o.accountId && !accounts.some(a => a.id === o.accountId || a.id === physAccId)) continue;
-        const acc = accounts.find(a => a.id === o.accountId || a.id === physAccId);
-        const catId = o.categoryId ?? o.plan.categoryId;
+        const rawAcc = o.accountId || o.plan.accountId;
+        if (rawAcc && !touchesVisibleAccount(rawAcc)) continue;
+        const acc = accById.get(rawAcc ?? '') ?? accById.get(physicalAccountId(rawAcc, stashes) ?? '');
+        const catId = o.categoryId || o.plan.categoryId;
         const cat = catId ? categories.find(c => c.id === catId) : undefined;
+        const stashId = o.stashId ?? o.plan.stashId;
         items.push({
           id: o.key,
-          name: o.plan.name,
+          name: o.name || o.plan.name,
           amount: o.amount,
           currency: o.currency,
           amountInMain: convert(o.amount, o.currency, mainCurrency),
@@ -343,14 +317,13 @@ export function calculateCashflowRange(
           accountName: acc?.name,
           accountColor: acc?.color,
           category: cat?.name,
-          subcategory: o.plan.subcategory,
-          emoji: o.plan.kind === 'saving' ? (stashes.find(s => s.id === o.plan.stashId)?.emoji ?? '🌱') : cat?.emoji ?? (o.plan.kind === 'income' ? '💰' : '💸'),
-          isShared: o.plan.isShared,
+          subcategory: o.subcategory ?? o.plan.subcategory,
+          emoji: kind === 'saving' ? (stashes.find(s => s.id === stashId)?.emoji ?? '🌱') : cat?.emoji ?? (kind === 'income' ? '💰' : '💸'),
+          isShared: o.isShared ?? o.plan.isShared,
         });
       }
     }
 
-    // Calculate income total, expense total, and saving total for this day
     let incomeTotal = 0;
     let expenseTotal = 0;
     let savingTotal = 0;
@@ -362,46 +335,19 @@ export function calculateCashflowRange(
     }
     const netChange = incomeTotal - (expenseTotal + savingTotal);
 
-    // Calculate individual stash balances on this date
+    // Stash balances and the amount each one reserves inside its housing account
     const stashDayBals: StashDayBalance[] = [];
     const stashAmountByAcc = new Map<string, number>();
-
     for (const s of stashes) {
-      let bStash = 0;
-      if (date > t) {
-        const proj = calcProjectedStashBalance(s, date, payments, transfers, plans, t);
-        bStash = proj.projected;
-      } else {
-        const pastPays = confirmedPayments.filter(p => p.date <= date);
-        const pastTrans = activeTransfers.filter(tr => !tr.date || tr.date <= date);
-        bStash = calcStashBalance(s, pastPays, pastTrans, plans);
+      const bStash = running.get(`s:${s.id}`) ?? 0;
+      const own = running.get(`r:${s.id}`) ?? 0;
+      const reserved = isSharedStash(s) ? Math.max(0, Math.min(own, bStash)) : Math.max(0, bStash);
+      const parentAcc = s.accountId ? accById.get(s.accountId) : undefined;
+      if (parentAcc) {
+        stashAmountByAcc.set(parentAcc.id, (stashAmountByAcc.get(parentAcc.id) ?? 0) + conv(reserved, s.currency, parentAcc.currency));
       }
-
-      // Track stashed amounts mapped to parent account (for stacked chart & account-level reserve tracking)
-      const isShared = Boolean(
-        s.isShared ||
-        (s.sharedWith && s.sharedWith.length > 0) ||
-        (s.ownerId && accounts.length > 0 && !accounts.some(acc => acc.id === s.accountId))
-      );
-      const hasValidAcc = s.accountId && accounts.some(acc => acc.id === s.accountId);
-      const parentAccId = hasValidAcc ? s.accountId : (!isShared ? accounts[0]?.id : undefined);
-      if (parentAccId) {
-        const parentAcc = accounts.find(a => a.id === parentAccId);
-        if (parentAcc) {
-          const clampedStash = Math.max(0, bStash);
-          const amtInParent = s.currency === parentAcc.currency ? clampedStash : convert(clampedStash, s.currency, parentAcc.currency);
-          stashAmountByAcc.set(parentAccId, (stashAmountByAcc.get(parentAccId) ?? 0) + amtInParent);
-        }
-      }
-
-      // If accounts filter is active, only include stash in breakdown if its parent account is visible
-      if (s.accountId && !accounts.some(a => a.id === s.accountId)) {
-        continue;
-      }
-
-      const balInMain = convert(bStash, s.currency, mainCurrency);
-      const acc = s.accountId ? accounts.find(a => a.id === s.accountId) : undefined;
-
+      // With an account filter active, hide stashes housed in accounts that are filtered out
+      if (s.accountId && !parentAcc) continue;
       stashDayBals.push({
         stashId: s.id,
         stashName: s.name,
@@ -409,47 +355,18 @@ export function calculateCashflowRange(
         currency: s.currency,
         target: s.target,
         balanceOriginal: bStash,
-        balanceInMain: balInMain,
+        balanceInMain: convert(bStash, s.currency, mainCurrency),
         accountId: s.accountId,
-        accountName: acc?.name,
+        accountName: parentAcc?.name,
       });
     }
 
-    // Calculate account balances at the end of this day
     const accountDayBals: AccountDayBalance[] = [];
     let cumulativePosY = 0;
     let cumulativeNegY = 0;
-
     for (const a of accounts) {
-      let b = 0;
-      if (date <= t) {
-        // Historical / today: starter balance + confirmed payments & transfers up to this date
-        b = a.startBalance;
-        for (const p of confirmedPayments) {
-          if (p.date <= date) b += getPaymentDelta(p, a);
-        }
-        for (const tr of activeTransfers) {
-          if (!tr.date || tr.date <= date) b += getTransferDelta(tr, a);
-        }
-      } else {
-        // Future date: today's live balance + all future payments, transfers, and pending occurrences up to this date
-        b = liveBalancesToday.get(a.id) ?? a.startBalance;
-        for (const p of confirmedPayments) {
-          if (p.date > t && p.date <= date) b += getPaymentDelta(p, a);
-        }
-        for (const tr of activeTransfers) {
-          if (tr.date && tr.date > t && tr.date <= date) b += getTransferDelta(tr, a);
-        }
-        for (const o of futureOccurrences) {
-          const effDate = o.date || o.dueDate;
-          if (effDate <= date) {
-            b += getOccurrenceDelta(o, a);
-          }
-        }
-      }
-
+      const b = running.get(a.id) ?? 0;
       const stashedForAcc = stashAmountByAcc.get(a.id) ?? 0;
-
       const balInMain = convert(b, a.currency, mainCurrency);
       let y0 = 0;
       let y1 = 0;
@@ -462,11 +379,7 @@ export function calculateCashflowRange(
         y1 = cumulativeNegY;
         cumulativeNegY += balInMain;
       }
-
       const stashedInMain = convert(stashedForAcc, a.currency, mainCurrency);
-      const availableOriginal = b - stashedForAcc;
-      const availableInMain = balInMain - stashedInMain;
-
       accountDayBals.push({
         accountId: a.id,
         accountName: a.name,
@@ -474,8 +387,8 @@ export function calculateCashflowRange(
         currency: a.currency,
         balanceOriginal: b,
         balanceInMain: balInMain,
-        availableOriginal,
-        availableInMain,
+        availableOriginal: b - stashedForAcc,
+        availableInMain: balInMain - stashedInMain,
         stashedOriginal: stashedForAcc,
         stashedInMain,
         y0,
@@ -485,19 +398,15 @@ export function calculateCashflowRange(
 
     const totalBalance = accountDayBals.reduce((sum, ab) => sum + ab.balanceInMain, 0);
     const totalStashed = accountDayBals.reduce((sum, ab) => sum + ab.stashedInMain, 0);
-    const totalAvailable = totalBalance - totalStashed;
     const lowestAccountBalance = accountDayBals.length > 0 ? Math.min(...accountDayBals.map(ab => ab.balanceInMain)) : 0;
     const lowestAvailableBalance = accountDayBals.length > 0 ? Math.min(...accountDayBals.map(ab => ab.availableInMain)) : 0;
-    // Stashed area sits INSIDE the positive balance band at the top
-    const stashedY1 = cumulativePosY;
-    const stashedY0 = Math.max(0, cumulativePosY - totalStashed);
 
     result.push({
       date,
       dayLabel,
       fullLabel,
-      dayOfMonth,
-      weekdayIndex,
+      dayOfMonth: dObj.getDate(),
+      weekdayIndex: dObj.getDay(),
       isToday,
       isPast,
       isFuture,
@@ -509,10 +418,10 @@ export function calculateCashflowRange(
       accounts: accountDayBals,
       stashes: stashDayBals,
       totalBalance,
-      totalAvailable,
+      totalAvailable: totalBalance - totalStashed,
       totalStashed,
-      stashedY0,
-      stashedY1,
+      stashedY0: Math.max(0, cumulativePosY - totalStashed),
+      stashedY1: cumulativePosY,
       positiveTotalInMain: cumulativePosY,
       negativeTotalInMain: cumulativeNegY,
       lowestAccountBalance,

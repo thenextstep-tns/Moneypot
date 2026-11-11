@@ -125,7 +125,7 @@ export function CategoryEditModal({
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>{categoryToEdit ? 'Edit Pot' : 'New Pot'}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button">
               <Text style={styles.closeBtn}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -147,6 +147,8 @@ export function CategoryEditModal({
                       triggerHaptic('light');
                       setKind(k);
                     }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(active) }}
                   >
                     <Text style={[styles.kindChipText, active && styles.kindChipTextActive]}>
                       {labels[k]}
@@ -164,6 +166,7 @@ export function CategoryEditModal({
                   triggerHaptic('light');
                   setEmojiPickerVisible(true);
                 }}
+                accessibilityRole="button"
               >
                 <Text style={styles.emojiDisplay}>{emoji}</Text>
               </TouchableOpacity>
@@ -173,6 +176,7 @@ export function CategoryEditModal({
                 placeholderTextColor={theme.colors.mute}
                 value={name}
                 onChangeText={setName}
+                accessibilityLabel="Pot name (e.g. Groceries, Bills...)"
               />
             </View>
 
@@ -193,6 +197,9 @@ export function CategoryEditModal({
                       triggerHaptic('light');
                       setColor(col);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Colour ${col}`}
+                    accessibilityState={{ selected: Boolean(active) }}
                   />
                 );
               })}
@@ -208,8 +215,9 @@ export function CategoryEditModal({
                 value={newSubcatText}
                 onChangeText={setNewSubcatText}
                 onSubmitEditing={handleAddSubcat}
+                accessibilityLabel="Subcategories"
               />
-              <TouchableOpacity style={styles.subcatAddBtn} onPress={handleAddSubcat}>
+              <TouchableOpacity style={styles.subcatAddBtn} onPress={handleAddSubcat} accessibilityRole="button">
                 <Text style={styles.subcatAddBtnText}>+ Add</Text>
               </TouchableOpacity>
             </View>
@@ -218,7 +226,7 @@ export function CategoryEditModal({
               {subcategories.map((sub, idx) => (
                 <View key={idx} style={styles.subcatChip}>
                   <Text style={styles.subcatChipText}>{sub}</Text>
-                  <TouchableOpacity onPress={() => handleRemoveSubcat(idx)}>
+                  <TouchableOpacity onPress={() => handleRemoveSubcat(idx)} accessibilityLabel={`Remove subcategory ${sub}`} hitSlop={8} accessibilityRole="button">
                     <Text style={styles.subcatRemoveIcon}>✕</Text>
                   </TouchableOpacity>
                 </View>
@@ -226,12 +234,12 @@ export function CategoryEditModal({
             </View>
 
             {/* Save & Delete */}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} accessibilityRole="button">
               <Text style={styles.saveBtnText}>{categoryToEdit ? 'Save Pot' : 'Create Pot'}</Text>
             </TouchableOpacity>
 
             {categoryToEdit && (
-              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
+              <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} accessibilityRole="button">
                 <Text style={styles.deleteBtnText}>Delete Pot</Text>
               </TouchableOpacity>
             )}

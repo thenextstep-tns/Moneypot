@@ -25,6 +25,7 @@ import { AccountsScreen } from './src/screens/AccountsScreen';
 import { LogbookScreen } from './src/screens/LogbookScreen';
 import { CashflowScreen } from './src/screens/CashflowScreen';
 import { SpendingScreen } from './src/screens/SpendingScreen';
+import { JoinSharedModal } from './src/components/SharingModals';
 import { theme, useStyles, type Theme } from './src/theme';
 import { triggerHaptic } from './src/utils/haptics';
 
@@ -38,30 +39,49 @@ const PRIMARY_TABS = [
 
 function MainApp() {
   const insets = useSafeAreaInsets();
-  const { user, isDemoMode, loaded, activeTab, setActiveTab, setDrawerOpen, setDeepLinkAction, isDark } = useData();
+  const { user, isDemoMode, loaded, activeTab, setActiveTab, setDrawerOpen, setDeepLinkAction, isDark, pendingInviteCode, setPendingInviteCode } = useData();
   const styles = useStyles(getStyles);
 
   React.useEffect(() => {
+    // moneypot://<action>?… — match the action exactly (not substrings of other parameters)
     const handleUrl = (url: string | null) => {
-      if (!url) return;
-      if (url.includes('confirm-today')) {
-        setActiveTab('Today');
-        setDeepLinkAction('confirm-today');
-      } else if (url.includes('add-payment')) {
-        setActiveTab('Today');
-        setDeepLinkAction('add-payment');
-      } else if (url.includes('pay-early')) {
-        setActiveTab('Today');
-        setDeepLinkAction('pay-early');
-      } else if (url.includes('today')) {
-        setActiveTab('Today');
+      if (!url || !url.startsWith('moneypot://')) return;
+      const rest = url.slice('moneypot://'.length);
+      const action = rest.split(/[?#/]/)[0].toLowerCase();
+      const query = rest.includes('?') ? rest.slice(rest.indexOf('?') + 1).split('#')[0] : '';
+      const param = (k: string) => {
+        for (const pair of query.split('&')) {
+          const [key, val = ''] = pair.split('=');
+          if (key === k) {
+            try { return decodeURIComponent(val); } catch { return null; }
+          }
+        }
+        return null;
+      };
+      switch (action) {
+        case 'confirm-today':
+        case 'add-payment':
+        case 'pay-early':
+          setActiveTab('Today');
+          setDeepLinkAction(action);
+          break;
+        case 'today':
+          setActiveTab('Today');
+          break;
+        case 'invite': {
+          const code = param('code');
+          if (code && /^[A-Za-z0-9-]{4,20}$/.test(code)) setPendingInviteCode(code);
+          break;
+        }
+        default:
+          break; // 'auth' callbacks are handled by the sign-in screen
       }
     };
 
     Linking.getInitialURL().then(handleUrl);
     const subscription = Linking.addEventListener('url', event => handleUrl(event.url));
     return () => subscription.remove();
-  }, [setActiveTab, setDeepLinkAction]);
+  }, [setActiveTab, setDeepLinkAction, setPendingInviteCode]);
 
   if (!loaded) {
     return (
@@ -112,6 +132,8 @@ function MainApp() {
         {renderActiveScreen()}
       </View>
 
+      <JoinSharedModal visible={!!pendingInviteCode} initialCode={pendingInviteCode} onClose={() => setPendingInviteCode(null)} />
+
       {/* Bottom Navigation Bar */}
       <View
         style={[
@@ -133,8 +155,11 @@ function MainApp() {
                 setActiveTab(tab.id);
               }}
               activeOpacity={0.7}
+              accessibilityRole="tab"
+              accessibilityLabel={tab.label}
+              accessibilityState={{ selected: isActive }}
             >
-              <Text style={[styles.tabIcon, isActive && styles.tabIconActive]}>
+              <Text style={[styles.tabIcon, isActive && styles.tabIconActive]} importantForAccessibility="no">
                 {tab.icon}
               </Text>
               <Text
@@ -155,6 +180,8 @@ function MainApp() {
             setDrawerOpen(true);
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Reports and more"
         >
           <Text style={[styles.tabIcon, isReportsActive && styles.tabIconActive]}>
             📊
