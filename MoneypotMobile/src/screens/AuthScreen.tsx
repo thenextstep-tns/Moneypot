@@ -12,6 +12,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { useData } from '../context/DataContext';
+import { signInWithGoogleTokens } from '../services/firebase';
 import { theme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -48,24 +49,31 @@ export function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleAuthUrl = (url: string) => {
+  const handleAuthUrl = async (url: string) => {
     try {
       if (!url || !url.startsWith('moneypot://')) return false;
       const params = parseQueryParams(url);
       const uid = params.uid;
       const email = params.email;
       const displayName = params.displayName;
+      const idToken = params.idToken;
+      const accessToken = params.accessToken;
 
       if (uid) {
         try {
           WebBrowser.dismissAuthSession();
         } catch {}
+        if (idToken || accessToken) {
+          await signInWithGoogleTokens(idToken, accessToken);
+        }
         triggerHaptic('success');
         setLoading(false);
         setUser({
           uid,
           email: email || `${displayName || 'user'}@gmail.com`,
           displayName: displayName || email?.split('@')[0] || 'Google User',
+          idToken,
+          accessToken,
         });
         return true;
       }

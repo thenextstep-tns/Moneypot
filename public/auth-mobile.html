@@ -241,16 +241,28 @@
       }
     }, 3000);
 
-    function buildDeepLink(user) {
+    function buildDeepLink(user, cred) {
       const uid = user.uid || '';
       const email = user.email || '';
       const displayName = user.displayName || email.split('@')[0] || 'Google User';
+      const idToken = (cred && cred.idToken) || localStorage.getItem('mp_google_id_token') || '';
+      const accessToken = (cred && cred.accessToken) || localStorage.getItem('mp_google_access_token') || '';
+      if (cred && cred.idToken) {
+        localStorage.setItem('mp_google_id_token', cred.idToken);
+        localStorage.setItem('mp_google_token_ts', String(Date.now()));
+      }
+      if (cred && cred.accessToken) {
+        localStorage.setItem('mp_google_access_token', cred.accessToken);
+        localStorage.setItem('mp_google_token_ts', String(Date.now()));
+      }
       return "moneypot://auth?uid=" + encodeURIComponent(uid) +
              "&email=" + encodeURIComponent(email) +
-             "&displayName=" + encodeURIComponent(displayName);
+             "&displayName=" + encodeURIComponent(displayName) +
+             (idToken ? "&idToken=" + encodeURIComponent(idToken) : "") +
+             (accessToken ? "&accessToken=" + encodeURIComponent(accessToken) : "");
     }
 
-    function sendToApp(user) {
+    function sendToApp(user, cred) {
       if (!user) return;
       handled = true;
       authChecked = true;
@@ -263,7 +275,7 @@
       document.getElementById('msg').innerText = "Signed in as " + (user.displayName || user.email);
       document.getElementById('status').innerText = "Returning to Moneypot app...";
 
-      const target = buildDeepLink(user);
+      const target = buildDeepLink(user, cred);
       
       const appLink = document.getElementById('open-app-link');
       appLink.href = target;
@@ -320,8 +332,15 @@
     }
 
     window.continueWithExisting = function() {
-      if (activeUser) {
+      const ts = Number(localStorage.getItem('mp_google_token_ts') || '0');
+      const hasFreshToken = Boolean(
+        (localStorage.getItem('mp_google_id_token') || localStorage.getItem('mp_google_access_token')) &&
+        Date.now() - ts < 45 * 60 * 1000
+      );
+      if (activeUser && hasFreshToken) {
         sendToApp(activeUser);
+      } else {
+        window.startAuth();
       }
     };
 
@@ -353,7 +372,8 @@
         // cross-origin iframe storage partitioning on third-party authDomains!
         const result = await signInWithPopup(auth, provider);
         if (result && result.user) {
-          sendToApp(result.user);
+          const cred = GoogleAuthProvider.credentialFromResult(result);
+          sendToApp(result.user, cred);
           return;
         }
       } catch (err) {
@@ -400,7 +420,8 @@
         if (res && res.user) {
           sessionStorage.removeItem('in_active_redirect_flow');
           localStorage.removeItem('in_active_redirect_flow');
-          sendToApp(res.user);
+          const cred = GoogleAuthProvider.credentialFromResult(res);
+          sendToApp(res.user, cred);
         } else {
           initAuthState();
         }

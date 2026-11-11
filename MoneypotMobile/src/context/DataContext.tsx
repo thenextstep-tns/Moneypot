@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, type ReactNode }
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
-import { db, auth, logout } from '../services/firebase';
+import { db, auth, logout, signInWithGoogleTokens } from '../services/firebase';
 import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_TEMPLATES, DEMO } from '../domain/defaults';
 import { normalizeStash } from '../domain/balances';
 import type { Account, Category, Payment, Plan, QuickTemplate, Settings, ShareInvite, Stash, Transfer } from '../domain/types';
@@ -15,6 +15,8 @@ export interface CurrentUser {
   displayName?: string | null;
   email?: string | null;
   isAnonymous?: boolean;
+  idToken?: string;
+  accessToken?: string;
 }
 
 export interface DataState {
@@ -124,6 +126,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         if (storedAuth) {
           const parsedUser = JSON.parse(storedAuth);
+          if (parsedUser?.idToken || parsedUser?.accessToken) {
+            await signInWithGoogleTokens(parsedUser.idToken, parsedUser.accessToken);
+          }
           setUserState(parsedUser);
           setIsDemoMode(false);
         } else {
@@ -303,8 +308,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         return nextState;
       });
-    }, err => {
+    }, (err: any) => {
       console.warn(`Firestore listener error on ${c}:`, err.message);
+      if (
+        c === 'accounts' &&
+        !auth?.currentUser &&
+        (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions'))
+      ) {
+        setUserState(null);
+        AsyncStorage.removeItem(AUTH_KEY).catch(() => {});
+      }
     }));
 
     // Listen to user settings document

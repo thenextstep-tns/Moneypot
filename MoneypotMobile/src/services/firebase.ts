@@ -1,11 +1,16 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import * as firebaseAuth from 'firebase/auth';
 import {
   getAuth,
+  initializeAuth,
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithCredential,
 } from 'firebase/auth';
 import { initializeFirestore, getFirestore } from 'firebase/firestore';
 
@@ -25,7 +30,18 @@ let db: any = null;
 if (isFirebaseConfigured) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    auth = getAuth(app);
+    try {
+      const getRNPersistence = (firebaseAuth as any).getReactNativePersistence;
+      if (getRNPersistence) {
+        auth = initializeAuth(app, {
+          persistence: getRNPersistence(AsyncStorage),
+        });
+      } else {
+        auth = getAuth(app);
+      }
+    } catch {
+      auth = getAuth(app);
+    }
     try {
       db = initializeFirestore(app, { ignoreUndefinedProperties: true });
     } catch {
@@ -52,5 +68,16 @@ export const registerWithEmail = async (email: string, pass: string) => {
 export const resetPassword = async (email: string) => {
   if (!auth) throw new Error('Firebase Auth is not initialized');
   return sendPasswordResetEmail(auth, email.trim());
+};
+
+export const signInWithGoogleTokens = async (idToken?: string, accessToken?: string) => {
+  if (!auth || (!idToken && !accessToken)) return null;
+  try {
+    const credential = GoogleAuthProvider.credential(idToken || null, accessToken || null);
+    return await signInWithCredential(auth, credential);
+  } catch (err) {
+    console.warn('Google credential sign-in warning:', err);
+    return null;
+  }
 };
 
