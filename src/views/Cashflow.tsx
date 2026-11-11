@@ -125,7 +125,43 @@ export function Cashflow() {
 
   // Overall KPIs for this period
   const kpis = useMemo(() => {
-    if (!days.length) return { startBal: 0, endBal: 0, endStashed: 0, endAvailable: 0, net: 0, income: 0, expense: 0, minBal: 0, maxBal: 0 };
+    if (!days.length) {
+      return {
+        startBal: 0,
+        endBal: 0,
+        endStashed: 0,
+        endAvailable: 0,
+        net: 0,
+        income: 0,
+        expense: 0,
+        minBal: 0,
+        maxBal: 0,
+        worstShortfall: null as null | {
+          accountName: string;
+          accountColor: string;
+          currency: string;
+          amountOriginal: number;
+          amountInMain: number;
+          isPhysicalOverdraft: boolean;
+          date: string;
+          dayLabel: string;
+        },
+        overdrawnAccounts: [] as Array<{
+          accountId: string;
+          accountName: string;
+          accountColor: string;
+          currency: string;
+          worstBalanceOriginal: number;
+          worstAvailableOriginal: number;
+          worstInMain: number;
+          isPhysicalOverdraft: boolean;
+          firstDate: string;
+          firstDayLabel: string;
+          worstDate: string;
+          worstDayLabel: string;
+        }>,
+      };
+    }
     const startBal = days[0].totalBalance;
     const endBal = days[days.length - 1].totalBalance;
     let income = 0;
@@ -134,15 +170,90 @@ export function Cashflow() {
     let minBal = days[0].totalBalance;
     let maxBal = days[0].totalBalance;
 
+    const overdrawnMap = new Map<
+      string,
+      {
+        accountId: string;
+        accountName: string;
+        accountColor: string;
+        currency: string;
+        worstBalanceOriginal: number;
+        worstAvailableOriginal: number;
+        worstInMain: number;
+        isPhysicalOverdraft: boolean;
+        firstDate: string;
+        firstDayLabel: string;
+        worstDate: string;
+        worstDayLabel: string;
+      }
+    >();
+
     for (const d of days) {
       income += d.incomeTotal;
       expense += d.expenseTotal;
-      saving += (d.savingTotal ?? 0);
+      saving += d.savingTotal ?? 0;
       if (d.totalBalance < minBal) minBal = d.totalBalance;
       if (d.totalBalance > maxBal) maxBal = d.totalBalance;
+
+      for (const ab of d.accounts) {
+        const isPhysNeg = ab.balanceOriginal < -0.005;
+        const isAvailNeg = ab.availableOriginal < -0.005;
+        if (isPhysNeg || isAvailNeg) {
+          const effOrig = isPhysNeg ? ab.balanceOriginal : ab.availableOriginal;
+          const effMain = isPhysNeg ? ab.balanceInMain : ab.availableInMain;
+          const existing = overdrawnMap.get(ab.accountId);
+          if (!existing) {
+            overdrawnMap.set(ab.accountId, {
+              accountId: ab.accountId,
+              accountName: ab.accountName,
+              accountColor: ab.accountColor,
+              currency: ab.currency,
+              worstBalanceOriginal: ab.balanceOriginal,
+              worstAvailableOriginal: ab.availableOriginal,
+              worstInMain: effMain,
+              isPhysicalOverdraft: isPhysNeg,
+              firstDate: d.date,
+              firstDayLabel: d.dayLabel,
+              worstDate: d.date,
+              worstDayLabel: d.dayLabel,
+            });
+          } else {
+            if (isPhysNeg) existing.isPhysicalOverdraft = true;
+            if (ab.balanceOriginal < existing.worstBalanceOriginal) {
+              existing.worstBalanceOriginal = ab.balanceOriginal;
+            }
+            if (ab.availableOriginal < existing.worstAvailableOriginal) {
+              existing.worstAvailableOriginal = ab.availableOriginal;
+            }
+            if (effMain < existing.worstInMain) {
+              existing.worstInMain = effMain;
+              existing.worstDate = d.date;
+              existing.worstDayLabel = d.dayLabel;
+            }
+          }
+        }
+      }
     }
+
+    const overdrawnAccounts = Array.from(overdrawnMap.values()).sort((a, b) => a.worstInMain - b.worstInMain);
+    const topOverdrawn = overdrawnAccounts[0] ?? null;
+    const worstShortfall = topOverdrawn
+      ? {
+          accountName: topOverdrawn.accountName,
+          accountColor: topOverdrawn.accountColor,
+          currency: topOverdrawn.currency,
+          amountOriginal: topOverdrawn.isPhysicalOverdraft
+            ? topOverdrawn.worstBalanceOriginal
+            : topOverdrawn.worstAvailableOriginal,
+          amountInMain: topOverdrawn.worstInMain,
+          isPhysicalOverdraft: topOverdrawn.isPhysicalOverdraft,
+          date: topOverdrawn.worstDate,
+          dayLabel: topOverdrawn.worstDayLabel,
+        }
+      : null;
+
     const endStashed = days[days.length - 1]?.totalStashed ?? 0;
-    const endAvailable = Math.max(0, endBal - endStashed);
+    const endAvailable = endBal - endStashed;
     return {
       startBal,
       endBal,
@@ -155,6 +266,8 @@ export function Cashflow() {
       saving,
       minBal,
       maxBal,
+      worstShortfall,
+      overdrawnAccounts,
     };
   }, [days]);
 
@@ -339,7 +452,7 @@ export function Cashflow() {
       <div className="cashflow-kpis">
         <div className="kpi-card">
           <span className="kpi-label">AVAILABLE CASH</span>
-          <b className="kpi-value" style={{ color: (kpis.endAvailable <= 0 && kpis.endBal <= 0) ? 'var(--ink)' : '#16A34A' }}>
+          <b className="kpi-value" style={{ color: kpis.endAvailable < -0.005 ? 'var(--bad)' : (kpis.endAvailable <= 0 && kpis.endBal <= 0) ? 'var(--ink)' : '#16A34A' }}>
             {money(kpis.endAvailable, mainCurrency)}
           </b>
           <small className="muted">
@@ -376,16 +489,110 @@ export function Cashflow() {
           <small className="muted">Bills & casual spending</small>
         </div>
 
-        <div className="kpi-card">
+        <div
+          className="kpi-card"
+          style={
+            kpis.worstShortfall || kpis.minBal < -0.005
+              ? { borderColor: 'rgba(220, 38, 38, 0.45)', background: 'rgba(254, 242, 242, 0.65)', cursor: 'pointer' }
+              : undefined
+          }
+          onClick={() => {
+            if (kpis.worstShortfall) {
+              setPinnedDate(kpis.worstShortfall.date);
+              setHoveredDate(null);
+            }
+          }}
+          title={kpis.worstShortfall ? `Click to jump to ${kpis.worstShortfall.dayLabel}` : undefined}
+        >
           <span className="kpi-label">LOWEST POINT</span>
-          <b className="kpi-value" style={{ color: kpis.minBal < 0 ? 'var(--bad)' : 'var(--ink)' }}>
-            {money(kpis.minBal, mainCurrency)}
+          <b
+            className="kpi-value"
+            style={{ color: kpis.worstShortfall || kpis.minBal < -0.005 ? '#DC2626' : 'var(--ink)' }}
+          >
+            {kpis.worstShortfall
+              ? money(kpis.worstShortfall.amountOriginal, kpis.worstShortfall.currency)
+              : money(kpis.minBal, mainCurrency)}
           </b>
-          <small className="muted">
-            {kpis.minBal < 0 ? '⚠️ Projected shortfall!' : 'Safety cushion intact'}
+          <small
+            className="muted"
+            style={kpis.worstShortfall || kpis.minBal < -0.005 ? { color: '#DC2626', fontWeight: 600 } : undefined}
+          >
+            {kpis.worstShortfall
+              ? `⚠️ ${kpis.worstShortfall.accountName} on ${kpis.worstShortfall.dayLabel}${kpis.worstShortfall.isPhysicalOverdraft ? ' (below 0)' : ' (into stash)'}`
+              : kpis.minBal < -0.005
+              ? '⚠️ Projected shortfall!'
+              : 'Safety cushion intact'}
           </small>
         </div>
       </div>
+
+      {/* Projected Account Below-Zero Warning Banner */}
+      {kpis.overdrawnAccounts && kpis.overdrawnAccounts.length > 0 && (
+        <div
+          style={{
+            background: 'rgba(254, 242, 242, 0.9)',
+            border: '1px solid #FCA5A5',
+            borderLeft: '4px solid #DC2626',
+            borderRadius: 12,
+            padding: '12px 16px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 18 }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: '#991B1B' }}>
+                Projected Account Shortfall Detected
+              </div>
+              <div style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 2 }}>
+                {kpis.overdrawnAccounts.map((oa, idx) => (
+                  <span key={oa.accountId}>
+                    {idx > 0 ? ' · ' : ''}
+                    <b>{oa.accountName}</b> drops to{' '}
+                    <b>
+                      {money(
+                        oa.isPhysicalOverdraft ? oa.worstBalanceOriginal : oa.worstAvailableOriginal,
+                        oa.currency
+                      )}
+                    </b>
+                    {!oa.isPhysicalOverdraft ? ' free (dips into stashed reserve)' : ' (below zero)'} starting{' '}
+                    <b>{oa.firstDayLabel}</b> (lowest on <b>{oa.worstDayLabel}</b>)
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {kpis.overdrawnAccounts.map(oa => (
+              <button
+                key={oa.accountId}
+                type="button"
+                className="btn"
+                style={{
+                  fontSize: 12,
+                  padding: '5px 10px',
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                }}
+                onClick={() => {
+                  setPinnedDate(oa.worstDate);
+                  setHoveredDate(null);
+                }}
+              >
+                Inspect {oa.accountName} ({oa.worstDayLabel})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Interactive Cashflow Chart Section */}
       <div className="cashflow-graph-container card-panel">
@@ -544,15 +751,32 @@ function CashflowSvgChart({
   const plotH = svgH - padTop - padBottom;
   const n = days.length;
 
-  // Auto-scale vertical bounds
-  const minBalRaw = Math.min(0, ...days.map(d => d.totalBalance));
-  const maxBalRaw = Math.max(10, ...days.map(d => Math.max(d.totalBalance, d.totalAvailable, 0)));
+  // Auto-scale vertical bounds (including individual account negative balances and available cash shortfalls)
+  const minBalRaw = Math.min(
+    0,
+    ...days.map(d =>
+      Math.min(
+        d.totalBalance,
+        d.totalAvailable,
+        d.negativeTotalInMain ?? 0,
+        d.lowestAccountBalance ?? 0,
+        d.lowestAvailableBalance ?? 0
+      )
+    )
+  );
+  const maxBalRaw = Math.max(
+    10,
+    ...days.map(d => Math.max(d.totalBalance, d.positiveTotalInMain ?? d.totalBalance, d.totalAvailable, 0))
+  );
 
-  // Determine tick range with headroom
-  const rangeSpan = Math.max(100, maxBalRaw - minBalRaw);
-  const yMax = Math.ceil((maxBalRaw + rangeSpan * 0.1) / 100) * 100;
-  const yMin = minBalRaw < 0 ? Math.floor((minBalRaw - rangeSpan * 0.05) / 100) * 100 : 0;
+  const hasNegative = minBalRaw < -0.005;
+  const yMax = Math.ceil((maxBalRaw * 1.1) / 100) * 100 || 100;
+  const yMin = hasNegative ? Math.min(minBalRaw * 1.18, -1) : 0;
   const yTotalSpan = yMax - yMin || 1;
+
+  // Dedicated visual zone below 0 when any account or available cash goes negative,
+  // so even a small overdraft (-15 € vs +1700 € total) is clearly visible (~55px deep)
+  const zeroY = hasNegative ? padTop + plotH * 0.75 : padTop + plotH;
 
   // Coordinate mappers
   const getX = (index: number) => {
@@ -561,16 +785,28 @@ function CashflowSvgChart({
   };
 
   const getY = (val: number) => {
-    const norm = (val - yMin) / yTotalSpan;
-    return padTop + plotH - norm * plotH;
+    if (!hasNegative) {
+      const norm = val / (yMax || 1);
+      return zeroY - norm * plotH;
+    }
+    if (val >= 0) {
+      const norm = val / (yMax || 1);
+      return zeroY - norm * (zeroY - padTop);
+    }
+    const negSpan = Math.abs(yMin) || 1;
+    const normNeg = Math.min(1.05, Math.abs(val) / negSpan);
+    return zeroY + normNeg * (padTop + plotH - zeroY);
   };
 
-  // Y-axis grid ticks (4 evenly spaced intervals)
-  const ticksCount = 4;
-  const yTicks = Array.from({ length: ticksCount + 1 }).map((_, i) => {
-    const val = yMin + (i / ticksCount) * (yMax - yMin);
-    return { val, y: getY(val) };
-  });
+  // Y-axis grid ticks
+  const posTicksCount = hasNegative ? 3 : 4;
+  const yTicks = [
+    ...(hasNegative ? [{ val: minBalRaw, y: getY(minBalRaw), isNegative: true }] : []),
+    ...Array.from({ length: posTicksCount + 1 }).map((_, i) => {
+      const val = (i / posTicksCount) * yMax;
+      return { val, y: getY(val), isNegative: false };
+    }),
+  ];
 
   // Calculate stacked area paths for each account
   // Accounts are drawn from bottom to top
@@ -600,7 +836,7 @@ function CashflowSvgChart({
         pathData,
       };
     });
-  }, [days, accounts, yMin, yTotalSpan]);
+  }, [days, accounts, yMin, yMax, hasNegative]);
 
   const hasStashed = useMemo(() => days.some(d => (d.totalStashed ?? 0) > 0), [days]);
 
@@ -611,17 +847,71 @@ function CashflowSvgChart({
     const bottomPoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.stashedY0).toFixed(1)}`).reverse();
     const pathData = `M ${topPoints.join(' L ')} L ${bottomPoints.join(' L ')} Z`;
     return { pathData };
-  }, [days, hasStashed, yMin, yTotalSpan]);
+  }, [days, hasStashed, yMin, yMax, hasNegative]);
 
   const availableLinePath = useMemo(() => {
     if (!hasStashed) return null;
     const points = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.totalAvailable).toFixed(1)}`);
     return `M ${points.join(' L ')}`;
-  }, [days, hasStashed, yMin, yTotalSpan]);
+  }, [days, hasStashed, yMin, yMax, hasNegative]);
 
-  // Total balance line path
-  const totalLinePoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(d.totalBalance).toFixed(1)}`);
+  // Top positive stack outline (so positive stacked bands never stick out above the top border line when another account is negative)
+  const getTopLineVal = (d: DayCashflow) =>
+    (d.positiveTotalInMain ?? 0) > 0 ? Math.max(d.totalBalance, d.positiveTotalInMain) : d.totalBalance;
+  const totalLinePoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(getTopLineVal(d)).toFixed(1)}`);
   const totalLinePath = `M ${totalLinePoints.join(' L ')}`;
+
+  // Below-zero shortfall trajectory (tracks worst negative account or available cash on each day)
+  const getDayShortfallVal = (d: DayCashflow) =>
+    Math.min(0, d.negativeTotalInMain ?? 0, d.lowestAccountBalance ?? 0, d.lowestAvailableBalance ?? 0, d.totalAvailable);
+
+  const negativeShortfallArea = useMemo(() => {
+    if (!hasNegative) return null;
+    const topPoints = days.map((_, i) => `${getX(i).toFixed(1)},${getY(0).toFixed(1)}`);
+    const bottomPoints = days
+      .map((d, i) => `${getX(i).toFixed(1)},${getY(getDayShortfallVal(d)).toFixed(1)}`)
+      .reverse();
+    const linePoints = days.map((d, i) => `${getX(i).toFixed(1)},${getY(getDayShortfallVal(d)).toFixed(1)}`);
+    return {
+      areaPath: `M ${topPoints.join(' L ')} L ${bottomPoints.join(' L ')} Z`,
+      linePath: `M ${linePoints.join(' L ')}`,
+    };
+  }, [days, hasNegative, yMin, yMax]);
+
+  // Worst negative day for chart callout badge
+  const worstNegativePoint = useMemo(() => {
+    if (!hasNegative) return null;
+    let worstIdx = -1;
+    let worstVal = 0;
+    let worstAccName = '';
+    let worstAccText = '';
+    days.forEach((d, idx) => {
+      const v = getDayShortfallVal(d);
+      if (v < worstVal - 0.005) {
+        worstVal = v;
+        worstIdx = idx;
+        const negAcc = [...d.accounts].sort(
+          (a, b) => Math.min(a.balanceInMain, a.availableInMain) - Math.min(b.balanceInMain, b.availableInMain)
+        )[0];
+        if (negAcc && (negAcc.balanceOriginal < -0.005 || negAcc.availableOriginal < -0.005)) {
+          worstAccName = negAcc.accountName;
+          const amt = negAcc.balanceOriginal < -0.005 ? negAcc.balanceOriginal : negAcc.availableOriginal;
+          worstAccText = `${negAcc.accountName}: ${money(amt, negAcc.currency)}`;
+        } else {
+          worstAccName = 'Available';
+          worstAccText = `Shortfall: ${money(worstVal, mainCurrency)}`;
+        }
+      }
+    });
+    if (worstIdx < 0) return null;
+    return {
+      idx: worstIdx,
+      x: getX(worstIdx),
+      y: getY(worstVal),
+      label: worstAccText,
+      accName: worstAccName,
+    };
+  }, [days, hasNegative, yMin, yMax, mainCurrency]);
 
   // Find active day index
   const activeIndex = days.findIndex(d => d.date === activeDate);
@@ -651,6 +941,18 @@ function CashflowSvgChart({
           </filter>
         </defs>
 
+        {/* Red danger zone below 0 when any account or available cash goes negative */}
+        {hasNegative && (
+          <rect
+            x={padLeft}
+            y={zeroY}
+            width={plotW}
+            height={padTop + plotH - zeroY}
+            fill="#FEF2F2"
+            fillOpacity="0.65"
+          />
+        )}
+
         {/* Horizontal Grid lines & Y-axis labels */}
         {yTicks.map((t, idx) => (
           <g key={idx} className="y-grid-line">
@@ -659,7 +961,7 @@ function CashflowSvgChart({
               y1={t.y}
               x2={padLeft + plotW}
               y2={t.y}
-              stroke="#E2E8F0"
+              stroke={(t as any).isNegative ? '#FCA5A5' : '#E2E8F0'}
               strokeDasharray="3 3"
               strokeWidth="1"
             />
@@ -667,26 +969,46 @@ function CashflowSvgChart({
               x={padLeft - 10}
               y={t.y + 4}
               textAnchor="end"
-              fill="#64748B"
+              fill={(t as any).isNegative ? '#DC2626' : '#64748B'}
               fontSize="11"
               fontFamily="inherit"
-              fontWeight="500"
+              fontWeight={(t as any).isNegative ? '700' : '500'}
             >
               {money(t.val, mainCurrency)}
             </text>
           </g>
         ))}
 
-        {/* Zero baseline if yMin < 0 */}
-        {yMin < 0 && (
+        {/* Zero baseline */}
+        {hasNegative && (
           <line
             x1={padLeft}
-            y1={getY(0)}
+            y1={zeroY}
             x2={padLeft + plotW}
-            y2={getY(0)}
-            stroke="#94A3B8"
+            y2={zeroY}
+            stroke="#EF4444"
             strokeWidth="1.5"
+            strokeDasharray="5 3"
           />
+        )}
+
+        {/* Below-zero shortfall red area & trajectory */}
+        {negativeShortfallArea && (
+          <g className="negative-shortfall-layer">
+            <path
+              d={negativeShortfallArea.areaPath}
+              fill="#EF4444"
+              fillOpacity="0.18"
+            />
+            <path
+              d={negativeShortfallArea.linePath}
+              fill="none"
+              stroke="#DC2626"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </g>
         )}
 
         {/* Stacked Account Area Layers */}
@@ -749,6 +1071,7 @@ function CashflowSvgChart({
         {days.map((d, i) => {
           const x = getX(i);
           const showLabel = i === 0 || i === n - 1 || i % labelInterval === 0;
+          const isNegDay = getDayShortfallVal(d) < -0.005;
 
           return (
             <g key={d.date}>
@@ -757,9 +1080,9 @@ function CashflowSvgChart({
                   x={x}
                   y={svgH - 12}
                   textAnchor="middle"
-                  fill={d.isToday ? 'var(--brand)' : '#64748B'}
+                  fill={d.isToday ? 'var(--brand)' : isNegDay ? '#DC2626' : '#64748B'}
                   fontSize={d.isToday ? '12' : '11'}
-                  fontWeight={d.isToday ? '700' : '500'}
+                  fontWeight={d.isToday || isNegDay ? '700' : '500'}
                   fontFamily="inherit"
                 >
                   {d.dayLabel}
@@ -769,10 +1092,12 @@ function CashflowSvgChart({
           );
         })}
 
-        {/* Activity Red Dots & Today marker */}
+        {/* Activity Red Dots, Shortfall Dots & Today marker */}
         {days.map((d, i) => {
           const x = getX(i);
-          const y = getY(d.totalBalance);
+          const y = getY(getTopLineVal(d));
+          const shortfallVal = getDayShortfallVal(d);
+          const yShortfall = getY(shortfallVal);
           const hasActivity = d.items.length > 0;
           const isSelected = d.date === activeDate;
 
@@ -804,6 +1129,18 @@ function CashflowSvgChart({
                 />
               )}
 
+              {/* Below-zero shortfall marker on the negative curve */}
+              {shortfallVal < -0.005 && (
+                <circle
+                  cx={x}
+                  cy={yShortfall}
+                  r={isSelected ? 5.5 : 3.8}
+                  fill="#DC2626"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.5"
+                />
+              )}
+
               {/* Selected / Hovered indicator */}
               {isSelected && (
                 <circle
@@ -818,6 +1155,37 @@ function CashflowSvgChart({
             </g>
           );
         })}
+
+        {/* Worst Below-Zero Callout Pill on Chart */}
+        {worstNegativePoint && (
+          <g
+            transform={`translate(${Math.min(padLeft + plotW - 75, Math.max(padLeft + 75, worstNegativePoint.x))}, ${Math.min(svgH - padBottom - 8, worstNegativePoint.y + 18)})`}
+            style={{ pointerEvents: 'none' }}
+          >
+            <rect
+              x="-72"
+              y="-14"
+              width="144"
+              height="20"
+              rx="5"
+              fill="#DC2626"
+              stroke="#FFFFFF"
+              strokeWidth="1.2"
+              filter="url(#shadowGlow)"
+            />
+            <text
+              x="0"
+              y="-1"
+              textAnchor="middle"
+              fill="#FFFFFF"
+              fontSize="10"
+              fontWeight="700"
+              fontFamily="inherit"
+            >
+              ⚠️ {worstNegativePoint.label}
+            </text>
+          </g>
+        )}
 
         {/* Active Day Hover Guideline & Balloons */}
         {activeDayObj && activeIndex >= 0 && (
@@ -836,7 +1204,7 @@ function CashflowSvgChart({
             {/* Income & Expense Floating Callout Balloons (From Sketch) */}
             <ChartCalloutBalloons
               x={getX(activeIndex)}
-              y={getY(activeDayObj.totalBalance)}
+              y={getY(getTopLineVal(activeDayObj))}
               day={activeDayObj}
               mainCurrency={mainCurrency}
             />
@@ -948,19 +1316,47 @@ function CashflowSvgChart({
 
           {/* Account breakdown row */}
           <div className="day-account-chips">
-            {activeDayObj.accounts.map(ab => (
-              <span key={ab.accountId} className="chip">
-                <span className="dot" style={{ background: ab.accountColor }} />
-                <span>
-                  {ab.accountName}: <b>{money(ab.availableOriginal, ab.currency)} free</b>
-                  {ab.stashedOriginal > 0 && (
-                    <span style={{ color: 'var(--mute)', fontSize: 11, marginLeft: 4 }}>
-                      ({money(ab.balanceOriginal, ab.currency)} total)
-                    </span>
-                  )}
+            {activeDayObj.accounts.map(ab => {
+              const isPhysNeg = ab.balanceOriginal < -0.005;
+              const isFreeNeg = ab.availableOriginal < -0.005;
+              const isWarn = isPhysNeg || isFreeNeg;
+              return (
+                <span
+                  key={ab.accountId}
+                  className="chip"
+                  style={
+                    isWarn
+                      ? {
+                          background: 'rgba(254, 242, 242, 0.95)',
+                          borderColor: '#FCA5A5',
+                          color: '#DC2626',
+                        }
+                      : undefined
+                  }
+                >
+                  <span className="dot" style={{ background: isWarn ? '#DC2626' : ab.accountColor }} />
+                  <span>
+                    {isWarn ? '⚠️ ' : ''}
+                    {ab.accountName}:{' '}
+                    <b style={isWarn ? { color: '#DC2626' } : undefined}>
+                      {money(ab.availableOriginal, ab.currency)} free
+                    </b>
+                    {(ab.stashedOriginal > 0 || isPhysNeg) && (
+                      <span
+                        style={{
+                          color: isPhysNeg ? '#DC2626' : 'var(--mute)',
+                          fontWeight: isPhysNeg ? 700 : 400,
+                          fontSize: 11,
+                          marginLeft: 4,
+                        }}
+                      >
+                        ({money(ab.balanceOriginal, ab.currency)} total)
+                      </span>
+                    )}
+                  </span>
                 </span>
-              </span>
-            ))}
+              );
+            })}
             {activeDayObj.stashes?.map(sb => (
               <span
                 key={sb.stashId}
@@ -1049,19 +1445,20 @@ function ChartCalloutBalloons({
 }) {
   const hasIncome = day.incomeTotal > 0;
   const hasExpense = day.expenseTotal > 0;
+  const negAcc = day.accounts.find(a => a.balanceOriginal < -0.005 || a.availableOriginal < -0.005);
 
-  // If no transactions on this day, show simple total pill
+  // If no transactions on this day, show total pill (plus red warning pill if an account is negative)
   if (!hasIncome && !hasExpense) {
     return (
-      <g transform={`translate(${x}, ${Math.max(25, y - 28)})`}>
+      <g transform={`translate(${x}, ${Math.max(25, y - (negAcc ? 42 : 28))})`}>
         <rect
-          x="-50"
+          x="-54"
           y="-18"
-          width="100"
-          height="24"
+          width="108"
+          height={negAcc ? 40 : 24}
           rx="6"
           fill="#0F172A"
-          fillOpacity="0.9"
+          fillOpacity="0.92"
         />
         <text
           x="0"
@@ -1074,6 +1471,23 @@ function ChartCalloutBalloons({
         >
           {money(day.totalBalance, mainCurrency)}
         </text>
+        {negAcc && (
+          <text
+            x="0"
+            y="14"
+            textAnchor="middle"
+            fill="#FCA5A5"
+            fontSize="9.5"
+            fontWeight="700"
+            fontFamily="inherit"
+          >
+            ⚠️ {negAcc.accountName}:{' '}
+            {money(
+              negAcc.balanceOriginal < -0.005 ? negAcc.balanceOriginal : negAcc.availableOriginal,
+              negAcc.currency
+            )}
+          </text>
+        )}
       </g>
     );
   }
@@ -1185,11 +1599,14 @@ function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenMo
         {/* Days of the month */}
         {days.map(d => {
           const isSelected = d.date === pinnedDate;
+          const negAccounts = d.accounts.filter(a => a.balanceOriginal < -0.005 || a.availableOriginal < -0.005);
+          const hasNegAcc = negAccounts.length > 0;
 
           return (
             <div
               key={d.date}
               className={`cal-cell ${d.isToday ? 'today-cell' : ''} ${isSelected ? 'selected-cell' : ''}`}
+              style={hasNegAcc && !isSelected ? { borderColor: '#FCA5A5', background: 'rgba(254, 242, 242, 0.35)' } : undefined}
               onClick={() => onPinDate(d.date)}
               onDoubleClick={() => onOpenModal(d)}
               title="Click to view details in the rundown above, double-click for details"
@@ -1199,10 +1616,45 @@ function MonthCalendarGrid({ days, mainCurrency, pinnedDate, onPinDate, onOpenMo
                 <span className={`cal-day-num ${d.isToday ? 'today-num' : ''}`}>
                   {d.dayOfMonth}
                 </span>
-                <span className="cal-cell-bal" title="Total end-of-day balance">
+                <span
+                  className="cal-cell-bal"
+                  style={hasNegAcc || d.totalBalance < -0.005 ? { color: '#DC2626', fontWeight: 700 } : undefined}
+                  title={
+                    hasNegAcc
+                      ? `Shortfall on ${negAccounts.map(a => `${a.accountName} (${money(a.balanceOriginal < -0.005 ? a.balanceOriginal : a.availableOriginal, a.currency)})`).join(', ')}`
+                      : 'Total end-of-day balance'
+                  }
+                >
+                  {hasNegAcc ? '⚠️ ' : ''}
                   {money(d.totalBalance, mainCurrency)}
                 </span>
               </div>
+
+              {/* Shortfall Account Pill inside Calendar Cell */}
+              {hasNegAcc && (
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#DC2626',
+                    background: 'rgba(254, 226, 226, 0.85)',
+                    borderRadius: 4,
+                    padding: '1px 5px',
+                    marginBottom: 3,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {negAccounts[0].accountName}:{' '}
+                  {money(
+                    negAccounts[0].balanceOriginal < -0.005
+                      ? negAccounts[0].balanceOriginal
+                      : negAccounts[0].availableOriginal,
+                    negAccounts[0].currency
+                  )}
+                </div>
+              )}
 
               {/* Transactions in cell */}
               <div className="cal-cell-items">
@@ -1250,11 +1702,13 @@ function WeekOrRangeCalendarList({
     <div className="week-cards-grid">
       {days.map(d => {
         const isSelected = d.date === pinnedDate;
+        const negAccounts = d.accounts.filter(a => a.balanceOriginal < -0.005 || a.availableOriginal < -0.005);
 
         return (
           <div
             key={d.date}
             className={`week-day-card ${d.isToday ? 'today-card' : ''} ${isSelected ? 'selected-card' : ''}`}
+            style={negAccounts.length > 0 && !isSelected ? { borderColor: '#FCA5A5' } : undefined}
             onClick={() => onPinDate(d.date)}
             onDoubleClick={() => onOpenModal(d)}
           >
@@ -1266,11 +1720,37 @@ function WeekOrRangeCalendarList({
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block' }}>BALANCE</span>
-                <b style={{ fontSize: 16, color: d.totalBalance < 0 ? 'var(--bad)' : 'var(--ink)' }}>
+                <b style={{ fontSize: 16, color: d.totalBalance < 0 || negAccounts.length > 0 ? 'var(--bad)' : 'var(--ink)' }}>
                   {money(d.totalBalance, mainCurrency)}
                 </b>
               </div>
             </div>
+
+            {negAccounts.length > 0 && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: '#DC2626',
+                  background: 'rgba(254, 242, 242, 0.9)',
+                  border: '1px solid #FCA5A5',
+                  borderRadius: 6,
+                  padding: '4px 8px',
+                  marginBottom: 6,
+                }}
+              >
+                ⚠️{' '}
+                {negAccounts
+                  .map(
+                    a =>
+                      `${a.accountName}: ${money(
+                        a.balanceOriginal < -0.005 ? a.balanceOriginal : a.availableOriginal,
+                        a.currency
+                      )}`
+                  )
+                  .join(' · ')}
+              </div>
+            )}
 
             {/* Daily Net Bar */}
             <div className="week-card-net">
@@ -1333,8 +1813,8 @@ function DayDetailModal({
           <span style={{ fontSize: 11, color: 'var(--mute)', display: 'block', fontWeight: 700 }}>
             AVAILABLE CASH
           </span>
-          <b style={{ fontSize: 18, color: day.totalAvailable <= 0 ? 'var(--ink)' : '#16A34A' }}>
-            {money(Math.max(0, day.totalAvailable), mainCurrency)}
+          <b style={{ fontSize: 18, color: day.totalAvailable < -0.005 ? '#DC2626' : day.totalAvailable <= 0 ? 'var(--ink)' : '#16A34A' }}>
+            {money(day.totalAvailable, mainCurrency)}
           </b>
         </div>
         <div>
@@ -1363,33 +1843,48 @@ function DayDetailModal({
           Account Balances on {day.dayLabel}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {day.accounts.map(a => (
-            <div
-              key={a.accountId}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '8px 12px',
-                borderRadius: 10,
-                background: 'var(--card)',
-                border: '1px solid var(--line)',
-                borderLeft: `4px solid ${a.accountColor}`,
-              }}
-            >
-              <div>
-                <span style={{ fontWeight: 600 }}>{a.accountName}</span>
+          {day.accounts.map(a => {
+            const isPhysNeg = a.balanceOriginal < -0.005;
+            const isFreeNeg = a.availableOriginal < -0.005;
+            const isWarn = isPhysNeg || isFreeNeg;
+            return (
+              <div
+                key={a.accountId}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  background: isWarn ? 'rgba(254, 242, 242, 0.9)' : 'var(--card)',
+                  border: isWarn ? '1px solid #FCA5A5' : '1px solid var(--line)',
+                  borderLeft: `4px solid ${isWarn ? '#DC2626' : a.accountColor}`,
+                }}
+              >
+                <div>
+                  <span style={{ fontWeight: 600, color: isWarn ? '#991B1B' : undefined }}>
+                    {isWarn ? '⚠️ ' : ''}
+                    {a.accountName}
+                  </span>
+                  {a.stashedOriginal > 0 && (
+                    <small style={{ display: 'block', fontSize: 11, color: isFreeNeg ? '#DC2626' : 'var(--mute)' }}>
+                      Free: {money(a.availableOriginal, a.currency)} · 🔒 Stashed: {money(a.stashedOriginal, a.currency)}
+                    </small>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <b style={{ color: isPhysNeg ? '#DC2626' : undefined }}>
+                    {money(a.balanceOriginal, a.currency)}
+                  </b>
+                  {a.currency !== mainCurrency && (
+                    <small className="muted" style={{ display: 'block', fontSize: 11 }}>
+                      ≈ {money(a.balanceInMain, mainCurrency)}
+                    </small>
+                  )}
+                </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <b>{money(a.balanceOriginal, a.currency)}</b>
-                {a.currency !== mainCurrency && (
-                  <small className="muted" style={{ display: 'block', fontSize: 11 }}>
-                    ≈ {money(a.balanceInMain, mainCurrency)}
-                  </small>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

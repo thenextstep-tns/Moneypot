@@ -774,7 +774,7 @@ export function Accounts() {
   const totalLiquid = calcTotalLiquidBalance(accounts, payments, transfers, plans, stashes, mainCur);
   const { total: totalStashed, personal: totalPersonalStashed, shared: totalSharedStashed } =
     calcTotalStashedBreakdown(accounts, stashes, payments, transfers, plans, mainCur);
-  const totalAvailable = Math.max(0, totalLiquid - totalStashed);
+  const totalAvailable = totalLiquid - totalStashed;
 
   return (
     <div className="page">
@@ -811,7 +811,7 @@ export function Accounts() {
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Available to Spend
             </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', marginTop: 2 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: totalAvailable < 0 ? 'var(--bad)' : 'var(--ink)', marginTop: 2 }}>
               {money(totalAvailable, mainCur)}
             </div>
             <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>
@@ -835,7 +835,7 @@ export function Accounts() {
             .sort((x, y) => x.dueDate.localeCompare(y.dueDate));
           const totalBal = calcAccountBalance(a, payments, transfers, plans, stashes);
           const stashedBal = calcAccountStashedBalance(a, stashes, payments, transfers, plans, accounts);
-          const freeBal = Math.max(0, totalBal - stashedBal);
+          const freeBal = totalBal - stashedBal;
 
           return (
             <div
@@ -892,8 +892,8 @@ export function Accounts() {
               <div className="title" style={{ paddingRight: 24 }}>{a.name}</div>
               <div className="sub">{a.institution ?? a.type} · {a.currency}</div>
               <div className="stash-amt">
-                <b>{money(freeBal, a.currency)}</b>
-                <span style={{ fontSize: 13, color: 'var(--mute)', fontWeight: 600, marginLeft: 6 }}>free</span>
+                <b style={freeBal < 0 ? { color: 'var(--bad)' } : undefined}>{money(freeBal, a.currency)}</b>
+                <span style={{ fontSize: 13, color: freeBal < 0 ? 'var(--bad)' : 'var(--mute)', fontWeight: 600, marginLeft: 6 }}>free</span>
               </div>
               {stashedBal > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>

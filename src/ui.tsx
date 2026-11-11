@@ -362,7 +362,7 @@ export function AccountCardsSelect({
             }
             return sum;
           }, 0);
-          const freeAmt = bal !== undefined ? Math.max(0, bal - stashedAmt) : undefined;
+          const freeAmt = bal !== undefined ? bal - stashedAmt : undefined;
 
           let projBal: number | undefined;
           if (projectedBalances) {
@@ -390,7 +390,7 @@ export function AccountCardsSelect({
                   {bal !== undefined && stashedAmt > 0 ? (
                     <>
                       <span>
-                        {a.currency} · <b>{money(freeAmt ?? 0, a.currency)} free</b>
+                        {a.currency} · <b style={(freeAmt ?? 0) < 0 ? { color: '#DC2626' } : undefined}>{money(freeAmt ?? 0, a.currency)} free</b>
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--mute)' }}>
                         Total: {money(bal, a.currency)} (🔒 {money(stashedAmt, a.currency)} reserved)

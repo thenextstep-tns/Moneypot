@@ -71,7 +71,7 @@ export function AccountsScreen() {
       settings.currency
     );
 
-  const totalAvailable = Math.max(0, totalLiquid - totalStashed);
+  const totalAvailable = totalLiquid - totalStashed;
 
   const handleOpenAdd = () => {
     triggerHaptic('light');
@@ -135,7 +135,7 @@ export function AccountsScreen() {
         renderItem={({ item: acc, drag, isActive }: RenderItemParams<Account>) => {
           const totalBal = calcAccountBalance(acc, payments, transfers, plans, stashes);
           const stashedBal = calcAccountStashedBalance(acc, stashes, payments, transfers, plans, accounts);
-          const freeBal = Math.max(0, totalBal - stashedBal);
+          const freeBal = totalBal - stashedBal;
 
           return (
             <ScaleDecorator>

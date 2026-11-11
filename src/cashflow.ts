@@ -70,6 +70,10 @@ export interface DayCashflow {
   totalStashed: number; // Total stashed / reserved funds
   stashedY0: number;
   stashedY1: number;
+  positiveTotalInMain: number; // Top of stacked positive accounts (>= 0)
+  negativeTotalInMain: number; // Bottom of stacked negative accounts (<= 0)
+  lowestAccountBalance: number; // Lowest single-account balanceInMain on this day
+  lowestAvailableBalance: number; // Lowest single-account availableInMain on this day
 }
 
 /** Generate a continuous array of YYYY-MM-DD strings from `from` to `to` */
@@ -413,7 +417,8 @@ export function calculateCashflowRange(
 
     // Calculate account balances at the end of this day
     const accountDayBals: AccountDayBalance[] = [];
-    let cumulativeY = 0;
+    let cumulativePosY = 0;
+    let cumulativeNegY = 0;
 
     for (const a of accounts) {
       let b = 0;
@@ -446,14 +451,21 @@ export function calculateCashflowRange(
       const stashedForAcc = stashAmountByAcc.get(a.id) ?? 0;
 
       const balInMain = convert(b, a.currency, mainCurrency);
-      const positiveVal = Math.max(0, balInMain);
-      const y0 = cumulativeY;
-      const y1 = cumulativeY + positiveVal;
-      cumulativeY += positiveVal;
+      let y0 = 0;
+      let y1 = 0;
+      if (balInMain >= 0) {
+        y0 = cumulativePosY;
+        y1 = cumulativePosY + balInMain;
+        cumulativePosY += balInMain;
+      } else {
+        y0 = cumulativeNegY + balInMain;
+        y1 = cumulativeNegY;
+        cumulativeNegY += balInMain;
+      }
 
       const stashedInMain = convert(stashedForAcc, a.currency, mainCurrency);
-      const availableOriginal = Math.max(0, b - stashedForAcc);
-      const availableInMain = Math.max(0, balInMain - stashedInMain);
+      const availableOriginal = b - stashedForAcc;
+      const availableInMain = balInMain - stashedInMain;
 
       accountDayBals.push({
         accountId: a.id,
@@ -473,10 +485,12 @@ export function calculateCashflowRange(
 
     const totalBalance = accountDayBals.reduce((sum, ab) => sum + ab.balanceInMain, 0);
     const totalStashed = accountDayBals.reduce((sum, ab) => sum + ab.stashedInMain, 0);
-    const totalAvailable = Math.max(0, totalBalance - totalStashed);
-    // Stashed area sits INSIDE the total balance band at the top, never exceeding cumulativeY
-    const stashedY1 = cumulativeY;
-    const stashedY0 = Math.max(0, cumulativeY - totalStashed);
+    const totalAvailable = totalBalance - totalStashed;
+    const lowestAccountBalance = accountDayBals.length > 0 ? Math.min(...accountDayBals.map(ab => ab.balanceInMain)) : 0;
+    const lowestAvailableBalance = accountDayBals.length > 0 ? Math.min(...accountDayBals.map(ab => ab.availableInMain)) : 0;
+    // Stashed area sits INSIDE the positive balance band at the top
+    const stashedY1 = cumulativePosY;
+    const stashedY0 = Math.max(0, cumulativePosY - totalStashed);
 
     result.push({
       date,
@@ -499,6 +513,10 @@ export function calculateCashflowRange(
       totalStashed,
       stashedY0,
       stashedY1,
+      positiveTotalInMain: cumulativePosY,
+      negativeTotalInMain: cumulativeNegY,
+      lowestAccountBalance,
+      lowestAvailableBalance,
     });
   }
 
