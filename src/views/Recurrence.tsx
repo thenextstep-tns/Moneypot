@@ -61,7 +61,7 @@ export function RecurrenceEditor({ p, set }: { p: Plan; set: (x: Partial<Plan>) 
                 <div className="row">
                   <Field label="Which one">
                     <select value={p.nth ?? 1} onChange={e => set({ nth: +e.target.value })}>
-                      {[1, 2, 3, 4, -1].map(n => <option key={n} value={n}>{NTH[n]}</option>)}
+                      {[0, 1, 2, 3, 4, -1].map(n => <option key={n} value={n}>{NTH[n]}</option>)}
                     </select>
                   </Field>
                   <Field label="Day">

@@ -1,6 +1,6 @@
 {
   "name": "moneypotmobile",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

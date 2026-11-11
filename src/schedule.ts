@@ -39,7 +39,7 @@ export const dayLabel = (s: string) => {
 // ---------- Recurrence ----------
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-export const NTH: Record<number, string> = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth', [-1]: 'last' };
+export const NTH: Record<number, string> = { 0: 'every', 1: 'first', 2: 'second', 3: 'third', 4: 'fourth', [-1]: 'last' };
 export const ord = (n: number) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 
 const diffDays = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 864e5);
@@ -52,6 +52,7 @@ function dayInMonth(p: Plan, d: Date): boolean {
   if (p.monthMode === 'weekday') {
     if (d.getDay() !== (p.nthWeekday ?? parse(p.startDate).getDay())) return false;
     const n = p.nth ?? 1;
+    if (n === 0) return true;
     return n === -1 ? day + 7 > L : Math.ceil(day / 7) === n;
   }
   // -1 = last day; 31 in a 30-day month falls on the 30th
@@ -96,7 +97,9 @@ export function freqLabel(p: Plan): string {
     case 'daily': return base('day');
     case 'weekly': return `${base('week')} on ${[...weekdaysOf(p)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(d => WEEKDAYS[d]).join(', ')}`;
     case 'monthly': return p.monthMode === 'weekday'
-      ? `${base('month')} on the ${NTH[p.nth ?? 1]} ${WEEKDAYS_LONG[p.nthWeekday ?? parse(p.startDate).getDay()]}`
+      ? (p.nth === 0
+          ? `${base('month')} on every ${WEEKDAYS_LONG[p.nthWeekday ?? parse(p.startDate).getDay()]}`
+          : `${base('month')} on the ${NTH[p.nth ?? 1]} ${WEEKDAYS_LONG[p.nthWeekday ?? parse(p.startDate).getDay()]}`)
       : `${base('month')} on the ${monthDaysOf(p).map(x => (x === -1 ? 'last day' : ord(x))).join(' & ')}`;
     case 'yearly': return `${base('year')} on ${parse(p.startDate).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`;
   }
@@ -107,7 +110,7 @@ export function perMonth(p: Plan): number {
   switch (p.freq) {
     case 'daily': return (p.amount * 30.44) / e;
     case 'weekly': return (p.amount * weekdaysOf(p).length * 52) / 12 / e;
-    case 'monthly': return (p.amount * (p.monthMode === 'weekday' ? 1 : monthDaysOf(p).length)) / e;
+    case 'monthly': return (p.amount * (p.monthMode === 'weekday' ? (p.nth === 0 ? 52 / 12 : 1) : monthDaysOf(p).length)) / e;
     case 'yearly': return p.amount / 12 / e;
     default: return 0;
   }

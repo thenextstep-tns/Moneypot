@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useData, uid } from '../context/DataContext';
-import { today, freqLabel } from '../domain/schedule';
+import { today, freqLabel, NTH, parse, WEEKDAYS_LONG } from '../domain/schedule';
 import { useTheme, useStyles, type Theme } from '../theme';
 import { triggerHaptic } from '../utils/haptics';
 import type { Plan, Kind, Freq } from '../domain/types';
@@ -39,6 +39,9 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
   const [freq, setFreq] = useState<Freq>('monthly');
   const [every, setEvery] = useState('1');
   const [startDate, setStartDate] = useState(today());
+  const [monthMode, setMonthMode] = useState<'dates' | 'weekday'>('dates');
+  const [nth, setNth] = useState<number>(1);
+  const [nthWeekday, setNthWeekday] = useState<number>(1);
 
   useEffect(() => {
     if (planToEdit) {
@@ -56,6 +59,9 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       setFreq(planToEdit.freq);
       setEvery(String(planToEdit.every || 1));
       setStartDate(planToEdit.startDate);
+      setMonthMode(planToEdit.monthMode ?? 'dates');
+      setNth(planToEdit.nth ?? 1);
+      setNthWeekday(planToEdit.nthWeekday ?? parse(planToEdit.startDate || today()).getDay());
     } else {
       setName('');
       setKind('expense');
@@ -70,7 +76,11 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       setNote('');
       setFreq('monthly');
       setEvery('1');
-      setStartDate(today());
+      const t = today();
+      setStartDate(t);
+      setMonthMode('dates');
+      setNth(1);
+      setNthWeekday(parse(t).getDay());
     }
   }, [planToEdit, visible]);
 
@@ -109,6 +119,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
       freq,
       every: parseInt(every, 10) || 1,
       startDate: startDate || today(),
+      ...(freq === 'monthly' ? { monthMode, ...(monthMode === 'weekday' ? { nth, nthWeekday } : {}) } : {}),
     };
 
     await save('plans', newPlan);
@@ -144,6 +155,7 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
     freq,
     every: parseInt(every, 10) || 1,
     startDate: startDate || today(),
+    ...(freq === 'monthly' ? { monthMode, ...(monthMode === 'weekday' ? { nth, nthWeekday } : {}) } : {}),
   };
 
   return (
@@ -396,6 +408,71 @@ export function PlanEditModal({ visible, onClose, planToEdit }: PlanEditModalPro
                 );
               })}
             </View>
+
+            {freq === 'monthly' && (
+              <>
+                <Text style={styles.fieldLabel}>Monthly Schedule</Text>
+                <View style={styles.freqRow}>
+                  {([['dates', 'On Specific Dates'], ['weekday', 'On A Weekday']] as const).map(([m, label]) => {
+                    const active = monthMode === m;
+                    return (
+                      <TouchableOpacity
+                        key={m}
+                        style={[styles.freqChip, active && styles.freqChipActive]}
+                        onPress={() => {
+                          triggerHaptic('light');
+                          setMonthMode(m);
+                        }}
+                      >
+                        <Text style={[styles.freqChipText, active && styles.freqChipTextActive]}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {monthMode === 'weekday' && (
+                  <>
+                    <Text style={styles.fieldLabel}>Which one</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                      {[0, 1, 2, 3, 4, -1].map(n => {
+                        const active = nth === n;
+                        return (
+                          <TouchableOpacity
+                            key={n}
+                            style={[styles.chip, active && styles.chipActive]}
+                            onPress={() => {
+                              triggerHaptic('light');
+                              setNth(n);
+                            }}
+                          >
+                            <Text style={[styles.chipText, active && styles.chipTextActive]}>{NTH[n]}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+
+                    <Text style={styles.fieldLabel}>Day</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                      {[1, 2, 3, 4, 5, 6, 0].map(d => {
+                        const active = nthWeekday === d;
+                        return (
+                          <TouchableOpacity
+                            key={d}
+                            style={[styles.chip, active && styles.chipActive]}
+                            onPress={() => {
+                              triggerHaptic('light');
+                              setNthWeekday(d);
+                            }}
+                          >
+                            <Text style={[styles.chipText, active && styles.chipTextActive]}>{WEEKDAYS_LONG[d]}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                )}
+              </>
+            )}
 
             {/* Cadence preview banner */}
             <View style={styles.cadencePreview}>
