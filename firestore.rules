@@ -18,6 +18,10 @@ service cloud.firestore {
       return 'email' in request.auth.token && request.auth.token.email is string
         && request.auth.token.get('email_verified', false) == true;
     }
+    // the owner listed my verified email on the item (used to migrate shares made before v0.9.7)
+    function invitedByEmail(data) {
+      return verifiedEmail() && request.auth.token.email.lower() in data.get('invitedEmails', []);
+    }
 
     // ---- Personal data ----
     match /users/{uid} {
@@ -29,7 +33,7 @@ service cloud.firestore {
 
     // ---- Shared pots / stashes ----
     match /shared_items/{sid} {
-      allow read: if signedIn() && me() in resource.data.memberIds;
+      allow read: if signedIn() && (me() in resource.data.memberIds || invitedByEmail(resource.data));
 
       allow create: if signedIn()
         && sid.matches('^sh_[a-z0-9]{16,40}$')
@@ -46,9 +50,9 @@ service cloud.firestore {
         && (
           // any member edits the shared fields (name, target, …)
           (me() in resource.data.memberIds && changed().hasOnly(['data', 'updatedAt']) && request.resource.data.data is map)
-          // the owner removes members (can't add anyone without an invite, and stays a member)
+          // the owner removes members / manages invited emails (can't add members directly, and stays a member)
           || (me() == resource.data.ownerId && me() in request.resource.data.memberIds
-              && changed().hasOnly(['data', 'updatedAt', 'memberIds', 'members'])
+              && changed().hasOnly(['data', 'updatedAt', 'memberIds', 'members', 'invitedEmails'])
               && resource.data.memberIds.toSet().hasAll(request.resource.data.memberIds.toSet())
               && resource.data.members.keys().toSet().hasAll(request.resource.data.members.keys().toSet()))
           // a member leaves
@@ -57,6 +61,15 @@ service cloud.firestore {
               && request.resource.data.memberIds == resource.data.memberIds.removeAll([me()])
               && !(me() in request.resource.data.members)
               && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()]))
+          // someone whose verified email the owner listed joins (and is taken off the list)
+          || (!(me() in resource.data.memberIds) && invitedByEmail(resource.data)
+              && changed().hasOnly(['memberIds', 'members', 'invitedEmails', 'updatedAt'])
+              && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().union([me()].toSet())
+              && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+              && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
+              && me() in request.resource.data.members
+              && request.resource.data.get('invitedEmails', []).toSet()
+                   == resource.data.get('invitedEmails', []).toSet().difference([request.auth.token.email.lower()].toSet()))
           // someone joins with an invite they accepted for this item
           || (!(me() in resource.data.memberIds)
               && changed().hasOnly(['memberIds', 'members', 'joinInviteId', 'updatedAt'])

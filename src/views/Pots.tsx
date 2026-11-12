@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../store';
 import { dayLabel, money, monthLabel, monthRange, occurrences, shiftMonth, thisMonth } from '../schedule';
 import { convert } from '../fx';
-import { calcAllAccountBalances, calcMonthStartingBalances, convAt, findAccountShortfalls } from '../balances';
+import { calcAllAccountBalances, calcMonthStartingBalances, convAt, findAccountShortfalls, sharedMemberCount } from '../balances';
 import type { Category, Occurrence } from '../types';
 import { Bar, DragHandle, Empty, HelpButton } from '../ui';
 import { CategoryModal } from './CategoryModal';
@@ -435,7 +435,7 @@ function Pot({
           <div className="title">
             {c.name}
             {c.sharedWith && c.sharedWith.length > 0 && (
-              <span className="tag shared-tag">👥 Shared ({c.sharedWith.length})</span>
+              <span className="tag shared-tag">👥 Shared · {sharedMemberCount(c)} people</span>
             )}
           </div>
           <div className="sub">{money(planned, cur)} this month</div>

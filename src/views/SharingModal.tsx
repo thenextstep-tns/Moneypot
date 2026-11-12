@@ -86,7 +86,7 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
   };
 
   const memberRows = shared
-    ? shared.memberIds.map(uid => ({ uid, email: shared.members?.[uid]?.email ?? 'Member', isOwnerRow: uid === shared.ownerId }))
+    ? shared.memberIds.map(uid => ({ uid, email: shared.members?.[uid]?.name || shared.members?.[uid]?.email || 'Member', isOwnerRow: uid === shared.ownerId }))
     : [{ uid: user?.uid ?? 'me', email: user?.email ?? 'You', isOwnerRow: true }];
 
   return (
@@ -119,6 +119,15 @@ export function SharingModal({ type, item, onClose }: { type: 'pot' | 'stash'; i
                     Remove
                   </button>
                 )}
+              </li>
+            ))}
+            {(shared?.invitedEmails ?? []).map(e => (
+              <li key={e} className="item" style={{ margin: 0, padding: '8px 12px', opacity: 0.75 }}>
+                <div className="emoji" aria-hidden="true" style={{ width: 28, height: 28, fontSize: 14 }}>⏳</div>
+                <div className="grow">
+                  <div className="title" style={{ fontSize: 13 }}>{e}</div>
+                  <div className="sub" style={{ fontSize: 11 }}>Was shared before — joins automatically when they open the new version</div>
+                </div>
               </li>
             ))}
           </ul>

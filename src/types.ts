@@ -115,6 +115,10 @@ export interface SharedItem {
   data: Record<string, unknown>;
   updatedAt?: number;
   joinInviteId?: string;
+  /** Verified emails allowed to join without a code (used to migrate shares made before v0.9.7) */
+  invitedEmails?: string[];
+  /** Id the pot/stash had in the old (≤ v0.9.6) sharing model, to link existing copies */
+  legacyId?: string;
 }
 
 

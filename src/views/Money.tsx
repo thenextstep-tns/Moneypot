@@ -5,18 +5,7 @@ import { convert, getRate } from '../fx';
 import type { Account, Payment, Plan, Stash, Transfer } from '../types';
 import { AccountCardsSelect, AccountForm, Bar, CurrencySelect, DragHandle, Empty, Field, HelpButton, Modal, Seg } from '../ui';
 import { EmojiPicker } from '../emojis';
-import {
-  calcAccountBalance,
-  calcAccountStashedBalance,
-  calcAccountAvailableBalance,
-  calcProjectedAccountBalance,
-  calcStashBalance,
-  calcProjectedStashBalance,
-  calcTotalLiquidBalance,
-  calcTotalStashedBalance,
-  calcTotalStashedBreakdown,
-  formatStashedBreakdown,
-} from '../balances';
+import { calcAccountBalance, calcAccountStashedBalance, calcAccountAvailableBalance, calcProjectedAccountBalance, calcStashBalance, calcProjectedStashBalance, calcTotalLiquidBalance, calcTotalStashedBalance, calcTotalStashedBreakdown, formatStashedBreakdown, calcStashContributions, sharedMemberCount } from '../balances';
 import { ScreenHelpModal } from './ScreenHelpModal';
 import { AcceptInviteModal, SharingModal } from './SharingModal';
 import { OneOffPaymentModal } from './PaymentModal';
@@ -46,58 +35,11 @@ export function Stashes() {
 
   const saved = (s: Stash) => calcStashBalance(s, payments, transfers, plans);
 
-  const getStashContributors = (s: Stash) => {
-    const stashKey = `stash_${s.id}`;
-    const pays = payments.filter(
-      p => p.status === 'confirmed' && p.kind !== 'transfer' && (
-        (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id ||
-        p.accountId === stashKey ||
-        p.accountId === s.id
-      )
-    );
-    const byUser = new Map<string, number>();
-
-    const ownerLabel = s.ownerEmail
-      ? (s.ownerEmail === user?.email ? 'You (Creator)' : s.ownerEmail.split('@')[0])
-      : 'Initial balance';
-
-    if (s.startAmount > 0 && !payments.some(p => p.id === `init_stash_${s.id}` && p.status === 'confirmed')) {
-      byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + s.startAmount);
-    }
-
-    const resolveLabel = (item: { contributorName?: string; contributorEmail?: string; ownerId?: string }) => {
-      if (item.contributorName) return item.contributorName;
-      if (item.contributorEmail) {
-        return item.contributorEmail === user?.email ? 'You' : item.contributorEmail.split('@')[0];
-      }
-      return item.ownerId === user?.uid || !item.ownerId ? 'You' : 'Collaborator';
-    };
-
-    for (const p of pays) {
-      const label = resolveLabel(p);
-      const amtInStashCur = convert(p.amount, p.currency || s.currency, s.currency);
-      const delta = p.kind === 'expense' ? -amtInStashCur : amtInStashCur;
-      byUser.set(label, (byUser.get(label) ?? 0) + delta);
-    }
-
-    for (const t of transfers) {
-      if (t.status === 'cancelled') continue;
-      if (t.toAccountId === stashKey || t.toAccountId === s.id) {
-        const label = resolveLabel(t);
-        const amtInStashCur = convert(t.toAmount, t.toCurrency || s.currency, s.currency);
-        byUser.set(label, (byUser.get(label) ?? 0) + amtInStashCur);
-      }
-      if (t.fromAccountId === stashKey || t.fromAccountId === s.id) {
-        const label = resolveLabel(t);
-        const amtInStashCur = convert(t.fromAmount, t.fromCurrency || s.currency, s.currency);
-        byUser.set(label, (byUser.get(label) ?? 0) - amtInStashCur);
-      }
-    }
-
-    return Array.from(byUser.entries())
-      .filter(([_, amount]) => amount > 0)
-      .map(([name, amount]) => ({ name, amount }));
-  };
+  // One line per person; the stash total is everyone's money, each line is that person's own contribution
+  const getStashContributors = (s: Stash) =>
+    calcStashContributions(s, payments, transfers, plans)
+      .filter(c => c.amount > 0)
+      .map(c => ({ name: c.label, amount: c.amount, isMe: c.isMe }));
 
   return (
     <div className="page">
@@ -186,7 +128,7 @@ export function Stashes() {
                   )}
                   {isSharedStash && (
                     <span className="tag shared-tag" style={{ whiteSpace: 'nowrap', margin: 0 }}>
-                      👥 Shared{s.sharedWith?.length ? ` (${s.sharedWith.length})` : ''}
+                      👥 Shared{sharedMemberCount(s) ? ` · ${sharedMemberCount(s)} people` : ''}
                     </span>
                   )}
                 </div>
@@ -199,11 +141,11 @@ export function Stashes() {
               <div className="stash-amt"><b>{money(v, s.currency)}</b> <span className="muted">of {money(s.target, s.currency)}</span></div>
               <Bar done={v} total={s.target} color="#2FA36B" />
               <div className="sub">{v >= s.target ? '🎉 Goal reached!' : `${money(s.target - v, s.currency)} to go`}</div>
-              {s.sharedWith && s.sharedWith.length > 0 && v > 0 && contribs.length > 0 && (
+              {isSharedStash && v > 0 && contribs.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
                   {contribs.map(c => (
                     <span key={c.name} style={{ fontSize: 11, background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 6, color: 'var(--ink)' }}>
-                      👤 {c.name}: <b>{money(c.amount, s.currency)}</b>
+                      👤 {c.isMe ? 'You' : c.name}: <b>{money(c.amount, s.currency)}</b>
                     </span>
                   ))}
                 </div>
@@ -325,58 +267,10 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
     setCorrectionNote('');
   };
 
-  const contribs = useMemo(() => {
-    if (!stash) return [];
-    const stashKey = `stash_${stash.id}`;
-    const pays = payments.filter(
-      p => p.status === 'confirmed' && p.kind !== 'transfer' && (
-        (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === stash.id ||
-        p.accountId === stashKey ||
-        p.accountId === stash.id
-      )
-    );
-    const byUser = new Map<string, number>();
-    const ownerLabel = stash.ownerEmail
-      ? (stash.ownerEmail === user?.email ? 'You (Creator)' : stash.ownerEmail.split('@')[0])
-      : 'Initial balance';
-
-    if (stash.startAmount > 0 && !payments.some(p => p.id === `init_stash_${stash.id}` && p.status === 'confirmed')) {
-      byUser.set(ownerLabel, (byUser.get(ownerLabel) ?? 0) + stash.startAmount);
-    }
-
-    const resolveLabel = (item: { contributorName?: string; contributorEmail?: string; ownerId?: string }) => {
-      if (item.contributorName) return item.contributorName;
-      if (item.contributorEmail) {
-        return item.contributorEmail === user?.email ? 'You' : item.contributorEmail.split('@')[0];
-      }
-      return item.ownerId === user?.uid || !item.ownerId ? 'You' : 'Collaborator';
-    };
-
-    for (const p of pays) {
-      const label = resolveLabel(p);
-      const amtInStashCur = convert(p.amount, p.currency || stash.currency, stash.currency);
-      const delta = p.kind === 'expense' ? -amtInStashCur : amtInStashCur;
-      byUser.set(label, (byUser.get(label) ?? 0) + delta);
-    }
-
-    for (const t of transfers) {
-      if (t.status === 'cancelled') continue;
-      if (t.toAccountId === stashKey || t.toAccountId === stash.id) {
-        const label = resolveLabel(t);
-        const amtInStashCur = convert(t.toAmount, t.toCurrency || stash.currency, stash.currency);
-        byUser.set(label, (byUser.get(label) ?? 0) + amtInStashCur);
-      }
-      if (t.fromAccountId === stashKey || t.fromAccountId === stash.id) {
-        const label = resolveLabel(t);
-        const amtInStashCur = convert(t.fromAmount, t.fromCurrency || stash.currency, stash.currency);
-        byUser.set(label, (byUser.get(label) ?? 0) - amtInStashCur);
-      }
-    }
-
-    return Array.from(byUser.entries())
-      .filter(([_, amount]) => amount > 0)
-      .map(([name, amount]) => ({ name, amount }));
-  }, [stash, payments, transfers, plans, user]);
+  const contribs = useMemo(
+    () => (stash ? calcStashContributions(stash, payments, transfers, plans).filter(c => c.amount > 0).map(c => ({ name: c.label, amount: c.amount, isMe: c.isMe })) : []),
+    [stash, payments, transfers, plans]
+  );
 
   const doSaveStash = (addTechnicalEdit = false, targetAccParam?: Account, initialAmountParam?: number) => {
     const finalIsInstant = !isSharedStash && isInstant;
@@ -696,10 +590,13 @@ function StashForm({ stash, onClose }: { stash?: Stash; onClose: () => void }) {
           </div>
           {contribs.map(c => (
             <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
-              <span>👤 {c.name}</span>
+              <span>👤 {c.isMe ? 'You' : c.name}</span>
               <b>{money(c.amount, s.currency)}</b>
             </div>
           ))}
+          <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 6 }}>
+            The stash total is everyone's money. Only your own part is reserved in your account.
+          </div>
         </div>
       )}
       <button className="btn primary wide" disabled={!s.name.trim()} onClick={submit}>{stash ? 'Save' : 'Create stash'}</button>

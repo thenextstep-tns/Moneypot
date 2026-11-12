@@ -7,7 +7,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useData } from '../context/DataContext';
-import { calcStashBalance } from '../domain/balances';
+import { calcStashBalance, calcStashContributions, calcStashReserved, sharedMemberCount } from '../domain/balances';
 import { convert } from '../domain/fx';
 import { money, today } from '../domain/schedule';
 import { theme, useStyles, type Theme } from '../theme';
@@ -37,10 +37,10 @@ export function StashesScreen() {
     currentBalance: number;
   } | null>(null);
 
-  // Total stashed amount converted to main currency
+  // Money YOU have reserved in stashes (for shared stashes only your own part)
   const totalStashedMain = stashes.reduce((sum, s) => {
-    const bal = calcStashBalance(s, payments, transfers, plans);
-    return sum + convert(bal, s.currency, settings.currency);
+    const mine = calcStashReserved(s, payments, transfers, plans);
+    return sum + convert(mine, s.currency, settings.currency);
   }, 0);
 
   const handleOpenAdd = () => {
@@ -82,7 +82,7 @@ export function StashesScreen() {
       {/* Total Stashed Banner */}
       <View style={styles.totalBanner}>
         <View style={styles.totalBannerInfo}>
-          <Text style={styles.totalBannerLabel}>Total Reserved in Stashes</Text>
+          <Text style={styles.totalBannerLabel}>Your money in stashes</Text>
           <Text style={styles.totalBannerVal}>{money(totalStashedMain, settings.currency)}</Text>
         </View>
         <Text style={styles.totalBannerEmoji}>🐷</Text>
@@ -113,52 +113,14 @@ export function StashesScreen() {
             const target = s.target || 0;
             const progress = target > 0 ? Math.min(100, Math.round((currentBal / target) * 100)) : 0;
 
-            // Contributor Breakdown
-            const contributors = new Map<string, number>();
-            const stashKey = `stash_${s.id}`;
-            const ownerLabel = s.ownerEmail
-              ? (s.ownerEmail === user?.email ? 'You (Creator)' : s.ownerEmail.split('@')[0])
-              : 'Initial balance';
-            if (s.startAmount > 0 && !payments.some(p => p.id === `init_stash_${s.id}` && p.status === 'confirmed')) {
-              contributors.set(ownerLabel, (contributors.get(ownerLabel) || 0) + s.startAmount);
-            }
-            const resolveLabel = (item: { contributorName?: string; contributorEmail?: string; ownerId?: string }) => {
-              if (item.contributorName) return item.contributorName;
-              if (item.contributorEmail) {
-                return item.contributorEmail === user?.email ? 'You' : item.contributorEmail.split('@')[0];
-              }
-              return item.ownerId === user?.uid || !item.ownerId ? 'You' : 'Collaborator';
-            };
-            for (const p of payments) {
-              if (p.status !== 'confirmed' || p.kind === 'transfer') continue;
-              const isThisStash = (p.stashId ?? plans.find(x => x.id === p.planId)?.stashId) === s.id || p.accountId === stashKey || p.accountId === s.id;
-              if (!isThisStash) continue;
-              const cName = resolveLabel(p);
-              const cur = contributors.get(cName) || 0;
-              const amtInStashCur = convert(p.amount, p.currency || s.currency, s.currency);
-              if (p.kind === 'saving' || p.kind === 'income') {
-                contributors.set(cName, cur + amtInStashCur);
-              } else if (p.kind === 'expense') {
-                contributors.set(cName, cur - amtInStashCur);
-              }
-            }
-            for (const tr of transfers) {
-              if (tr.status === 'cancelled') continue;
-              if (tr.toAccountId === stashKey || tr.toAccountId === s.id) {
-                const cName = resolveLabel(tr);
-                const amtInStashCur = convert(tr.toAmount, tr.toCurrency || s.currency, s.currency);
-                contributors.set(cName, (contributors.get(cName) || 0) + amtInStashCur);
-              }
-              if (tr.fromAccountId === stashKey || tr.fromAccountId === s.id) {
-                const cName = resolveLabel(tr);
-                const amtInStashCur = convert(tr.fromAmount, tr.fromCurrency || s.currency, s.currency);
-                contributors.set(cName, (contributors.get(cName) || 0) - amtInStashCur);
-              }
-            }
-
-            const activeContributors = Array.from(contributors.entries()).filter(
-              ([_, amt]) => amt > 0.01 && currentBal > 0.01
-            );
+            // One line per person: the stash total is everyone's money, each line is that person's own part
+            const isShared = Boolean(s.isShared || s.sharedId || (s.sharedWith?.length ?? 0) > 0 || s.isForeignOwned);
+            const activeContributors: [string, number][] = isShared && currentBal > 0.01
+              ? calcStashContributions(s, payments, transfers, plans)
+                  .filter(c => c.amount > 0.01)
+                  .map(c => [c.isMe ? 'You' : c.label, c.amount] as [string, number])
+              : [];
+            const memberCount = sharedMemberCount(s);
 
             return (
               <ScaleDecorator>
@@ -214,10 +176,10 @@ export function StashesScreen() {
                     </Text>
                   </View>
 
-                  {(s.isShared || (s.sharedWith && s.sharedWith.length > 0) || (s.ownerId && s.ownerId !== user?.uid)) && (
+                  {isShared && (
                     <View style={[styles.tagBadge, styles.tagShared]}>
                       <Text style={[styles.tagText, styles.tagTextShared]}>
-                        👥 Shared{s.sharedWith && s.sharedWith.length > 0 ? ` (${s.sharedWith.length})` : ''}
+                        👥 Shared{memberCount ? ` · ${memberCount} people` : ''}
                       </Text>
                     </View>
                   )}

@@ -135,3 +135,32 @@ test('invites cannot be created for items you do not own, nor listed by others',
   await assertFails(getDocs(query(collection(bob, 'invites'), where('ownerId', '==', 'alice'))));
   await assertSucceeds(getDocs(query(collection(as('alice'), 'invites'), where('ownerId', '==', 'alice'), where('sharedId', '==', SID))));
 });
+
+test('existing (pre-0.9.7) shares migrate: only the listed, verified email can join, and only once', async () => {
+  const LEGACY = 'sh_legacyonlinepurchases';
+  const nick = as('nick', 'nick@example.com');
+  await assertSucceeds(setDoc(doc(nick, 'shared_items', LEGACY), {
+    id: LEGACY, type: 'stash', ownerId: 'nick', memberIds: ['nick'], members: { nick: { email: 'nick@example.com' } },
+    data: { name: 'Online Purchases' }, invitedEmails: ['anna@example.com'], legacyId: 'online',
+  }));
+  const anna = as('anna', 'Anna@Example.com');
+  const eve = as('eve', 'eve@example.com');
+  const unverified = env.authenticatedContext('anna2', { email: 'anna@example.com', email_verified: false }).firestore();
+  // Anna can find the share that lists her; others can't
+  await assertSucceeds(getDocs(query(collection(anna, 'shared_items'), where('invitedEmails', 'array-contains', 'anna@example.com'))));
+  await assertFails(getDoc(doc(eve, 'shared_items', LEGACY)));
+  const joinByEmail = (db: ReturnType<typeof as>, uid: string, email: string) =>
+    updateDoc(doc(db, 'shared_items', LEGACY), 'memberIds', arrayUnion(uid), new FieldPath('members', uid), { email }, 'invitedEmails', arrayRemove(email.toLowerCase()), 'updatedAt', Date.now());
+  await assertFails(joinByEmail(eve, 'eve', 'eve@example.com'));
+  await assertFails(joinByEmail(unverified, 'anna2', 'anna@example.com'));
+  await assertSucceeds(joinByEmail(anna, 'anna', 'anna@example.com'));
+  await assertSucceeds(getDoc(doc(anna, 'shared_items', LEGACY)));
+  // Anna's and Nick's own contributions both land in the shared item
+  await assertSucceeds(setDoc(doc(anna, 'shared_items', LEGACY, 'transfers', 'a100'), { id: 'a100', contributorUid: 'anna', toAmount: 100 }));
+  await assertSucceeds(setDoc(doc(nick, 'shared_items', LEGACY, 'transfers', 'n60'), { id: 'n60', contributorUid: 'nick', toAmount: 60 }));
+  const seenByAnna = await getDocs(collection(anna, 'shared_items', LEGACY, 'transfers'));
+  if (seenByAnna.size !== 2) throw new Error(`Anna should see both contributions, saw ${seenByAnna.size}`);
+  // members can't put new emails on the list; the owner can
+  await assertFails(updateDoc(doc(anna, 'shared_items', LEGACY), 'invitedEmails', arrayUnion('eve@example.com')));
+  await assertSucceeds(updateDoc(doc(nick, 'shared_items', LEGACY), 'invitedEmails', arrayUnion('eve@example.com')));
+});

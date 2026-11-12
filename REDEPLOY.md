@@ -49,7 +49,7 @@ npm ci
 npx tsc --noEmit
 npm test
 ```
-All must pass (expected: 17 logic tests, 8 rules tests, mobile suite with no "FAIL" lines).
+All must pass (expected: 19 logic tests, 10 rules + end-to-end sharing tests, mobile suite with no "FAIL" lines).
 
 ## 3. Bump the version to 0.9.7
 Change `0.9.6` → `0.9.7` in exactly these places:
@@ -98,16 +98,20 @@ Old browsers and old APKs stop syncing shared items once the new rules are live,
 1. Open https://thenextstep-tns.github.io/Moneypot/ in a private window: the login page loads, and
    "Download Android App (v0.9.7)" downloads the new APK (not a 404).
 2. Sign in with Google: existing accounts, pots and plans appear; no "Couldn't sync a change" banner.
-3. Sharing (needs two Google accounts): A opens a stash → Share → invites B's email → copies the code. B signs in,
-   uses "Join shared stash" with the code, and sees the stash. Using the same code again must fail.
-4. In the Firebase console → Firestore → Rules, the published rules start with `// Moneypot security model`.
-5. Install the APK on an Android phone: Google sign-in returns to the app and the data loads.
+3. Existing share (the real one): after Nick and Anna have each opened the new version, "Online Purchases" shows
+   160 € and "Shared · 2 people" on both phones, with chips "You 60 € / Anna Samsonova 100 €" (Nick) and
+   "You 100 € / Nick 60 €" (Anna). "Your money in stashes" counts only your own part.
+4. New share (needs two Google accounts): A opens a stash → Share → invites B's email → copies the code. B signs in,
+   uses "Join" with the code, and sees the stash. Using the same code again must fail.
+5. In the Firebase console → Firestore → Rules, the published rules start with `// Moneypot security model`.
+6. Install the APK on an Android phone: Google sign-in returns to the app and the data loads.
 
 ## 7. Tell the user to pass on to their users
 - **Android**: the signing key changed, so the old app must be **uninstalled once** before installing v0.9.7. Their
   data is in the cloud and comes back after signing in.
-- **Shared pots/stashes from before** must be **re-shared once**: the owner opens it → Share → invites the partner
-  again. Personal data is not affected.
+- **Shared pots/stashes from before** reconnect automatically once **both** people have opened the new version
+  (web or app) and signed in with the same Google account as before. Until the second person does, the first one sees
+  them listed as "joins when they open the new app". Nobody needs to re-invite.
 
 ## Do not
 - Do not edit `firestore.rules`, `src/sharedSync.ts` or the balance logic to make something work. Report it instead.

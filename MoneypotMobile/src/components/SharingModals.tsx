@@ -10,7 +10,7 @@ const APP_URL = 'https://thenextstep-tns.github.io/Moneypot/';
 
 /** Invite someone to a pot or stash by email (one-time, email-bound code) */
 export function ShareItemModal({ visible, type, item, onClose }: { visible: boolean; type: 'pot' | 'stash'; item: Category | Stash | null; onClose: () => void }) {
-  const { user, canShare, inviteToShared, remove } = useData();
+  const { user, canShare, inviteToShared, remove, sharedItems } = useData();
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const [email, setEmail] = useState('');
@@ -24,6 +24,32 @@ export function ShareItemModal({ visible, type, item, onClose }: { visible: bool
 
   if (!item) return null;
   const isMember = Boolean(item.isForeignOwned);
+  const shared = item.sharedId ? sharedItems.find(x => x.id === item.sharedId) : undefined;
+  const memberRows = shared
+    ? shared.memberIds.map(uid => ({
+        key: uid,
+        label: uid === user?.uid ? 'You' : shared.members?.[uid]?.name || shared.members?.[uid]?.email || 'Member',
+        role: uid === shared.ownerId ? 'Owner' : 'Member',
+      }))
+    : (item.sharedWith ?? []).map(e => ({ key: e, label: e === user?.email ? 'You' : e, role: '' }));
+  const pending = shared?.invitedEmails ?? [];
+  const membersBlock = memberRows.length > 0 ? (
+    <View style={styles.memberList} accessibilityLabel={`Shared with ${memberRows.length} people`}>
+      <Text style={styles.label}>Shared with</Text>
+      {memberRows.map(m => (
+        <View key={m.key} style={styles.memberRow}>
+          <Text style={styles.memberName}>👤 {m.label}</Text>
+          {m.role ? <Text style={styles.memberRole}>{m.role}</Text> : null}
+        </View>
+      ))}
+      {pending.map(e => (
+        <View key={e} style={styles.memberRow}>
+          <Text style={[styles.memberName, { color: colors.mute }]}>⏳ {e}</Text>
+          <Text style={styles.memberRole}>joins when they open the new app</Text>
+        </View>
+      ))}
+    </View>
+  ) : null;
 
   const createCode = async () => {
     setErr('');
@@ -67,6 +93,7 @@ export function ShareItemModal({ visible, type, item, onClose }: { visible: bool
             <Text style={styles.body}>Sign in with Google (not demo mode) to share — only the people you invite can see a shared {type}.</Text>
           ) : isMember ? (
             <>
+              {membersBlock}
               <Text style={styles.body}>Only the owner ({item.ownerEmail ?? 'the creator'}) can invite people. You can leave this {type}.</Text>
               <TouchableOpacity
                 style={[styles.btn, styles.btnDanger]}
@@ -94,9 +121,7 @@ export function ShareItemModal({ visible, type, item, onClose }: { visible: bool
             </>
           ) : (
             <>
-              {(item.sharedWith?.length ?? 0) > 0 && (
-                <Text style={styles.members}>Members: {item.sharedWith!.join(', ')}</Text>
-              )}
+              {membersBlock}
               <Text style={styles.label}>Invite by email</Text>
               <TextInput
                 style={styles.input}
@@ -235,6 +260,10 @@ const getStyles = (theme: Theme) =>
     btnDanger: { backgroundColor: theme.colors.badLight },
     btnDangerText: { color: theme.colors.bad, fontWeight: '700', fontSize: 15 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    memberList: { gap: 6, paddingVertical: 4 },
+    memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+    memberName: { fontSize: 15, color: theme.colors.ink, flexShrink: 1 },
+    memberRole: { fontSize: 12, color: theme.colors.mute },
     chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.full, borderWidth: 1, borderColor: theme.colors.chipBorder, backgroundColor: theme.colors.chipBg },
     chipOn: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
     chipText: { color: theme.colors.ink, fontSize: 13 },

@@ -57,9 +57,11 @@ Firebase has no built-in Discord provider, so we use a tiny Cloud Function that 
 
 ### Upgrading from ≤ v0.9.6
 Deploy the new rules and the new clients together (`firebase deploy --only firestore:rules,functions` + web + APK).
-The old `invites`, `shared_stashes`, `shared_payments` and `shared_transfers` collections are locked by the new rules,
-so existing shares must be re-created once: the owner opens the pot/stash → Share → invites the partner again.
-Personal data is unaffected.
+The old `invites`, `shared_stashes`, `shared_payments` and `shared_transfers` collections are locked by the new rules.
+Existing shares migrate by themselves: when the owner opens the new version, their old shared pot/stash becomes a
+`shared_items` entry that lists the old members' emails (`invitedEmails`); when a member opens the new version, their
+app finds that entry by their verified email, joins, links its old copy and uploads that member's own records.
+Nobody has to re-invite anyone. Covered by `tests/sharing-e2e.test.ts`. Personal data is unaffected.
 
 ## Skeleton TODOs
 - Currency conversion (pots currently sum amounts across currencies as-is)

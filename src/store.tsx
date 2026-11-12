@@ -5,9 +5,9 @@ import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_TEMPLATES, DEMO } from '.
 import { normalizeStash, withFrozenRates } from './balances';
 import {
   acceptInvite as acceptInviteRemote,
-  backfillRecords,
   createInvite,
-  createSharedItem,
+  migrateLegacyShares,
+  shareLocalItem,
   deleteSharedItem,
   leaveSharedItem,
   listPendingInvites,
@@ -130,6 +130,9 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
   const [raw, setRaw] = useState<Data>(empty);
   const [sharedItems, setSharedItems] = useState<SharedItem[]>([]);
   const [itemsLoaded, setItemsLoaded] = useState(false);
+  const [invited, setInvited] = useState<SharedItem[]>([]);
+  const [ownLoaded, setOwnLoaded] = useState<Set<string>>(new Set());
+  const migrationAttempts = useRef(new Set<string>());
   const [sharedRecs, setSharedRecs] = useState<{ payments: Map<string, Payment[]>; transfers: Map<string, Transfer[]> }>({
     payments: new Map(),
     transfers: new Map(),
@@ -190,6 +193,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
           let docs = snap.docs.map(x => x.data()) as Data[typeof c];
           if (c === 'accounts' || c === 'categories' || c === 'stashes') docs = sortByOrder(docs as { id: string; order?: number }[]) as Data[typeof c];
           setRaw(d => ({ ...d, [c]: docs }));
+          setOwnLoaded(prev => (prev.has(c) ? prev : new Set(prev).add(c)));
         },
         report
       )
@@ -212,11 +216,15 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
   // ---- Shared items this user belongs to ----
   useEffect(() => {
     setSharedItems([]);
+    setInvited([]);
     setItemsLoaded(false);
+    setOwnLoaded(new Set());
+    migrationAttempts.current = new Set();
     setSharedRecs({ payments: new Map(), transfers: new Map() });
     if (!me || !db) return;
     return subscribeShared(db, me, {
       onItems: items => { setSharedItems(items); setItemsLoaded(true); },
+      onInvited: setInvited,
       onRecords: (sid, coll, records) =>
         setSharedRecs(prev => {
           const next = { payments: new Map(prev.payments), transfers: new Map(prev.transfers) };
@@ -233,6 +241,13 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
       onError: report,
     });
   }, [me, report]);
+
+  // Shares made with ≤ v0.9.6 move to the secure model by themselves (no re-inviting needed)
+  const ownReady = ['stashes', 'categories', 'payments', 'transfers'].every(c => ownLoaded.has(c));
+  useEffect(() => {
+    if (!me || !db || !itemsLoaded || !ownReady) return;
+    migrateLegacyShares(db, me, { stashes: raw.stashes, categories: raw.categories, payments: raw.payments, transfers: raw.transfers }, invited, migrationAttempts.current).catch(report);
+  }, [me, itemsLoaded, ownReady, raw.stashes, raw.categories, raw.payments, raw.transfers, invited, report]);
 
   // persist demo mode (own data only)
   useEffect(() => {
@@ -359,18 +374,7 @@ export function DataProvider({ user, children }: { user: CurrentUser | null; chi
 
   const shareItem: Ctx['shareItem'] = async (type, item) => {
     const { me: m, db: d } = requireRemote();
-    if (item.sharedId) return item.sharedId;
-    const sid = await createSharedItem(d, m, type, item);
-    const updated = { ...item, sharedId: sid } as Stash & Category;
-    if (type === 'stash') Object.assign(updated, { isShared: true, isInstantAccess: false });
-    await setDoc(doc(d, 'users', m.uid, type === 'stash' ? 'stashes' : 'categories', item.id), clean(updated, true));
-    const cur = dataRef.current;
-    const ctx = {
-      stashes: type === 'stash' ? cur.stashes.map(s => (s.id === item.id ? (updated as Stash) : s)) : cur.stashes,
-      categories: type === 'pot' ? cur.categories.map(c => (c.id === item.id ? (updated as Category) : c)) : cur.categories,
-    };
-    await backfillRecords(d, m, sid, cur.payments, cur.transfers, ctx);
-    return sid;
+    return shareLocalItem(d, m, type, item, dataRef.current);
   };
 
   const inviteToShared: Ctx['inviteToShared'] = async (type, item, email) => {

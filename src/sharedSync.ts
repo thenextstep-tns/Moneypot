@@ -81,6 +81,13 @@ export function mergeSharedState(
   if (!me) return raw;
   const itemById = new Map(items.map(i => [i.id, i]));
   const localIdBySid = new Map<string, string>();
+  const linkLegacy = <T extends Stash | Category>(list: T[], type: 'pot' | 'stash'): T[] =>
+    list.map(x => {
+      if (x.sharedId) return x;
+      const it = items.find(i => i.type === type && i.legacyId === x.id && i.ownerId === (x.ownerId === 'local' ? me.uid : x.ownerId ?? me.uid));
+      return it ? { ...x, sharedId: it.id } : x;
+    });
+  raw = { ...raw, stashes: linkLegacy(raw.stashes, 'stash'), categories: linkLegacy(raw.categories, 'pot') };
   const overlay = <T extends Stash | Category>(x: T, type: 'pot' | 'stash'): T | null => {
     if (!x.sharedId) return x;
     const it = itemById.get(x.sharedId);
@@ -318,9 +325,17 @@ export async function unsyncRecord(db: Firestore, coll: RecordColl, r: Payment |
 // ---------------------------------------------------------------------------------------------
 
 /** Create the shared item for a local pot/stash (owner = me). Returns its id. */
-export async function createSharedItem(db: Firestore, me: Me, type: 'pot' | 'stash', item: Stash | Category): Promise<string> {
+export async function createSharedItem(
+  db: Firestore,
+  me: Me,
+  type: 'pot' | 'stash',
+  item: Stash | Category,
+  opts: { invitedEmails?: string[]; legacyId?: string } = {}
+): Promise<string> {
   const sid = `sh_${randomId(20)}`;
   const shared: SharedItem = {
+    ...(opts.invitedEmails?.length ? { invitedEmails: opts.invitedEmails } : {}),
+    ...(opts.legacyId ? { legacyId: opts.legacyId } : {}),
     id: sid,
     type,
     ownerId: me.uid,
@@ -342,8 +357,9 @@ export async function updateSharedItemData(db: Firestore, sid: string, type: 'po
 /** Mirror all existing records of an item when it becomes shared, so members see its history */
 export async function backfillRecords(db: Firestore, me: Me, sid: string, payments: Payment[], transfers: Transfer[], ctx: Ctx) {
   const writes: [RecordColl, Payment | Transfer][] = [
-    ...payments.filter(p => !p.foreign && sharedTargets('payments', p, ctx).includes(sid)).map(p => ['payments', p] as [RecordColl, Payment]),
-    ...transfers.filter(t => !t.foreign && sharedTargets('transfers', t, ctx).includes(sid)).map(t => ['transfers', t] as [RecordColl, Transfer]),
+    // only my own records: someone else's (incl. old copies of a partner's records in my data) are theirs to upload
+    ...payments.filter(p => !isLegacyForeignRecord(p, me) && sharedTargets('payments', p, ctx).includes(sid)).map(p => ['payments', p] as [RecordColl, Payment]),
+    ...transfers.filter(t => !isLegacyForeignRecord(t, me) && sharedTargets('transfers', t, ctx).includes(sid)).map(t => ['transfers', t] as [RecordColl, Transfer]),
   ];
   for (let i = 0; i < writes.length; i += 400) {
     const b = writeBatch(db);
@@ -427,6 +443,110 @@ export async function acceptInvite(db: Firestore, me: Me, code: string): Promise
   return item.data() as SharedItem;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Migration of shares made with ≤ v0.9.6
+// ---------------------------------------------------------------------------------------------
+
+const lc = (e?: string | null) => (e ?? '').trim().toLowerCase();
+
+/** A pot/stash I own that was shared with the old model (needs a shared item) */
+export function isLegacySharedByMe(item: Stash | Category, me: Me): boolean {
+  return !item.sharedId && (item.sharedWith?.length ?? 0) > 0 && (!item.ownerId || item.ownerId === me.uid || item.ownerId === 'local');
+}
+
+/** Emails the old share listed, minus my own (these people may join without a code) */
+export function legacyInvitees(item: Stash | Category, me: Me): string[] {
+  return [...new Set((item.sharedWith ?? []).map(lc).filter(e => e && e.includes('@') && e !== lc(me.email)))];
+}
+
+/** My old (≤ v0.9.6) copy of someone else's shared item, if I have one */
+export function findLegacyCopy<T extends Stash | Category>(list: T[], item: SharedItem): T | undefined {
+  if (!item.legacyId) return undefined;
+  return list.find(x => x.id === item.legacyId && !x.sharedId && x.ownerId === item.ownerId);
+}
+
+/** Join an item whose owner listed my verified email (migration of an existing share) */
+export async function joinInvitedItem(db: Firestore, me: Me, sid: string) {
+  await updateDoc(
+    doc(db, SHARED_ITEMS, sid),
+    'memberIds', arrayUnion(me.uid),
+    new FieldPath('members', me.uid), { email: me.email ?? null, name: me.displayName ?? null },
+    'invitedEmails', arrayRemove(lc(me.email)),
+    'updatedAt', Date.now()
+  );
+}
+
+/** Local copy of a shared pot/stash as stored in users/{uid}: without fields that come from the shared item */
+export function localCopyFields<T extends Stash | Category>(item: T): T {
+  const c = { ...item } as Record<string, unknown>;
+  for (const k of ['foreign', 'isForeignOwned', 'sharedWith', 'ownerEmail', 'isShared', 'invitedEmails']) delete c[k];
+  for (const k of Object.keys(c)) if (c[k] === undefined) delete c[k];
+  return c as T;
+}
+
+export interface LocalState { stashes: Stash[]; categories: Category[]; payments: Payment[]; transfers: Transfer[] }
+const collOf = (type: 'pot' | 'stash') => (type === 'stash' ? 'stashes' : 'categories');
+
+/** Make one of my pots/stashes shared: create the shared item, link my copy, upload my history */
+export async function shareLocalItem(
+  db: Firestore,
+  me: Me,
+  type: 'pot' | 'stash',
+  item: Stash | Category,
+  cur: LocalState,
+  opts: { invitedEmails?: string[]; legacyId?: string } = {}
+): Promise<string> {
+  if (item.sharedId) return item.sharedId;
+  const sid = await createSharedItem(db, me, type, item, opts);
+  const updated = { ...item, sharedId: sid } as Stash & Category;
+  if (type === 'stash') Object.assign(updated, { isInstantAccess: false });
+  await setDoc(doc(db, 'users', me.uid, collOf(type), item.id), localCopyFields(updated));
+  const ctx = {
+    stashes: type === 'stash' ? cur.stashes.map(s => (s.id === item.id ? (updated as Stash) : s)) : cur.stashes,
+    categories: type === 'pot' ? cur.categories.map(c => (c.id === item.id ? (updated as Category) : c)) : cur.categories,
+  };
+  await backfillRecords(db, me, sid, cur.payments, cur.transfers, ctx);
+  return sid;
+}
+
+/** Join a share that lists my email and link my existing (old-model) copy to it, then upload my history */
+export async function linkLegacyCopy(db: Firestore, me: Me, item: SharedItem, copy: Stash | Category, cur: LocalState) {
+  await joinInvitedItem(db, me, item.id);
+  await setDoc(doc(db, 'users', me.uid, collOf(item.type), copy.id), { sharedId: item.id }, { merge: true });
+  const linked = { ...copy, sharedId: item.id };
+  const ctx = {
+    stashes: item.type === 'stash' ? cur.stashes.map(s => (s.id === copy.id ? (linked as Stash) : s)) : cur.stashes,
+    categories: item.type === 'pot' ? cur.categories.map(c => (c.id === copy.id ? (linked as Category) : c)) : cur.categories,
+  };
+  await backfillRecords(db, me, item.id, cur.payments, cur.transfers, ctx);
+}
+
+/**
+ * Move shares made with ≤ v0.9.6 to the secure model, without anyone re-inviting:
+ *  - an owner's old shared pot/stash becomes a shared item that lists the old members' emails;
+ *  - a member who still has the old copy of it joins (by verified email) and links that copy.
+ * Each person uploads only their own records, so contributions stay individual.
+ * `attempted` remembers what was already tried in this session.
+ */
+export async function migrateLegacyShares(db: Firestore, me: Me, raw: LocalState, invited: SharedItem[], attempted: Set<string>) {
+  for (const [type, list] of [['stash', raw.stashes], ['pot', raw.categories]] as const) {
+    for (const item of list as (Stash | Category)[]) {
+      const key = `own:${type}:${item.id}`;
+      if (attempted.has(key) || !isLegacySharedByMe(item, me)) continue;
+      attempted.add(key);
+      await shareLocalItem(db, me, type, item, raw, { invitedEmails: legacyInvitees(item, me), legacyId: item.id });
+    }
+  }
+  for (const it of invited) {
+    const key = `join:${it.id}`;
+    if (attempted.has(key)) continue;
+    const copy = it.type === 'stash' ? findLegacyCopy(raw.stashes, it) : findLegacyCopy(raw.categories, it);
+    if (!copy) continue; // a brand-new invite still needs a code; only existing shares migrate silently
+    attempted.add(key);
+    await linkLegacyCopy(db, me, it, copy, raw);
+  }
+}
+
 /** Leave a shared item (members) */
 export async function leaveSharedItem(db: Firestore, me: Me, sid: string) {
   await updateDoc(
@@ -468,6 +588,8 @@ export async function deleteSharedItem(db: Firestore, me: Me, sid: string) {
 
 export interface SharedListeners {
   onItems: (items: SharedItem[]) => void;
+  /** Items that list my email as invited but that I haven't joined yet */
+  onInvited?: (items: SharedItem[]) => void;
   onRecords: (sid: string, coll: RecordColl, records: (Payment | Transfer)[]) => void;
   onRemoved: (sid: string) => void;
   onError?: (err: Error) => void;
@@ -505,7 +627,17 @@ export function subscribeShared(db: Firestore, me: Me, l: SharedListeners): () =
     },
     err => l.onError?.(err)
   );
+  const email = lc(me.email);
+  const unsubInvited =
+    email && l.onInvited
+      ? onSnapshot(
+          query(collection(db, SHARED_ITEMS), where('invitedEmails', 'array-contains', email)),
+          snap => l.onInvited!(snap.docs.map(d => d.data() as SharedItem).filter(i => !i.memberIds.includes(me.uid))),
+          err => l.onError?.(err)
+        )
+      : () => {};
   return () => {
+    unsubInvited();
     unsubItems();
     for (const unsubs of perItem.values()) unsubs.forEach(u => u());
     perItem.clear();

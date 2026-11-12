@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "node scripts/sync-domain.mjs --check && tsx --test tests/domain.test.ts",
     "sync:domain": "node scripts/sync-domain.mjs",
-    "test:rules": "npx --yes firebase-tools@13 emulators:exec --only firestore --project demo-moneypot \"tsx --test tests/rules.test.ts\""
+    "test:rules": "npx --yes firebase-tools@13 emulators:exec --only firestore --project demo-moneypot \"tsx --test tests/rules.test.ts tests/sharing-e2e.test.ts\""
   },
   "dependencies": {
     "firebase": "^10.12.0",

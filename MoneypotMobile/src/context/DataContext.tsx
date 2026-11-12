@@ -8,9 +8,9 @@ import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_TEMPLATES, DEMO } from '.
 import { normalizeStash, withFrozenRates } from '../domain/balances';
 import {
   acceptInvite as acceptInviteRemote,
-  backfillRecords,
   createInvite,
-  createSharedItem,
+  migrateLegacyShares,
+  shareLocalItem,
   deleteSharedItem,
   leaveSharedItem,
   mergeSharedState,
@@ -133,6 +133,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [raw, setRaw] = useState<DataState>(emptyData);
   const [sharedItems, setSharedItems] = useState<SharedItem[]>([]);
   const [itemsLoaded, setItemsLoaded] = useState(false);
+  const [invited, setInvited] = useState<SharedItem[]>([]);
+  const [ownLoaded, setOwnLoaded] = useState<Set<string>>(new Set());
+  const migrationAttempts = useRef(new Set<string>());
   const [sharedRecs, setSharedRecs] = useState<{ payments: Map<string, Payment[]>; transfers: Map<string, Transfer[]> }>({
     payments: new Map(),
     transfers: new Map(),
@@ -242,6 +245,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           let docs = snap.docs.map(x => x.data()) as DataState[typeof c];
           if (c === 'accounts' || c === 'categories' || c === 'stashes') docs = sortByOrder(docs as { id: string; order?: number }[]) as DataState[typeof c];
           setRaw(prev => ({ ...prev, [c]: docs }));
+          setOwnLoaded(prev => (prev.has(c) ? prev : new Set(prev).add(c)));
         },
         err => console.warn(`Firestore listener error on ${c}:`, err.message)
       )
@@ -264,11 +268,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // ---- Shared items this user belongs to ----
   useEffect(() => {
     setSharedItems([]);
+    setInvited([]);
     setItemsLoaded(false);
+    setOwnLoaded(new Set());
+    migrationAttempts.current = new Set();
     setSharedRecs({ payments: new Map(), transfers: new Map() });
     if (!me || !db || isDemoMode) return;
     return subscribeShared(db, me, {
       onItems: items => { setSharedItems(items); setItemsLoaded(true); },
+      onInvited: setInvited,
       onRecords: (sid, coll, records) =>
         setSharedRecs(prev => {
           const next = { payments: new Map(prev.payments), transfers: new Map(prev.transfers) };
@@ -285,6 +293,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       onError: err => console.warn('Shared listener error:', err.message),
     });
   }, [me, isDemoMode]);
+
+  // Shares made with ≤ v0.9.6 move to the secure model by themselves (no re-inviting needed)
+  const ownReady = ['stashes', 'categories', 'payments', 'transfers'].every(c => ownLoaded.has(c));
+  useEffect(() => {
+    if (!me || !db || isDemoMode || !itemsLoaded || !ownReady) return;
+    migrateLegacyShares(db, me, { stashes: raw.stashes, categories: raw.categories, payments: raw.payments, transfers: raw.transfers }, invited, migrationAttempts.current).catch(report);
+  }, [me, isDemoMode, itemsLoaded, ownReady, raw.stashes, raw.categories, raw.payments, raw.transfers, invited, report]);
 
   // Persist demo data (own data only)
   useEffect(() => {
@@ -424,18 +439,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const shareItem = async (type: 'pot' | 'stash', item: Category | Stash): Promise<string> => {
     const r = requireRemote();
-    if (item.sharedId) return item.sharedId;
-    const sid = await createSharedItem(r.db, r.me, type, item);
-    const updated = { ...item, sharedId: sid } as Stash & Category;
-    if (type === 'stash') Object.assign(updated, { isShared: true, isInstantAccess: false });
-    await setDoc(doc(r.db, 'users', r.me.uid, type === 'stash' ? 'stashes' : 'categories', item.id), clean(updated, true));
-    const cur = dataRef.current;
-    const ctx = {
-      stashes: type === 'stash' ? cur.stashes.map(s => (s.id === item.id ? (updated as Stash) : s)) : cur.stashes,
-      categories: type === 'pot' ? cur.categories.map(x => (x.id === item.id ? (updated as Category) : x)) : cur.categories,
-    };
-    await backfillRecords(r.db, r.me, sid, cur.payments, cur.transfers, ctx);
-    return sid;
+    return shareLocalItem(r.db, r.me, type, item, dataRef.current);
   };
 
   const inviteToShared = async (type: 'pot' | 'stash', item: Category | Stash, email: string) => {

@@ -322,6 +322,67 @@ export function calcStashReserved(
   return Math.max(0, Math.min(own, total));
 }
 
+export interface StashContribution {
+  key: string;
+  label: string;
+  amount: number; // in stash currency
+  isMe: boolean;
+}
+
+/**
+ * Who put how much into a stash (net of withdrawals), one line per person.
+ * The stash balance is everyone's money; each person's line is their own contribution.
+ */
+export function calcStashContributions(
+  s: Stash,
+  payments: Payment[] = [],
+  transfers: Transfer[] = [],
+  plans: Plan[] = [],
+  asOf: string = today()
+): StashContribution[] {
+  const byKey = new Map<string, StashContribution>();
+  const add = (key: string, label: string, isMe: boolean, amount: number) => {
+    if (!amount) return;
+    const cur = byKey.get(key) ?? { key, label, amount: 0, isMe };
+    cur.amount += amount;
+    byKey.set(key, cur);
+  };
+  const who = (r: Pick<Payment, 'foreign' | 'contributorUid' | 'contributorEmail' | 'contributorName'>) =>
+    r.foreign
+      ? {
+          key: (r.contributorEmail?.trim().toLowerCase() || r.contributorUid || 'other'),
+          label: r.contributorName || r.contributorEmail?.split('@')[0] || 'Partner',
+          isMe: false,
+        }
+      : { key: 'me', label: 'You', isMe: true };
+
+  if (s.startAmount) {
+    if (s.isForeignOwned) {
+      add(s.ownerEmail?.trim().toLowerCase() || s.ownerId || 'owner', s.ownerEmail?.split('@')[0] || 'Owner', false, s.startAmount);
+    } else {
+      add('me', 'You', true, s.startAmount);
+    }
+  }
+  const byId = planIndex(plans);
+  for (const p of payments) {
+    if (p.status !== 'confirmed' || !effective(p.date, asOf)) continue;
+    const d = paymentStashDelta(p, byId.get(p.planId), s);
+    if (d) { const w = who(p); add(w.key, w.label, w.isMe, d); }
+  }
+  for (const t of transfers) {
+    if (!effective(t.date, asOf)) continue;
+    const d = transferStashDelta(t, s);
+    if (d) { const w = who(t); add(w.key, w.label, w.isMe, d); }
+  }
+  return [...byKey.values()].filter(c => Math.abs(c.amount) > 0.005).sort((a, b) => Number(b.isMe) - Number(a.isMe) || b.amount - a.amount);
+}
+
+/** Number of people a pot/stash is shared with (you included); 0 if it isn't shared */
+export function sharedMemberCount(item: { sharedWith?: string[]; isShared?: boolean; sharedId?: string }): number {
+  const emails = new Set((item.sharedWith ?? []).map(e => e.trim().toLowerCase()).filter(Boolean));
+  return emails.size;
+}
+
 /** Breakdown of stashed funds inside an account: personal vs shared (in account currency) */
 export function calcAccountStashedBreakdown(
   a: Account,
